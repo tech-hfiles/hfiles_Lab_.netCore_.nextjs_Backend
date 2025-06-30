@@ -6,7 +6,7 @@ namespace HFiles_Backend.Domain.Entities.Labs
     {
         public int Id { get; set; }
 
-        [Required]
+        [Required]  
         public string? LabName { get; set; }
 
         [Required]

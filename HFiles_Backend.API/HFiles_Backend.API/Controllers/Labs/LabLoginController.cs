@@ -191,6 +191,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                     {
                         UserId = user!.Id,
                         user.PhoneNumber,
+                        user.Email,
                         user.IsSuperAdmin
                     };
                 }

@@ -3,11 +3,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HFiles_Backend.Infrastructure.Data
 {
-    public class AppDbContext : DbContext
+    public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
     {
-        public AppDbContext(DbContextOptions<AppDbContext> options)
-            : base(options) { }
-
         public DbSet<LabSignup> LabSignups { get; set; }
         public DbSet<LabOtpEntry> LabOtpEntries { get; set; }
 

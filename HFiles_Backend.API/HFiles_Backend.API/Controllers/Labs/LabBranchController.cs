@@ -136,6 +136,9 @@ namespace HFiles_Backend.API.Controllers.Labs
                 return BadRequest(ApiResponseFactory.Fail(errors));
             }
 
+            if (dto.Email == null)
+                return BadRequest(ApiResponseFactory.Fail("Email must be provided."));
+
             try
             {
                 var now = DateTime.UtcNow;

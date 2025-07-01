@@ -67,7 +67,7 @@ namespace HFiles_Backend.API.Services
                         Category = httpContext.Items["Log-Category"]?.ToString(),
                         Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                         IpAddress = httpContext.Connection.RemoteIpAddress?.ToString(),
-                        SessionId = user.FindFirst("SessionId")?.Value ?? httpContext.TraceIdentifier,
+                        SessionId = user.FindFirst("SessionId")?.Value,
                         Url = httpContext.Request.Path,
                         HttpMethod = httpContext.Request.Method,
                         Details = $"""

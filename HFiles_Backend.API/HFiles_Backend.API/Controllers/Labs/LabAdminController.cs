@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using HFiles_Backend.Domain.Entities.Users; 
+
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -75,8 +77,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return BadRequest(ApiResponseFactory.Fail($"A Super Admin already exists for the lab {lab.LabName}."));
                 }
 
-                var userDetails = await _context.UserDetails
-                    .FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID)
+                var userDetails = await _context.Users
+                    .FirstOrDefaultAsync(u => u.HfId == dto.HFID)
                     .ConfigureAwait(false);
 
                 if (userDetails == null)
@@ -85,11 +87,11 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return NotFound(ApiResponseFactory.Fail($"No user found with HFID {dto.HFID}."));
                 }
 
-                _logger.LogInformation("Creating new Super Admin for user: {UserId}, Lab: {LabId}", userDetails.user_id, dto.UserId);
+                _logger.LogInformation("Creating new Super Admin for user: {UserId}, Lab: {LabId}", userDetails.Id, dto.UserId);
 
                 var newAdmin = new LabSuperAdmin
                 {
-                    UserId = userDetails.user_id,
+                    UserId = userDetails.Id,
                     LabId = dto.UserId,
                     PasswordHash = _passwordHasher.HashPassword(null!, dto.Password),
                     EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
@@ -109,7 +111,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 var responseData = new
                 {
-                    username = $"{userDetails.user_firstname} {userDetails.user_lastname}",
+                    username = $"{userDetails.FirstName} {userDetails.LastName}",
                     token = tokenData.Token,
                     sessionId = tokenData.SessionId
                 };
@@ -145,8 +147,8 @@ namespace HFiles_Backend.API.Controllers.Labs
             {
                 await using var transaction = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
 
-                var userDetails = await _context.Set<UserDetails>()
-                    .FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID)
+                var userDetails = await _context.Set<Domain.Entities.Users.User>()
+                    .FirstOrDefaultAsync(u => u.HfId == dto.HFID)
                     .ConfigureAwait(false);
 
                 if (userDetails == null)
@@ -155,7 +157,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return NotFound(ApiResponseFactory.Fail($"No Super Admin/Admin/Member found with HFID {dto.HFID}."));
                 }
 
-                var username = $"{userDetails.user_firstname} {userDetails.user_lastname}";
+                var username = $"{userDetails.FirstName} {userDetails.LastName}";
 
                 var labSignup = await _context.LabSignups
                     .FirstOrDefaultAsync(l => l.Id == dto.UserId && l.Email == dto.Email && l.DeletedBy == 0)
@@ -173,7 +175,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 {
                     var admin = await _context.LabSuperAdmins
                         .FirstOrDefaultAsync(a =>
-                            a.UserId == userDetails.user_id &&
+                            a.UserId == userDetails.Id &&
                             (a.LabId == dto.UserId || a.LabId == labSignup.LabReference) &&
                             a.IsMain == 1)
                         .ConfigureAwait(false);
@@ -205,7 +207,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 {
                     var member = await _context.LabMembers
                         .FirstOrDefaultAsync(m =>
-                            m.UserId == userDetails.user_id &&
+                            m.UserId == userDetails.Id &&
                             m.LabId == dto.UserId &&
                             m.DeletedBy == 0 &&
                             m.Role == dto.Role)
@@ -279,33 +281,33 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 var superAdmin = await (
                     from a in _context.LabSuperAdmins
-                    join u in _context.UserDetails on a.UserId equals u.user_id
+                    join u in _context.Users on a.UserId equals u.Id
                     where a.LabId == mainLabId && a.IsMain == 1
-                    select new User
+                    select new Application.DTOs.Labs.User
                     {
                         MemberId = a.Id,
-                        HFID = u.user_membernumber ?? string.Empty,
-                        Name = $"{u.user_firstname} {u.user_lastname}",
-                        Email = u.user_email ?? string.Empty,
+                        HFID = u.HfId ?? string.Empty,
+                        Name = $"{u.FirstName} {u.LastName}",
+                        Email = u.Email ?? string.Empty,
                         Role = UserRoles.SuperAdmin,
-                        ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image
+                        ProfilePhoto = string.IsNullOrEmpty(u.ProfilePhoto) ? "No image preview available" : u.ProfilePhoto
                     }).FirstOrDefaultAsync().ConfigureAwait(false);
 
                 var membersList = await (
                     from m in _context.LabMembers
-                    join u in _context.UserDetails on m.UserId equals u.user_id
+                    join u in _context.Users on m.UserId equals u.Id
                     where m.LabId == labId && m.DeletedBy == 0
                     select new
                     {
                         MemberId = m.Id,
                         m.UserId,
-                        HFID = u.user_membernumber,
-                        Name = $"{u.user_firstname} {u.user_lastname}",
-                        Email = u.user_email,
+                        HFID = u.HfId,
+                        Name = $"{u.FirstName} {u.LastName}",
+                        Email = u.Email,
                         m.Role,
                         m.CreatedBy,
                         m.PromotedBy,
-                        ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image
+                        ProfilePhoto = string.IsNullOrEmpty(u.ProfilePhoto) ? "No image preview available" : u.ProfilePhoto
                     }).ToListAsync().ConfigureAwait(false);
 
                 _logger.LogInformation("Total Members found: {MemberCount}", membersList.Count);
@@ -317,8 +319,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var labMembers = await _context.LabMembers
                     .ToDictionaryAsync(m => m.Id).ConfigureAwait(false);
 
-                var userDetails = await _context.UserDetails
-                    .ToDictionaryAsync(u => u.user_id).ConfigureAwait(false);
+                var userDetails = await _context.Users
+                    .ToDictionaryAsync(u => u.Id).ConfigureAwait(false);
 
                 var memberDtos = membersList.Select(m =>
                 {
@@ -329,15 +331,15 @@ namespace HFiles_Backend.API.Controllers.Labs
                         promotedByName = "Main";
                     else if (labMembers.TryGetValue(m.PromotedBy, out var promoter) &&
                              userDetails.TryGetValue(promoter.UserId, out var promoterDetails))
-                        promotedByName = promoterDetails.user_firstname ?? "Unknown";
+                        promotedByName = promoterDetails.FirstName ?? "Unknown";
 
                     if (labAdmins.ContainsKey(m.CreatedBy))
                         createdByName = "Main";
                     else if (labMembers.TryGetValue(m.CreatedBy, out var creator) &&
                              userDetails.TryGetValue(creator.UserId, out var creatorDetails))
-                        createdByName = creatorDetails.user_firstname ?? "Unknown";
+                        createdByName = creatorDetails.LastName ?? "Unknown";
 
-                    return new User
+                    return new Application.DTOs.Labs.User
                     {
                         MemberId = m.MemberId,
                         HFID = m.HFID,
@@ -514,16 +516,16 @@ namespace HFiles_Backend.API.Controllers.Labs
                 await _context.SaveChangesAsync().ConfigureAwait(false);
                 await tx.CommitAsync().ConfigureAwait(false);
 
-                var oldSuperAdminUser = await _context.UserDetails
-                    .FirstOrDefaultAsync(u => u.user_id == currentSuperAdmin.UserId)
+                var oldSuperAdminUser = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Id == currentSuperAdmin.UserId)
                     .ConfigureAwait(false);
 
-                var newSuperAdminUser = await _context.UserDetails
-                    .FirstOrDefaultAsync(u => u.user_id == member.UserId)
+                var newSuperAdminUser = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Id == member.UserId)
                     .ConfigureAwait(false);
 
-                string newSuperAdminName = $"{newSuperAdminUser?.user_firstname} {newSuperAdminUser?.user_lastname}".Trim();
-                string oldSuperAdminName = $"{oldSuperAdminUser?.user_firstname} {oldSuperAdminUser?.user_lastname}".Trim();
+                string newSuperAdminName = $"{newSuperAdminUser?.FirstName} {newSuperAdminUser?.LastName}".Trim();
+                string oldSuperAdminName = $"{oldSuperAdminUser?.FirstName} {oldSuperAdminUser?.LastName}".Trim();
 
                 var response = new
                 {

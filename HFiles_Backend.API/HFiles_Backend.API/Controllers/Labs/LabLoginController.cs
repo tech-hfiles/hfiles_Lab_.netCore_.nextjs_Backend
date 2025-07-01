@@ -36,10 +36,9 @@ namespace HFiles_Backend.API.Controllers.Labs
         public async Task<IActionResult> SendOtp([FromBody] LoginOtpRequest dto)
         {
             HttpContext.Items["Log-Category"] = "Authentication";
-
             _logger.LogInformation("Received OTP request for Email: {Email}, Phone: {PhoneNumber}", dto.Email, dto.PhoneNumber);
 
-            if (string.IsNullOrEmpty(dto.Email) == string.IsNullOrEmpty(dto.PhoneNumber))
+            if (string.IsNullOrWhiteSpace(dto.Email) == string.IsNullOrWhiteSpace(dto.PhoneNumber))
             {
                 _logger.LogWarning("Invalid request: Either Email or PhoneNumber must be provided.");
                 return BadRequest(ApiResponseFactory.Fail("Provide either Email or PhoneNumber, not both."));
@@ -48,12 +47,17 @@ namespace HFiles_Backend.API.Controllers.Labs
             try
             {
                 var otp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
-                var expiryTime = DateTime.UtcNow.AddMinutes(OtpValidityMinutes);
                 var now = DateTime.UtcNow;
+                var expiryTime = now.AddMinutes(OtpValidityMinutes);
 
-                if (!string.IsNullOrEmpty(dto.Email))
+                using var transaction = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+
+                if (!string.IsNullOrWhiteSpace(dto.Email))
                 {
-                    var user = await _context.LabSignups.FirstOrDefaultAsync(u => u.Email == dto.Email);
+                    var user = await _context.LabSignups
+                        .FirstOrDefaultAsync(u => u.Email == dto.Email)
+                        .ConfigureAwait(false);
+
                     if (user == null)
                     {
                         _logger.LogWarning("OTP generation failed: Email {Email} not registered.", dto.Email);
@@ -68,29 +72,35 @@ namespace HFiles_Backend.API.Controllers.Labs
                         ExpiryTime = expiryTime
                     };
 
-                    await _context.LabOtpEntries.AddAsync(otpEntry);
-                    await _context.SaveChangesAsync();
+                    _context.LabOtpEntries.Add(otpEntry);
+                    await _context.SaveChangesAsync().ConfigureAwait(false);
 
-                    var body = $@"
-                        <html>
-                        <body style='font-family: Arial, sans-serif; line-height: 1.6;'>
-                            <p>Hello,</p>
-                            <p>Your OTP for <strong>Hfiles</strong> login is:</p>
-                            <h2 style='color: #333;'>{otp}</h2>
-                            <p>This OTP is valid for <strong>{OtpValidityMinutes} minutes</strong>.</p>
-                            <p>If you didn’t request this, you can ignore this email.</p>
-                            <br/>
-                            <p>Best regards,<br/>The Hfiles Team</p>
-                        </body>
-                        </html>";
-                    await _emailService.SendEmailAsync(dto.Email, "Your Hfiles Login OTP", body);
+                    var body = $"""
+                    <html>
+                    <body style='font-family: Arial, sans-serif; line-height: 1.6;'>
+                        <p>Hello,</p>
+                        <p>Your OTP for <strong>Hfiles</strong> login is:</p>
+                        <h2 style='color: #333;'>{otp}</h2>
+                        <p>This OTP is valid for <strong>{OtpValidityMinutes} minutes</strong>.</p>
+                        <p>If you didn’t request this, you can ignore this email.</p>
+                        <br/>
+                        <p>Best regards,<br/>The Hfiles Team</p>
+                    </body>
+                    </html>
+                    """;
+
+                    await _emailService.SendEmailAsync(dto.Email, "Your Hfiles Login OTP", body).ConfigureAwait(false);
+                    await transaction.CommitAsync().ConfigureAwait(false);
 
                     _logger.LogInformation("OTP sent successfully to Email {Email}.", dto.Email);
                     return Ok(ApiResponseFactory.Success("OTP sent successfully to Email."));
                 }
-                else if (!string.IsNullOrEmpty(dto.PhoneNumber))
+                else
                 {
-                    var user = await _context.LabSignups.FirstOrDefaultAsync(u => u.PhoneNumber == dto.PhoneNumber);
+                    var user = await _context.LabSignups
+                        .FirstOrDefaultAsync(u => u.PhoneNumber == dto.PhoneNumber)
+                        .ConfigureAwait(false);
+
                     if (user == null)
                     {
                         _logger.LogWarning("OTP generation failed: Phone {PhoneNumber} not registered.", dto.PhoneNumber);
@@ -105,12 +115,14 @@ namespace HFiles_Backend.API.Controllers.Labs
                         ExpiryTime = expiryTime
                     };
 
-                    await _context.LabOtpEntries.AddAsync(otpEntry);
-                    await _context.SaveChangesAsync();
+                    _context.LabOtpEntries.Add(otpEntry);
+                    await _context.SaveChangesAsync().ConfigureAwait(false);
 
                     try
                     {
-                        await _whatsappService.SendOtpAsync(otp, dto.PhoneNumber);
+                        await _whatsappService.SendOtpAsync(otp, dto.PhoneNumber!).ConfigureAwait(false);
+                        await transaction.CommitAsync().ConfigureAwait(false);
+
                         _logger.LogInformation("OTP sent successfully to Phone {PhoneNumber}.", dto.PhoneNumber);
                         return Ok(ApiResponseFactory.Success("OTP sent successfully to Phone."));
                     }
@@ -126,8 +138,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                 _logger.LogError(ex, "OTP generation failed due to an unexpected error.");
                 return StatusCode(500, ApiResponseFactory.Fail($"Unexpected error: {ex.Message}"));
             }
-            return StatusCode(500, ApiResponseFactory.Fail("An unknown issue occurred during OTP processing."));
         }
+
 
 
 
@@ -140,9 +152,9 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             _logger.LogInformation("Received OTP login request for Email: {Email}, Phone: {PhoneNumber}", dto.Email, dto.PhoneNumber);
 
-            if (string.IsNullOrEmpty(dto.Email) == string.IsNullOrEmpty(dto.PhoneNumber))
+            if (string.IsNullOrWhiteSpace(dto.Email) == string.IsNullOrWhiteSpace(dto.PhoneNumber))
             {
-                _logger.LogWarning("Invalid request: Either Email or PhoneNumber must be provided.");
+                _logger.LogWarning("Invalid OTP login request — both or neither identifier provided.");
                 return BadRequest(ApiResponseFactory.Fail("Provide either Email or PhoneNumber, not both."));
             }
 
@@ -152,9 +164,14 @@ namespace HFiles_Backend.API.Controllers.Labs
                 object? responseData = null;
                 LabOtpEntry? otpEntry = null;
 
-                if (!string.IsNullOrEmpty(dto.Email))
+                using var transaction = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+
+                if (!string.IsNullOrWhiteSpace(dto.Email))
                 {
-                    var user = await _context.LabSignups.FirstOrDefaultAsync(u => u.Email == dto.Email);
+                    var user = await _context.LabSignups
+                        .FirstOrDefaultAsync(u => u.Email == dto.Email)
+                        .ConfigureAwait(false);
+
                     if (user == null)
                     {
                         _logger.LogWarning("OTP login failed: Email {Email} not registered.", dto.Email);
@@ -164,18 +181,22 @@ namespace HFiles_Backend.API.Controllers.Labs
                     otpEntry = await _context.LabOtpEntries
                         .Where(o => o.Email == dto.Email)
                         .OrderByDescending(o => o.CreatedAt)
-                        .FirstOrDefaultAsync();
+                        .FirstOrDefaultAsync()
+                        .ConfigureAwait(false);
 
                     responseData = new
                     {
-                        UserId = user!.Id,
+                        UserId = user.Id,
                         user.Email,
                         user.IsSuperAdmin
                     };
                 }
-                else if (!string.IsNullOrEmpty(dto.PhoneNumber))
+                else if (!string.IsNullOrWhiteSpace(dto.PhoneNumber))
                 {
-                    var user = await _context.LabSignups.FirstOrDefaultAsync(u => u.PhoneNumber == dto.PhoneNumber);
+                    var user = await _context.LabSignups
+                        .FirstOrDefaultAsync(u => u.PhoneNumber == dto.PhoneNumber)
+                        .ConfigureAwait(false);
+
                     if (user == null)
                     {
                         _logger.LogWarning("OTP login failed: Phone {PhoneNumber} not registered.", dto.PhoneNumber);
@@ -185,11 +206,12 @@ namespace HFiles_Backend.API.Controllers.Labs
                     otpEntry = await _context.LabOtpEntries
                         .Where(o => o.Email == dto.PhoneNumber)
                         .OrderByDescending(o => o.CreatedAt)
-                        .FirstOrDefaultAsync();
+                        .FirstOrDefaultAsync()
+                        .ConfigureAwait(false);
 
                     responseData = new
                     {
-                        UserId = user!.Id,
+                        UserId = user.Id,
                         user.PhoneNumber,
                         user.Email,
                         user.IsSuperAdmin
@@ -198,7 +220,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 if (otpEntry == null)
                 {
-                    _logger.LogWarning("OTP login failed: No OTP found for user.");
+                    _logger.LogWarning("OTP login failed: No OTP found.");
                     return BadRequest(ApiResponseFactory.Fail("OTP expired or not found."));
                 }
 
@@ -210,27 +232,32 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 if (otpEntry.OtpCode != dto.Otp)
                 {
-                    _logger.LogWarning("OTP login failed: Invalid OTP provided.");
+                    _logger.LogWarning("OTP login failed: Invalid OTP submitted.");
                     return BadRequest(ApiResponseFactory.Fail("Invalid OTP."));
                 }
 
                 var expiredOtps = await _context.LabOtpEntries
-                  .Where(x => x.Email == dto.Email && x.ExpiryTime < now || x.Email == dto.PhoneNumber && x.ExpiryTime < now)
-                  .ToListAsync();
+                    .Where(x =>
+                        (x.Email == dto.Email || x.Email == dto.PhoneNumber) &&
+                        x.ExpiryTime < now)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
                 _context.LabOtpEntries.RemoveRange(expiredOtps);
                 _context.LabOtpEntries.Remove(otpEntry);
-                await _context.SaveChangesAsync();
 
-                _logger.LogInformation("OTP login successful for user.");
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+                await transaction.CommitAsync().ConfigureAwait(false);
+
+                _logger.LogInformation("OTP login successful for identifier {Identifier}.", dto.Email ?? dto.PhoneNumber);
                 return Ok(ApiResponseFactory.Success(responseData, "Lab login successful, proceed to LabAdmin login."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "OTP login failed due to an unexpected error for Email {Email}", dto.Email);
+                _logger.LogError(ex, "OTP login failed due to unexpected error for Email {Email}", dto.Email);
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
-
 
 
 
@@ -246,30 +273,37 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                var errors = ModelState.Values.SelectMany(v => v.Errors)
+                                              .Select(e => e.ErrorMessage)
+                                              .ToList();
                 _logger.LogWarning("Validation failed: {@Errors}", errors);
                 return BadRequest(ApiResponseFactory.Fail(errors));
             }
 
             try
             {
-                var user = await _context.LabSignups.FirstOrDefaultAsync(u => u.Email == dto.Email);
+                using var transaction = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+
+                var user = await _context.LabSignups
+                    .FirstOrDefaultAsync(u => u.Email == dto.Email)
+                    .ConfigureAwait(false);
+
                 if (user == null)
                 {
-                    _logger.LogWarning("Password login failed: Email {Email} not registered.", dto.Email);
+                    _logger.LogWarning("Login failed: Email {Email} not registered.", dto.Email);
                     return BadRequest(ApiResponseFactory.Fail("Email not registered."));
                 }
 
-                if (string.IsNullOrEmpty(user.PasswordHash))
+                if (string.IsNullOrWhiteSpace(user.PasswordHash))
                 {
-                    _logger.LogWarning("Password login failed: No password set for Email {Email}.", dto.Email);
+                    _logger.LogWarning("Login failed: No password set for Email {Email}.", dto.Email);
                     return BadRequest(ApiResponseFactory.Fail("Password is not set for this account."));
                 }
 
                 var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, dto.Password);
                 if (result == PasswordVerificationResult.Failed)
                 {
-                    _logger.LogWarning("Password login failed: Incorrect password provided for Email {Email}.", dto.Email);
+                    _logger.LogWarning("Login failed: Incorrect password for Email {Email}.", dto.Email);
                     return BadRequest(ApiResponseFactory.Fail("Incorrect password."));
                 }
 
@@ -280,12 +314,14 @@ namespace HFiles_Backend.API.Controllers.Labs
                     user.IsSuperAdmin
                 };
 
-                _logger.LogInformation("Password login successful for Email {Email}. Proceeding to LabAdmin login.", dto.Email);
+                await transaction.CommitAsync().ConfigureAwait(false);
+
+                _logger.LogInformation("Password login successful for Email {Email}.", dto.Email);
                 return Ok(ApiResponseFactory.Success(responseData, "Lab login successful, proceed to LabAdmin login."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Password login failed due to an unexpected error for Email {Email}", dto.Email);
+                _logger.LogError(ex, "Password login failed due to unexpected error for Email {Email}", dto.Email);
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }

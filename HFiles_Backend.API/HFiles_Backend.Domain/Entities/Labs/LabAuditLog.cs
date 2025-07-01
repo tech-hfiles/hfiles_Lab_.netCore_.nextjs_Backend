@@ -15,7 +15,7 @@ namespace HFiles_Backend.Domain.Entities.Labs
         public string? EntityName { get; set; }
         public string? Details { get; set; }
         public string? Notifications { get; set; }
-        public long? Timestamp { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        public long Timestamp { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         public string? IpAddress { get; set; }
         public string? SessionId { get; set; }
         public string? Url { get; set; }

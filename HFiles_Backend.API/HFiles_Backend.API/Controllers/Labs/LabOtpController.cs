@@ -5,7 +5,6 @@ using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -28,19 +27,23 @@ namespace HFiles_Backend.API.Controllers.Labs
         {
             HttpContext.Items["Log-Category"] = "Authentication";
 
-            _logger.LogInformation("Received OTP generation request for Email: {Email}, Phone Number: {PhoneNumber}", dto.Email, dto.PhoneNumber);
-
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
-                _logger.LogWarning("Validation failed: {@Errors}", errors);
+                var errors = ModelState.Values.SelectMany(v => v.Errors)
+                                              .Select(e => e.ErrorMessage)
+                                              .ToList();
+                _logger.LogWarning("Validation failed for OTP request: {@Errors}", errors);
                 return BadRequest(ApiResponseFactory.Fail(errors));
             }
+
+            _logger.LogInformation("OTP requested for Email: {Email}, Phone: {Phone}", dto.Email, dto.PhoneNumber);
 
             try
             {
                 var otp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
                 var now = DateTime.UtcNow;
+
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
                 var otpEntry = new LabOtpEntry
                 {
@@ -53,39 +56,39 @@ namespace HFiles_Backend.API.Controllers.Labs
                 _context.LabOtpEntries.Add(otpEntry);
                 await _context.SaveChangesAsync();
 
-                _logger.LogInformation("OTP generated for Email {Email}. OTP: {Otp}, Expiry Time: {ExpiryTime}", dto.Email, otp, otpEntry.ExpiryTime);
+                _logger.LogInformation("OTP {Otp} generated for Email {Email} at {Time}", otp, dto.Email, now);
 
                 var subject = "Complete Your Hfiles Lab Registration";
-                var body = $@"
+                var body = $"""
                 <p>Hello <strong>{dto.LabName}</strong>,</p>
                 <p>Welcome to Hfiles!</p>
-                <p>To complete your registration, please use the following One-Time Password (OTP):</p>
+                <p>Your One-Time Password (OTP) is:</p>
                 <h2>{otp}</h2>
-                <p>This OTP will expire in 5 minutes.</p>
-                <p>For support, contact us at <a href='mailto:contact@hfiles.in'>contact@hfiles.in</a>.</p>
-                <p>Best regards,<br>The Hfiles Team</p>
-                <p style='font-size:small; color:gray;'>If you did not sign up for Hfiles, please disregard this email.</p>
-                ";
+                <p>This OTP expires in 5 minutes.</p>
+                <p>Need help? <a href='mailto:contact@hfiles.in'>contact@hfiles.in</a></p>
+                <p>– The Hfiles Team</p>
+                """;
 
-                await _emailService.SendEmailAsync(dto.Email, subject, body);
-                await _whatsappService.SendOtpAsync(otp, dto.PhoneNumber);
+                await _emailService.SendEmailAsync(dto.Email, subject, body).ConfigureAwait(false);
+                await _whatsappService.SendOtpAsync(otp, dto.PhoneNumber).ConfigureAwait(false);
 
-                _logger.LogInformation("OTP sent successfully to Email {Email} and Phone Number {PhoneNumber}.", dto.Email, dto.PhoneNumber);
+                await transaction.CommitAsync();
 
-                var result = new
+                _logger.LogInformation("OTP sent to {Email} and {Phone}", dto.Email, dto.PhoneNumber);
+
+                return Ok(ApiResponseFactory.Success(new
                 {
                     dto.Email,
                     dto.PhoneNumber,
                     ExpiresInMinutes = 5
-                };
-
-                return Ok(ApiResponseFactory.Success(result, "OTP has been sent to your email and phone number."));
+                }, "OTP has been sent to your email and phone number."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "OTP generation failed due to an unexpected error for Email {Email}", dto.Email);
-                return StatusCode(500, ApiResponseFactory.Fail($"OTP generated but failed to send notification: {ex.Message}"));
+                _logger.LogError(ex, "Failed to process OTP for Email {Email}", dto.Email);
+                return StatusCode(500, ApiResponseFactory.Fail($"OTP generated but failed to send: {ex.Message}"));
             }
         }
+
     }
 }

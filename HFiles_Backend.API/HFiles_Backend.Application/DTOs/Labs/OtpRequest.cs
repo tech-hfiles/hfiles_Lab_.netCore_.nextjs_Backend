@@ -1,24 +1,20 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
     public class OtpRequest
     {
-        [Required(ErrorMessage = "LabName is required.")]
+        [Required(ErrorMessage = "Lab name is required.")]
+        [MaxLength(100, ErrorMessage = "Lab name must not exceed 100 characters.")]
         public string LabName { get; set; } = null!;
 
         [Required(ErrorMessage = "Email is required.")]
-        [EmailAddress(ErrorMessage = "Invalid Email Address.")]
+        [EmailAddress(ErrorMessage = "Invalid email address.")]
+        [MaxLength(100, ErrorMessage = "Email must not exceed 100 characters.")]
         public string Email { get; set; } = null!;
 
         [Required(ErrorMessage = "Phone number is required.")]
-        [Phone(ErrorMessage = "Invalid phone number.")]
+        [RegularExpression(@"^\d{10}$", ErrorMessage = "Phone number must be exactly 10 digits.")]
         public string PhoneNumber { get; set; } = null!;
-
     }
 }

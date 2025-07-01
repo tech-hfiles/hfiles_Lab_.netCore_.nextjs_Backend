@@ -1,4 +1,5 @@
-﻿using HFiles_Backend.API.Services;
+﻿using System.ComponentModel.DataAnnotations;
+using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
@@ -16,14 +17,12 @@ namespace HFiles_Backend.API.Controllers.Labs
         AppDbContext context,
         IPasswordHasher<LabSuperAdmin> passwordHasher,
         JwtTokenService jwtTokenService,
-        ILogger<LabAdminController> logger,
-        IServiceProvider serviceProvider) : ControllerBase
+        ILogger<LabAdminController> logger) : ControllerBase
     {
         private readonly AppDbContext _context = context;
         private readonly IPasswordHasher<LabSuperAdmin> _passwordHasher = passwordHasher;
         private readonly JwtTokenService _jwtTokenService = jwtTokenService;
         private readonly ILogger<LabAdminController> _logger = logger;
-        private readonly IServiceProvider _serviceProvider = serviceProvider;
 
         public static class UserRoles
         {
@@ -41,7 +40,6 @@ namespace HFiles_Backend.API.Controllers.Labs
         public async Task<IActionResult> CreateLabAdmin([FromBody] CreateSuperAdmin dto)
         {
             HttpContext.Items["Log-Category"] = "User Management";
-
             _logger.LogInformation("Received request to create Super Admin. Payload: {@dto}", dto);
 
             if (!ModelState.IsValid)
@@ -53,13 +51,18 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
-                if (dto.UserId == 0 || string.IsNullOrEmpty(dto.Email))
+                if (dto.UserId == 0 || string.IsNullOrWhiteSpace(dto.Email))
                 {
                     _logger.LogWarning("UserId or Email missing in request.");
                     return BadRequest(ApiResponseFactory.Fail("UserId and Email are required in the payload."));
                 }
 
-                var lab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == dto.UserId && l.Email == dto.Email);
+                await using var transaction = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+
+                var lab = await _context.LabSignups
+                    .FirstOrDefaultAsync(l => l.Id == dto.UserId && l.Email == dto.Email)
+                    .ConfigureAwait(false);
+
                 if (lab == null)
                 {
                     _logger.LogWarning("Invalid credentials provided: UserId={UserId}, Email={Email}", dto.UserId, dto.Email);
@@ -72,7 +75,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return BadRequest(ApiResponseFactory.Fail($"A Super Admin already exists for the lab {lab.LabName}."));
                 }
 
-                var userDetails = await _context.Set<UserDetails>().FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
+                var userDetails = await _context.UserDetails
+                    .FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID)
+                    .ConfigureAwait(false);
+
                 if (userDetails == null)
                 {
                     _logger.LogWarning("No user found with HFID {HFID}.", dto.HFID);
@@ -94,11 +100,12 @@ namespace HFiles_Backend.API.Controllers.Labs
                 lab.IsSuperAdmin = true;
                 _context.LabSignups.Update(lab);
 
-                await _context.SaveChangesAsync();
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+                await transaction.CommitAsync().ConfigureAwait(false);
 
                 var tokenData = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, newAdmin.Id, dto.Role);
 
-                _logger.LogInformation("Super Admin created successfully. Token Issued: {Token}, Session ID: {SessionId}", tokenData.Token, tokenData.SessionId);
+                _logger.LogInformation("Super Admin created successfully. Token issued. Session ID: {SessionId}", tokenData.SessionId);
 
                 var responseData = new
                 {
@@ -125,7 +132,6 @@ namespace HFiles_Backend.API.Controllers.Labs
         public async Task<IActionResult> LabAdminLogin([FromBody] UserLogin dto)
         {
             HttpContext.Items["Log-Category"] = "Authentication";
-
             _logger.LogInformation("Received login request for HFID: {HFID}, Role: {Role}", dto.HFID, dto.Role);
 
             if (!ModelState.IsValid)
@@ -137,8 +143,11 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
+                await using var transaction = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+
                 var userDetails = await _context.Set<UserDetails>()
-                    .FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
+                    .FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID)
+                    .ConfigureAwait(false);
 
                 if (userDetails == null)
                 {
@@ -146,10 +155,11 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return NotFound(ApiResponseFactory.Fail($"No Super Admin/Admin/Member found with HFID {dto.HFID}."));
                 }
 
-                string username = $"{userDetails.user_firstname} {userDetails.user_lastname}";
+                var username = $"{userDetails.user_firstname} {userDetails.user_lastname}";
 
                 var labSignup = await _context.LabSignups
-                    .FirstOrDefaultAsync(l => l.Id == dto.UserId && l.Email == dto.Email && l.DeletedBy == 0);
+                    .FirstOrDefaultAsync(l => l.Id == dto.UserId && l.Email == dto.Email && l.DeletedBy == 0)
+                    .ConfigureAwait(false);
 
                 if (labSignup == null)
                 {
@@ -157,51 +167,49 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return NotFound(ApiResponseFactory.Fail($"Invalid Credentials."));
                 }
 
-                object response = null!;
-                int? recordId = labSignup.Id;
+                object response;
 
                 if (dto.Role == "Super Admin")
                 {
-                    var admin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a =>
-                        a.UserId == userDetails.user_id &&
-                        (a.LabId == dto.UserId || a.LabId == labSignup.LabReference) && a.IsMain == 1
-                    );
+                    var admin = await _context.LabSuperAdmins
+                        .FirstOrDefaultAsync(a =>
+                            a.UserId == userDetails.user_id &&
+                            (a.LabId == dto.UserId || a.LabId == labSignup.LabReference) &&
+                            a.IsMain == 1)
+                        .ConfigureAwait(false);
 
                     if (admin == null)
                     {
-                        _logger.LogWarning("Login failed: User with HFID {HFID} is not a Super Admin", dto.HFID);
+                        _logger.LogWarning("Login failed: Not a Super Admin for HFID {HFID}", dto.HFID);
                         return Unauthorized(ApiResponseFactory.Fail($"The user with HFID: {dto.HFID} is not a Super Admin."));
                     }
 
-                    if (string.IsNullOrEmpty(admin.PasswordHash))
+                    if (string.IsNullOrWhiteSpace(admin.PasswordHash))
                     {
                         _logger.LogWarning("Login failed: Password not set for Super Admin {Username}", username);
                         return Unauthorized(ApiResponseFactory.Fail($"Password is not set for Super Admin: {username}"));
                     }
 
-                    var passwordCheck = _passwordHasher.VerifyHashedPassword(admin, admin.PasswordHash, dto.Password);
-                    if (passwordCheck != PasswordVerificationResult.Success)
+                    if (_passwordHasher.VerifyHashedPassword(admin, admin.PasswordHash, dto.Password) != PasswordVerificationResult.Success)
                     {
                         _logger.LogWarning("Login failed: Invalid password for Super Admin {Username}", username);
                         return Unauthorized(ApiResponseFactory.Fail("Invalid password."));
                     }
 
                     var (Token, SessionId) = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, admin.Id, dto.Role);
+                    _logger.LogInformation("Super Admin login success: {Username} | Session ID: {SessionId}", username, SessionId);
 
-                    _logger.LogInformation("Super Admin Login successful: {Username} | Session ID: {SessionId}", username, SessionId);
-
-                    response = new
-                    {
-                        Username = username,
-                        Token,
-                        SessionId
-                    };
-
-                    return Ok(ApiResponseFactory.Success(response, $"{dto.Role} successfully logged in."));
+                    response = new { Username = username, Token, SessionId };
                 }
                 else if (dto.Role == "Admin" || dto.Role == "Member")
                 {
-                    var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.UserId == userDetails.user_id && m.LabId == dto.UserId && m.DeletedBy == 0 && m.Role == dto.Role);
+                    var member = await _context.LabMembers
+                        .FirstOrDefaultAsync(m =>
+                            m.UserId == userDetails.user_id &&
+                            m.LabId == dto.UserId &&
+                            m.DeletedBy == 0 &&
+                            m.Role == dto.Role)
+                        .ConfigureAwait(false);
 
                     if (member == null)
                     {
@@ -209,39 +217,35 @@ namespace HFiles_Backend.API.Controllers.Labs
                         return Unauthorized(ApiResponseFactory.Fail($"{dto.Role} not found. Please register first."));
                     }
 
-                    if (string.IsNullOrEmpty(member.PasswordHash))
+                    if (string.IsNullOrWhiteSpace(member.PasswordHash))
                     {
                         _logger.LogWarning("Login failed: Password not set for {Role} {Username}", dto.Role, username);
-                        return Unauthorized(ApiResponseFactory.Fail($"Password is not set for Member/Admin: {username}"));
+                        return Unauthorized(ApiResponseFactory.Fail($"Password is not set for {dto.Role}: {username}"));
                     }
 
-                    var passwordCheck = _passwordHasher.VerifyHashedPassword(null!, member.PasswordHash, dto.Password);
-                    if (passwordCheck != PasswordVerificationResult.Success)
+                    if (_passwordHasher.VerifyHashedPassword(null!, member.PasswordHash, dto.Password) != PasswordVerificationResult.Success)
                     {
                         _logger.LogWarning("Login failed: Invalid password for {Role} {Username}", dto.Role, username);
                         return Unauthorized(ApiResponseFactory.Fail("Invalid password."));
                     }
 
                     var tokenData = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, member.Id, dto.Role);
+                    _logger.LogInformation("{Role} login success: {Username} | Session ID: {SessionId}", dto.Role, username, tokenData.SessionId);
 
-                    _logger.LogInformation("User Login successful: {Username} | Role: {Role} | Session ID: {SessionId}", username, dto.Role, tokenData.SessionId);
-
-                    response = new
-                    {
-                        Username = username,
-                        tokenData.Token,
-                        tokenData.SessionId
-                    };
-
-                    return Ok(ApiResponseFactory.Success(response, $"{dto.Role} successfully logged in."));
+                    response = new { Username = username, tokenData.Token, tokenData.SessionId };
+                }
+                else
+                {
+                    _logger.LogWarning("Login failed: Invalid role specified {Role}", dto.Role);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid role specified."));
                 }
 
-                _logger.LogWarning("Login failed: Invalid role specified {Role}", dto.Role);
-                return BadRequest(ApiResponseFactory.Fail("Invalid role specified."));
+                await transaction.CommitAsync().ConfigureAwait(false);
+                return Ok(ApiResponseFactory.Success(response, $"{dto.Role} successfully logged in."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Login Error: Unexpected failure occurred.");
+                _logger.LogError(ex, "Login Error: Unexpected failure.");
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
@@ -252,15 +256,19 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Get all users (Super Admin/Admin/Members)
         [HttpGet("labs/{labId}/users")]
-        public async Task<IActionResult> GetAllLabUsers([FromRoute] int labId)
+        public async Task<IActionResult> GetAllLabUsers([FromRoute][Range(1, int.MaxValue, ErrorMessage = "Lab ID must be greater than zero.")] int labId)
         {
             HttpContext.Items["Log-Category"] = "User Retrieval";
-
             _logger.LogInformation("Received request to fetch all users for Lab ID: {LabId}", labId);
 
             try
             {
-                var labEntry = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
+                await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+
+                var labEntry = await _context.LabSignups
+                    .FirstOrDefaultAsync(l => l.Id == labId)
+                    .ConfigureAwait(false);
+
                 if (labEntry == null)
                 {
                     _logger.LogWarning("Lab with ID {LabId} not found.", labId);
@@ -269,48 +277,48 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 int mainLabId = labEntry.LabReference == 0 ? labId : labEntry.LabReference;
 
-                _logger.LogInformation("Fetching Super Admin details for Main Lab ID: {MainLabId}", mainLabId);
-                var superAdmin = await (from a in _context.LabSuperAdmins
-                                        join u in _context.UserDetails on a.UserId equals u.user_id
-                                        where a.LabId == mainLabId && a.IsMain == 1
-                                        select new User
-                                        {
-                                            MemberId = a.Id,
-                                            HFID = u.user_membernumber ?? string.Empty,
-                                            Name = $"{u.user_firstname} {u.user_lastname}",
-                                            Email = u.user_email ?? string.Empty,
-                                            Role = UserRoles.SuperAdmin,
-                                            ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image
-                                        }).FirstOrDefaultAsync();
+                var superAdmin = await (
+                    from a in _context.LabSuperAdmins
+                    join u in _context.UserDetails on a.UserId equals u.user_id
+                    where a.LabId == mainLabId && a.IsMain == 1
+                    select new User
+                    {
+                        MemberId = a.Id,
+                        HFID = u.user_membernumber ?? string.Empty,
+                        Name = $"{u.user_firstname} {u.user_lastname}",
+                        Email = u.user_email ?? string.Empty,
+                        Role = UserRoles.SuperAdmin,
+                        ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image
+                    }).FirstOrDefaultAsync().ConfigureAwait(false);
 
-                _logger.LogInformation("Fetching members for Lab ID: {LabId}", labId);
-                var membersList = await (from m in _context.LabMembers
-                                         join u in _context.UserDetails on m.UserId equals u.user_id
-                                         where m.LabId == labId && m.DeletedBy == 0
-                                         select new
-                                         {
-                                             MemberId = m.Id,
-                                             m.UserId,
-                                             HFID = u.user_membernumber,
-                                             Name = $"{u.user_firstname} {u.user_lastname}",
-                                             Email = u.user_email,
-                                             m.Role,
-                                             m.CreatedBy,
-                                             m.PromotedBy,
-                                             ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image
-                                         }).ToListAsync();
+                var membersList = await (
+                    from m in _context.LabMembers
+                    join u in _context.UserDetails on m.UserId equals u.user_id
+                    where m.LabId == labId && m.DeletedBy == 0
+                    select new
+                    {
+                        MemberId = m.Id,
+                        m.UserId,
+                        HFID = u.user_membernumber,
+                        Name = $"{u.user_firstname} {u.user_lastname}",
+                        Email = u.user_email,
+                        m.Role,
+                        m.CreatedBy,
+                        m.PromotedBy,
+                        ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image
+                    }).ToListAsync().ConfigureAwait(false);
 
                 _logger.LogInformation("Total Members found: {MemberCount}", membersList.Count);
 
                 var labAdmins = await _context.LabSuperAdmins
                     .Where(a => a.LabId == labId)
-                    .ToDictionaryAsync(a => a.Id);
+                    .ToDictionaryAsync(a => a.Id).ConfigureAwait(false);
 
                 var labMembers = await _context.LabMembers
-                    .ToDictionaryAsync(m => m.Id);
+                    .ToDictionaryAsync(m => m.Id).ConfigureAwait(false);
 
                 var userDetails = await _context.UserDetails
-                    .ToDictionaryAsync(u => u.user_id);
+                    .ToDictionaryAsync(u => u.user_id).ConfigureAwait(false);
 
                 var memberDtos = membersList.Select(m =>
                 {
@@ -318,24 +326,16 @@ namespace HFiles_Backend.API.Controllers.Labs
                     string createdByName = "Unknown";
 
                     if (labAdmins.ContainsKey(m.PromotedBy))
-                    {
                         promotedByName = "Main";
-                    }
-                    else if (labMembers.TryGetValue(m.PromotedBy, out var promotingMember) &&
-                             userDetails.TryGetValue(promotingMember.UserId, out var promoterDetails))
-                    {
+                    else if (labMembers.TryGetValue(m.PromotedBy, out var promoter) &&
+                             userDetails.TryGetValue(promoter.UserId, out var promoterDetails))
                         promotedByName = promoterDetails.user_firstname ?? "Unknown";
-                    }
 
                     if (labAdmins.ContainsKey(m.CreatedBy))
-                    {
                         createdByName = "Main";
-                    }
-                    else if (labMembers.TryGetValue(m.CreatedBy, out var creatingMember) &&
-                             userDetails.TryGetValue(creatingMember.UserId, out var creatorDetails))
-                    {
+                    else if (labMembers.TryGetValue(m.CreatedBy, out var creator) &&
+                             userDetails.TryGetValue(creator.UserId, out var creatorDetails))
                         createdByName = creatorDetails.user_firstname ?? "Unknown";
-                    }
 
                     return new User
                     {
@@ -350,27 +350,29 @@ namespace HFiles_Backend.API.Controllers.Labs
                     };
                 }).ToList();
 
-                if (superAdmin == null && !memberDtos.Any())
+                if (superAdmin == null && memberDtos.Count == 0)
                 {
                     _logger.LogWarning("No active admins or members found for Lab ID {LabId}.", labId);
                     return NotFound(ApiResponseFactory.Fail($"No active admins or members found for Lab ID {labId}."));
                 }
 
+                await tx.CommitAsync().ConfigureAwait(false);
+
                 var response = new
                 {
                     LabId = labId,
                     MainLabId = mainLabId,
-                    UserCounts = membersList.Count + 1,
+                    UserCounts = memberDtos.Count + 1,
                     SuperAdmin = superAdmin,
                     Members = memberDtos
                 };
 
-                _logger.LogInformation("Successfully fetched users for Lab ID {LabId}. Returning response.", labId);
+                _logger.LogInformation("Successfully fetched users for Lab ID {LabId}.", labId);
                 return Ok(ApiResponseFactory.Success(response, "Users fetched successfully."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while fetching users for Lab ID {LabId}.", labId);
+                _logger.LogError(ex, "User retrieval failed for Lab ID {LabId}.", labId);
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
@@ -381,11 +383,10 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Promotes Admin to Super Admin
         [HttpPost("labs/admin/promote")]
-        [Authorize (Policy = "SuperAdminPolicy")]
+        [Authorize(Policy = "SuperAdminPolicy")]
         public async Task<IActionResult> PromoteLabMemberToSuperAdmin([FromBody] PromoteAdmin dto)
         {
             HttpContext.Items["Log-Category"] = "Role Management";
-
             _logger.LogInformation("Received promotion request for Member ID: {MemberId}", dto.MemberId);
 
             if (!ModelState.IsValid)
@@ -401,65 +402,66 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
 
                 if (labAdminIdClaim == null || !int.TryParse(labAdminIdClaim.Value, out int labAdminId))
-                {
-                    _logger.LogWarning("Promotion failed: Invalid or missing Super Admin ID in token.");
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing Super Admin Id in token."));
-                }
 
                 if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-                {
-                    _logger.LogWarning("Promotion failed: Invalid or missing lab ID in token.");
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing labId in token."));
-                }
 
-                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
+                await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+
+                var loggedInLab = await _context.LabSignups
+                    .FirstOrDefaultAsync(l => l.Id == labId).ConfigureAwait(false);
+
                 if (loggedInLab == null)
-                {
-                    _logger.LogWarning("Promotion failed: Lab ID {LabId} not found.", labId);
                     return BadRequest(ApiResponseFactory.Fail("Lab not found"));
-                }
 
                 int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
 
                 var branchIds = await _context.LabSignups
                     .Where(l => l.LabReference == mainLabId)
                     .Select(l => l.Id)
-                    .ToListAsync();
+                    .ToListAsync().ConfigureAwait(false);
 
                 branchIds.Add(mainLabId);
 
-                var member = await _context.LabMembers.FirstOrDefaultAsync(m =>
-                    m.Id == dto.MemberId && m.DeletedBy == 0 && (branchIds.Contains(m.LabId) || m.LabId == mainLabId));
+                var member = await _context.LabMembers
+                    .FirstOrDefaultAsync(m =>
+                        m.Id == dto.MemberId &&
+                        m.DeletedBy == 0 &&
+                        (branchIds.Contains(m.LabId) || m.LabId == mainLabId))
+                    .ConfigureAwait(false);
 
                 if (member == null)
-                {
-                    _logger.LogWarning("Promotion failed: Member ID {MemberId} not found or not eligible.", dto.MemberId);
                     return NotFound(ApiResponseFactory.Fail($"No lab member found or not eligible for promotion."));
-                }
-
-                _logger.LogInformation("Promoting Member ID {MemberId} to Super Admin.", dto.MemberId);
 
                 member.DeletedBy = labAdminId;
                 _context.LabMembers.Update(member);
 
-                var currentSuperAdmin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a => a.IsMain == 1 && a.LabId == mainLabId);
+                var currentSuperAdmin = await _context.LabSuperAdmins
+                    .FirstOrDefaultAsync(a => a.IsMain == 1 && a.LabId == mainLabId)
+                    .ConfigureAwait(false);
 
                 if (currentSuperAdmin == null)
-                {
-                    _logger.LogWarning("Promotion failed: No active Super Admin found.");
                     return NotFound(ApiResponseFactory.Fail($"No active Super Admin found."));
-                }
 
                 currentSuperAdmin.IsMain = 0;
                 _context.LabSuperAdmins.Update(currentSuperAdmin);
 
                 long epoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                var existedSuperAdmin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a => a.UserId == member.UserId && a.LabId == mainLabId && a.IsMain == 0);
-                var existedMember = await _context.LabMembers.FirstOrDefaultAsync(m =>
-                    m.UserId == currentSuperAdmin.UserId && (branchIds.Contains(m.LabId) || m.LabId == currentSuperAdmin.LabId) && m.DeletedBy != 0);
 
-                LabSuperAdmin? newSuperAdmin = null;
-                LabMember? newLabMember = null;
+                var existedSuperAdmin = await _context.LabSuperAdmins
+                    .FirstOrDefaultAsync(a => a.UserId == member.UserId && a.LabId == mainLabId && a.IsMain == 0)
+                    .ConfigureAwait(false);
+
+                var existedMember = await _context.LabMembers
+                    .FirstOrDefaultAsync(m =>
+                        m.UserId == currentSuperAdmin.UserId &&
+                        (branchIds.Contains(m.LabId) || m.LabId == currentSuperAdmin.LabId) &&
+                        m.DeletedBy != 0)
+                    .ConfigureAwait(false);
+
+                LabSuperAdmin newSuperAdmin;
+                LabMember newLabMember;
 
                 if (existedSuperAdmin != null)
                 {
@@ -509,24 +511,39 @@ namespace HFiles_Backend.API.Controllers.Labs
                     _context.LabMembers.Add(newLabMember);
                 }
 
-                await _context.SaveChangesAsync();
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
+
+                var oldSuperAdminUser = await _context.UserDetails
+                    .FirstOrDefaultAsync(u => u.user_id == currentSuperAdmin.UserId)
+                    .ConfigureAwait(false);
+
+                var newSuperAdminUser = await _context.UserDetails
+                    .FirstOrDefaultAsync(u => u.user_id == member.UserId)
+                    .ConfigureAwait(false);
+
+                string newSuperAdminName = $"{newSuperAdminUser?.user_firstname} {newSuperAdminUser?.user_lastname}".Trim();
+                string oldSuperAdminName = $"{oldSuperAdminUser?.user_firstname} {oldSuperAdminUser?.user_lastname}".Trim();
 
                 var response = new
                 {
-                    NewSuperAdminId = newSuperAdmin?.Id,
+                    NewSuperAdminId = newSuperAdmin.Id,
                     OldSuperAdminId = currentSuperAdmin.Id,
-                    NewMemberId = newLabMember?.Id,
+                    NewMemberId = newLabMember.Id,
                     OldMemberId = member.Id,
-                    UpdatedDeletedBy = member.DeletedBy
+                    UpdatedDeletedBy = member.DeletedBy,
+                    NewSuperAdminUsername = newSuperAdminName,
+                    OldSuperAdminUsername = oldSuperAdminName,
+                    BranchLabId = member.LabId != mainLabId ? member.LabId : 0
                 };
 
-                _logger.LogInformation("Promotion completed successfully. New Super Admin ID: {NewSuperAdminId}, Old Super Admin ID: {OldSuperAdminId}", newSuperAdmin?.Id, currentSuperAdmin.Id);
+                _logger.LogInformation("Promotion successful. New SuperAdmin: {NewSuperAdminId}, Old SuperAdmin: {OldSuperAdminId}", newSuperAdmin.Id, currentSuperAdmin.Id);
 
                 return Ok(ApiResponseFactory.Success(response, $"{member.Role} promoted to Super Admin successfully."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Promotion failed due to an unexpected error.");
+                _logger.LogError(ex, "Promotion failed due to unexpected error.");
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }

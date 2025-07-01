@@ -153,6 +153,13 @@ try
     builder.Services.AddScoped<LocationService>();
     builder.Services.AddScoped<S3StorageService>();
     builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, RoleBasedAuthorization>();
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<AuditLogFilter>();
+
+    builder.Services.AddControllers(options =>
+    {
+        options.Filters.Add<AuditLogFilter>(); 
+    });
 
 
     // DbContext
@@ -240,8 +247,8 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
 
-    app.UseMiddleware<ExceptionLoggingMiddleware>();
-    app.UseMiddleware<ApiLoggingMiddleware>();
+    //app.UseMiddleware<ExceptionLoggingMiddleware>();
+    //app.UseMiddleware<ApiLoggingMiddleware>();
 
     app.MapControllers();
     app.Run();

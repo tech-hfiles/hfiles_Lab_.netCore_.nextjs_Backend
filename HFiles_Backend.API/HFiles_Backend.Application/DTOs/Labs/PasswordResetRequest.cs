@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
@@ -11,6 +6,8 @@ namespace HFiles_Backend.Application.DTOs.Labs
     {
         [Required(ErrorMessage = "Email is required.")]
         [EmailAddress(ErrorMessage = "Invalid email address.")]
+        [MaxLength(100, ErrorMessage = "Email must not exceed 100 characters.")]
         public string Email { get; set; } = null!;
     }
+
 }

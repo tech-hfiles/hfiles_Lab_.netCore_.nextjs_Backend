@@ -53,6 +53,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (createdByClaim == null || !int.TryParse(createdByClaim, out int createdBy))
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabAdminId in token."));
 
+                var createdByUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == createdBy && u.DeletedBy == 0);
+
                 await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
 
                 var userDetails = await _context.Users
@@ -110,7 +112,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                     Email = userDetails.Email,
                     LabId = newMember.LabId,
                     LabName = labEntry.LabName,
-                    CreatedBy = createdBy,
+                    CreatedBy = createdByUser.FirstName + " " + createdByUser.LastName,
                     Role = newMember.Role,
                     EpochTime = newMember.EpochTime,
                     BranchLabId = newMember.LabId != labId ? newMember.LabId : 0

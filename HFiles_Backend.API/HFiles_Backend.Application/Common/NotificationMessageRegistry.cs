@@ -50,26 +50,17 @@ namespace HFiles_Backend.Application.Common
             {
                 try
                 {
-                    if (dto is CreateMemberResponse member)
+                    CreateMemberResponse? member = dto switch
                     {
-                        if (!string.IsNullOrWhiteSpace(member.Name))
-                        {
-                            return $"{member.Name} was successfully added to {member.LabName}.";
-                        }
-                    }
+                        CreateMemberResponse m => m,
+                        string rawJson => JsonSerializer.Deserialize<CreateMemberResponse>(rawJson),
+                        JsonElement element => JsonSerializer.Deserialize<CreateMemberResponse>(element.GetRawText()),
+                        _ => null
+                    };
 
-                    if (dto is string raw)
+                    if (member != null && !string.IsNullOrWhiteSpace(member.Name))
                     {
-                        using var doc = JsonDocument.Parse(raw);
-                        var root = doc.RootElement;
-
-                        var name = root.GetProperty("Name").GetString();
-                        var labName = root.GetProperty("LabName").GetString();
-
-                        if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(labName))
-                        {
-                            return $"{name} was successfully added to {labName}.";
-                        }
+                        return $"{member.Name} was successfully added to {member.CreatedBy}.";
                     }
 
                     return "A new member was successfully added.";

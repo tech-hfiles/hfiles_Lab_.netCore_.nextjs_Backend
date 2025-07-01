@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using HFiles_Backend.Application.DTOs.Labs;
 
 namespace HFiles_Backend.Application.Common
 {
@@ -43,29 +44,31 @@ namespace HFiles_Backend.Application.Common
                 }
             },
 
+
             // Create Member API
             ["/api/labs/members"] = dto =>
             {
                 try
                 {
-                    if (dto is string raw && raw.Contains("Name") && raw.Contains("CreatedByName"))
+                    if (dto is CreateMemberResponse member)
+                    {
+                        if (!string.IsNullOrWhiteSpace(member.Name))
+                        {
+                            return $"{member.Name} was successfully added to {member.LabName}.";
+                        }
+                    }
+
+                    if (dto is string raw)
                     {
                         using var doc = JsonDocument.Parse(raw);
                         var root = doc.RootElement;
 
-                        if (root.TryGetProperty("data", out var data))
+                        var name = root.GetProperty("Name").GetString();
+                        var labName = root.GetProperty("LabName").GetString();
+
+                        if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(labName))
                         {
-                            var memberName = data.TryGetProperty("Name", out var memberNameProp)
-                                ? memberNameProp.GetString()
-                                : null;
-
-                            var addedByName = data.TryGetProperty("CreatedByName", out var addedByProp)
-                                ? addedByProp.GetString()
-                                : null;
-
-                            return !string.IsNullOrWhiteSpace(memberName) && !string.IsNullOrWhiteSpace(addedByName)
-                                ? $"{memberName} was successfully added by {addedByName}."
-                                : "A new member was successfully added.";
+                            return $"{name} was successfully added to {labName}.";
                         }
                     }
 
@@ -76,6 +79,8 @@ namespace HFiles_Backend.Application.Common
                     return "A new member was added.";
                 }
             },
+
+
 
 
             // Promote Member API

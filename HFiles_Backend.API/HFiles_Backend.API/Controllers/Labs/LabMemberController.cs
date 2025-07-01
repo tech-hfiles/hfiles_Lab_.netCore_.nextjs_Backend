@@ -103,18 +103,19 @@ namespace HFiles_Backend.API.Controllers.Labs
                 await _context.SaveChangesAsync().ConfigureAwait(false);
                 await tx.CommitAsync().ConfigureAwait(false);
 
-                var responseData = new
+                var responseData = new CreateMemberResponse
                 {
-                    newMember.UserId,
+                    UserId = newMember.UserId,
                     Name = $"{userDetails.FirstName} {userDetails.LastName}",
                     Email = userDetails.Email,
-                    newMember.LabId,
-                    labEntry.LabName,
+                    LabId = newMember.LabId,
+                    LabName = labEntry.LabName,
                     CreatedBy = createdBy,
-                    newMember.Role,
-                    newMember.EpochTime,
+                    Role = newMember.Role,
+                    EpochTime = newMember.EpochTime,
                     BranchLabId = newMember.LabId != labId ? newMember.LabId : 0
                 };
+
 
                 _logger.LogInformation("New lab member created successfully. User ID: {UserId}, Lab ID: {LabId}.", newMember.UserId, newMember.LabId);
                 return Ok(ApiResponseFactory.Success(responseData, "Member added successfully."));

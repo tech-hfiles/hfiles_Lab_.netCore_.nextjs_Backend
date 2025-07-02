@@ -39,7 +39,13 @@ namespace HFiles_Backend.Infrastructure.Data
                 .HasIndex(l => new { l.Id, l.LabReference })
                 .HasDatabaseName("IX_LabSignups_Id_Reference");
 
+            modelBuilder.Entity<LabSignup>()
+                .HasIndex(l => l.Pincode)
+                .HasDatabaseName("IX_LabSignups_Pincode");
 
+            modelBuilder.Entity<LabSignup>()
+                .HasIndex(l => new { l.LabReference, l.DeletedBy })
+                .HasDatabaseName("IX_LabSignups_LabReference_DeletedBy");
 
 
 
@@ -102,7 +108,7 @@ namespace HFiles_Backend.Infrastructure.Data
 
         }
 
-        public DbSet<UserReports> UserReports { get; set; }
+        //public DbSet<UserReports> UserReports { get; set; }
         public DbSet<UserDetails> UserDetails { get; set; }
         public DbSet<LabUserReports> LabUserReports { get; set; }
         public DbSet<LabSuperAdmin> LabSuperAdmins { get; set; }
@@ -111,5 +117,6 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<LabAuditLog> LabAuditLogs { get; set; }
         public DbSet<LabErrorLog> LabErrorLogs { get; set; }
         public DbSet<User> Users { get; set; }
+        public DbSet <UserReport> UserReports { get; set; }
     }
 }

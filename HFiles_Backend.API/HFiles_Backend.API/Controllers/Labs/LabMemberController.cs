@@ -21,6 +21,48 @@ namespace HFiles_Backend.API.Controllers.Labs
         private readonly LabAuthorizationService _labAuthorizationService = labAuthorizationService;
         private readonly ILogger<LabMemberController> _logger = logger;
 
+        private static string GenerateNotificationMessage(List<string> names, string promoter)
+        {
+            if (names == null || names.Count == 0)
+                return "No members promoted.";
+
+            if (names.Count == 1)
+                return $"{names[0]} was promoted to Admin by {promoter}.";
+
+            string joinedNames = string.Join(", ", names);
+            return $"{joinedNames} were promoted to Admin by {promoter}.";
+        }
+
+
+        private async Task<string?> ResolveUsernameFromClaims(HttpContext httpContext, AppDbContext dbContext)
+        {
+            var role = httpContext.User.FindFirst(ClaimTypes.Role)?.Value;
+            var adminIdStr = httpContext.User.FindFirst("LabAdminId")?.Value;
+
+            if (!int.TryParse(adminIdStr, out var adminId)) return null;
+
+            if (role == "Super Admin")
+            {
+                var superAdmin = await dbContext.LabSuperAdmins.FirstOrDefaultAsync(sa => sa.Id == adminId);
+                if (superAdmin != null)
+                {
+                    var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == superAdmin.UserId && u.DeletedBy == 0);
+                    return $"{user?.FirstName} {user?.LastName}".Trim();
+                }
+            }
+
+            if (role == "Admin")
+            {
+                var member = await dbContext.LabMembers.FirstOrDefaultAsync(m => m.Id == adminId);
+                if (member != null)
+                {
+                    var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == member.UserId && u.DeletedBy == 0);
+                    return $"{user?.FirstName} {user?.LastName}".Trim();
+                }
+            }
+
+            return null;
+        }
 
 
 
@@ -53,7 +95,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (createdByClaim == null || !int.TryParse(createdByClaim, out int createdBy))
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabAdminId in token."));
 
-                var createdByUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == createdBy && u.DeletedBy == 0);
+                string? createdByName = await ResolveUsernameFromClaims(HttpContext, _context);
+                if (string.IsNullOrWhiteSpace(createdByName))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
+
 
                 await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
 
@@ -105,19 +150,26 @@ namespace HFiles_Backend.API.Controllers.Labs
                 await _context.SaveChangesAsync().ConfigureAwait(false);
                 await tx.CommitAsync().ConfigureAwait(false);
 
+                var fullNames = $"{userDetails.FirstName} {userDetails.LastName}".Trim();
+
                 var responseData = new CreateMemberResponse
                 {
                     UserId = newMember.UserId,
-                    Name = $"{userDetails.FirstName} {userDetails.LastName}",
-                    Email = userDetails.Email,
+                    Name = fullNames,
+                    Email = userDetails.Email!,
                     LabId = newMember.LabId,
-                    LabName = labEntry.LabName,
-                    CreatedBy = createdByUser.FirstName + " " + createdByUser.LastName,
+                    LabName = labEntry.LabName!,
+                    CreatedBy = createdByName,
                     Role = newMember.Role,
                     EpochTime = newMember.EpochTime,
-                    BranchLabId = newMember.LabId != labId ? newMember.LabId : 0
+                    BranchLabId = newMember.LabId != labId ? newMember.LabId : 0,
+                    NotificationContext = new NotificationContext
+                    {
+                        MemberName = fullNames,
+                        CreatedByName = createdByName
+                    },
+                    NotificationMessage = $"{fullNames} was successfully added by {createdByName}"
                 };
-
 
                 _logger.LogInformation("New lab member created successfully. User ID: {UserId}, Lab ID: {LabId}.", newMember.UserId, newMember.LabId);
                 return Ok(ApiResponseFactory.Success(responseData, "Member added successfully."));
@@ -229,6 +281,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (!promoteResults.Any(r => ((dynamic)r).Status == "Success"))
                     return BadRequest(ApiResponseFactory.Fail(promoteResults.Select(r => ((dynamic)r).Reason).ToList()));
 
+                string? createdByName = await ResolveUsernameFromClaims(HttpContext, _context);
+                if (string.IsNullOrWhiteSpace(createdByName))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
+
                 var response = new
                 {
                     PromotedBy = promoterName,
@@ -239,8 +295,9 @@ namespace HFiles_Backend.API.Controllers.Labs
                     NotificationContext = new
                     {
                         PromotedNames = memberNames,
-                        PromoterName = promoterName
-                    }
+                        PromoterName = createdByName
+                    },
+                    NotificationMessage = GenerateNotificationMessage(memberNames, createdByName)
                 };
 
                 return Ok(ApiResponseFactory.Success(response, "Member(s) promoted successfully."));
@@ -319,7 +376,14 @@ namespace HFiles_Backend.API.Controllers.Labs
                     DeletedByRole = deletedByRole,
                     MemberName = memberName,
                     DeletedByName = deletedByName,
-                    BranchLabId = branchLabId
+                    BranchLabId = branchLabId,
+                    NotificationContext = new
+                    {
+                        MemberName = memberName,
+                        DeletedByName = deletedByName,
+                        Role = member.Role
+                    },
+                    NotificationMessage = $"{member.Role} {memberName} was deleted by {deletedByName}."
                 };
 
                 _logger.LogInformation("Successfully deleted member ID: {MemberId} by {DeletedByName} ({Role})", member.Id, deletedByName, deletedByRole);
@@ -519,8 +583,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                     {
                         ReinstatedName = reinstatedUserName,
                         RevertedByName = revertedByName
-                    }
+                    },
+                    NotificationMessage = $"{user.Role} {reinstatedUserName} was reinstated by {revertedByName}."
                 };
+
 
                 _logger.LogInformation("Reverted user ID {UserId} with new role {NewRole} by {RevertedBy}", user.Id, user.Role, revertedByName);
                 return Ok(ApiResponseFactory.Success(response, "User reverted successfully."));
@@ -602,8 +668,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                         {
                             DeletedUserName = deletedUserName,
                             DeletedByName = deletedBy
-                        }
+                        },
+                        NotificationMessage = $"{user.Role} {deletedUserName} was permanently deleted by {deletedBy}."
                     };
+
 
                     _logger.LogInformation("User ID {UserId} permanently deleted from Lab ID {LabId} by {DeletedBy} ({Role})",
                         response.UserId, response.LabId, response.DeletedBy, response.DeletedByRole);

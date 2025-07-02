@@ -13,7 +13,6 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using MySqlConnector;
 using Serilog;
-using Microsoft.AspNetCore.Http.Features;
 
 // Configure Serilog at the top
 Log.Logger = new LoggerConfiguration()

@@ -50,26 +50,34 @@ namespace HFiles_Backend.Application.Common
             {
                 try
                 {
-                    CreateMemberResponse? member = dto switch
+                    if (dto is string raw)
                     {
-                        CreateMemberResponse m => m,
-                        string rawJson => JsonSerializer.Deserialize<CreateMemberResponse>(rawJson),
-                        JsonElement element => JsonSerializer.Deserialize<CreateMemberResponse>(element.GetRawText()),
-                        _ => null
-                    };
+                        using var doc = JsonDocument.Parse(raw);
+                        var root = doc.RootElement;
 
-                    if (member != null && !string.IsNullOrWhiteSpace(member.Name))
-                    {
-                        return $"{member.Name} was successfully added to {member.CreatedBy}.";
+                        if (root.TryGetProperty("data", out var data) &&
+                            data.TryGetProperty("notificationContext", out var context))
+                        {
+                            var memberName = context.TryGetProperty("memberName", out var m) ? m.GetString() : null;
+                            var createdByName = context.TryGetProperty("createdByName", out var c) ? c.GetString() : null;
+
+                            return !string.IsNullOrWhiteSpace(memberName) && !string.IsNullOrWhiteSpace(createdByName)
+                                ? $"{memberName} was successfully added by {createdByName}."
+                                : "A new member was successfully added.";
+                        }
+
+                        return "A new member was successfully added.";
                     }
 
                     return "A new member was successfully added.";
                 }
                 catch
                 {
-                    return "A new member was added.";
+                    return "Member created.";
                 }
             },
+
+
 
 
 

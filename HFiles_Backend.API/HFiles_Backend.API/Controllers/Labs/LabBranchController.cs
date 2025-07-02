@@ -1,4 +1,5 @@
-﻿using System.Security.Claims;
+﻿using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Labs;
@@ -29,7 +30,6 @@ namespace HFiles_Backend.API.Controllers.Labs
         public async Task<IActionResult> CreateBranch([FromBody] Branch dto, [FromServices] OtpVerificationStore otpStore)
         {
             HttpContext.Items["Log-Category"] = "Lab Management";
-
             _logger.LogInformation("Received request to create a new lab branch. Payload: {@dto}", dto);
 
             if (!ModelState.IsValid)
@@ -47,42 +47,43 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
-                var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-                if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId")?.Value;
+                if (!int.TryParse(labIdClaim, out int labId))
                 {
                     _logger.LogWarning("Branch creation failed: Invalid or missing LabId claim.");
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
                 }
 
-                if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                if (!await _labAuthorizationService.IsLabAuthorized(labId, User).ConfigureAwait(false))
                 {
                     _logger.LogWarning("Branch creation failed: Lab ID {LabId} is not authorized.", labId);
                     return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only create/modify/delete data for your main lab or its branches."));
                 }
 
-                var parentLabId = labId;
-
-                bool emailExists = await _context.LabSignups.AnyAsync(u => u.Email == dto.Email);
-                if (emailExists)
+                if (await _context.LabSignups.AnyAsync(u => u.Email == dto.Email).ConfigureAwait(false))
                 {
                     _logger.LogWarning("Branch creation failed: Email {Email} is already registered.", dto.Email);
                     return BadRequest(ApiResponseFactory.Fail("Email already registered."));
                 }
 
-                var parentUser = await _context.LabSignups.FirstOrDefaultAsync(u => u.Id == parentLabId);
+                var parentUser = await _context.LabSignups
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Id == labId)
+                    .ConfigureAwait(false);
+
                 if (parentUser == null)
                 {
-                    _logger.LogWarning("Branch creation failed: Parent lab with ID {ParentLabId} not found.", parentLabId);
+                    _logger.LogWarning("Branch creation failed: Parent lab with ID {LabId} not found.", labId);
                     return Unauthorized(ApiResponseFactory.Fail("Parent lab not found."));
                 }
 
                 var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 var last6Epoch = epochTime % 1_000_000;
                 var labPrefix = dto.LabName.Length >= 3 ? dto.LabName[..3].ToUpperInvariant() : dto.LabName.ToUpperInvariant();
-                var randomDigits = new Random().Next(1000, 9999);
+                var randomDigits = Random.Shared.Next(1000, 9999);
                 var hfid = $"HF{last6Epoch}{labPrefix}{randomDigits}";
 
-                var branchUser = new LabSignup
+                var newBranch = new LabSignup
                 {
                     LabName = dto.LabName,
                     Email = dto.Email,
@@ -91,20 +92,31 @@ namespace HFiles_Backend.API.Controllers.Labs
                     PasswordHash = parentUser.PasswordHash,
                     HFID = hfid,
                     CreatedAtEpoch = epochTime,
-                    LabReference = parentLabId
+                    LabReference = labId
                 };
 
-                _context.LabSignups.Add(branchUser);
-                await _context.SaveChangesAsync();
+                await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+
+                _context.LabSignups.Add(newBranch);
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
 
                 var response = new
                 {
-                    branchUser.Id,
-                    branchUser.HFID
+                    newBranch.Id,
+                    newBranch.HFID,
+                    NotificationContext = new
+                    {
+                        BranchName = newBranch.LabName,
+                        BranchEmail = newBranch.Email,
+                        HFID = newBranch.HFID
+                    },
+                    NotificationMessage = $"Branch {newBranch.LabName} created successfully."
                 };
 
-                HttpContext.Items["CreatedBranchId"] = branchUser.Id;
-                _logger.LogInformation("Branch created successfully. Branch ID: {BranchId}, HFID: {HFID}", branchUser.Id, branchUser.HFID);
+
+                HttpContext.Items["CreatedBranchId"] = newBranch.Id;
+                _logger.LogInformation("Branch created successfully. Branch ID: {BranchId}, HFID: {HFID}", newBranch.Id, newBranch.HFID);
 
                 return Ok(ApiResponseFactory.Success(response, "Branch created successfully."));
             }
@@ -119,24 +131,28 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
+
         // Verify Branch OTP
         [HttpPost("labs/branches/verify/otp")]
         [Authorize(Policy = "SuperAdminOrAdminPolicy")]
         [Authorize]
-        public async Task<IActionResult> BranchVerifyOTP([FromBody] OtpLogin dto, [FromServices] OtpVerificationStore otpStore)
+        public async Task<IActionResult> BranchVerifyOTP(
+        [FromBody] OtpLogin dto,
+        [FromServices] OtpVerificationStore otpStore)
         {
             HttpContext.Items["Log-Category"] = "Authentication";
-
             _logger.LogInformation("Received OTP verification request for Email: {Email}", dto.Email);
 
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                var errors = ModelState.Values.SelectMany(v => v.Errors)
+                                              .Select(e => e.ErrorMessage)
+                                              .ToList();
                 _logger.LogWarning("Validation failed: {@Errors}", errors);
                 return BadRequest(ApiResponseFactory.Fail(errors));
             }
 
-            if (dto.Email == null)
+            if (string.IsNullOrWhiteSpace(dto.Email))
                 return BadRequest(ApiResponseFactory.Fail("Email must be provided."));
 
             try
@@ -146,7 +162,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var otpEntry = await _context.LabOtpEntries
                     .Where(o => o.Email == dto.Email)
                     .OrderByDescending(o => o.CreatedAt)
-                    .FirstOrDefaultAsync();
+                    .FirstOrDefaultAsync()
+                    .ConfigureAwait(false);
 
                 if (otpEntry == null)
                 {
@@ -154,24 +171,30 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return BadRequest(ApiResponseFactory.Fail("OTP expired or not found."));
                 }
 
-                if (otpEntry.ExpiryTime < DateTime.UtcNow)
+                if (otpEntry.ExpiryTime < now)
                 {
                     _logger.LogWarning("OTP verification failed: OTP expired for Email {Email}", dto.Email);
                     return BadRequest(ApiResponseFactory.Fail("OTP expired."));
                 }
 
-                if (otpEntry.OtpCode != dto.Otp)
+                if (!string.Equals(otpEntry.OtpCode, dto.Otp, StringComparison.Ordinal))
                 {
-                    _logger.LogWarning("OTP verification failed: Invalid OTP provided for Email {Email}", dto.Email);
+                    _logger.LogWarning("OTP verification failed: Invalid OTP for Email {Email}", dto.Email);
                     return BadRequest(ApiResponseFactory.Fail("Invalid OTP."));
                 }
 
+                await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+
                 var expiredOtps = await _context.LabOtpEntries
-                  .Where(x => x.Email == dto.Email && x.ExpiryTime < now)
-                  .ToListAsync();
+                    .Where(o => o.Email == dto.Email && o.ExpiryTime < now)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
                 _context.LabOtpEntries.RemoveRange(expiredOtps);
                 _context.LabOtpEntries.Remove(otpEntry);
-                await _context.SaveChangesAsync();
+
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
 
                 otpStore.StoreVerifiedOtp(dto.Email, "create_branch");
 
@@ -180,10 +203,11 @@ namespace HFiles_Backend.API.Controllers.Labs
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "OTP verification failed due to an unexpected error for Email {Email}", dto.Email);
+                _logger.LogError(ex, "OTP verification failed for Email {Email}", dto.Email);
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
+
 
 
 
@@ -195,61 +219,72 @@ namespace HFiles_Backend.API.Controllers.Labs
         public async Task<IActionResult> GetLabBranches()
         {
             HttpContext.Items["Log-Category"] = "Lab Management";
+            var userLabIdStr = User.Claims.FirstOrDefault(c => c.Type == "UserId")?.Value;
+            _logger.LogInformation("Fetching all labs and branches for Lab ID: {LabId}", userLabIdStr);
 
-            _logger.LogInformation("Received request to fetch all labs and branches for Lab ID: {LabId}", User.Claims.FirstOrDefault(c => c.Type == "UserId")?.Value);
+            if (!int.TryParse(userLabIdStr, out int labId))
+            {
+                _logger.LogWarning("Invalid LabId claim.");
+                return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+            }
 
             try
             {
-                var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-                if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                if (!await _labAuthorizationService.IsLabAuthorized(labId, User).ConfigureAwait(false))
                 {
-                    _logger.LogWarning("Lab fetching failed: Invalid or missing LabId claim.");
-                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+                    _logger.LogWarning("Unauthorized access for Lab ID {LabId}", labId);
+                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only access your main lab or its branches."));
                 }
 
-                if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
-                {
-                    _logger.LogWarning("Lab fetching failed: Unauthorized access for Lab ID {LabId}", labId);
-                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only create/modify/delete data for your main lab or its branches."));
-                }
+                var loggedInLab = await _context.LabSignups
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(l => l.Id == labId)
+                    .ConfigureAwait(false);
 
-                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
                 if (loggedInLab == null)
                 {
-                    _logger.LogWarning("Lab fetching failed: Lab ID {LabId} not found.", labId);
+                    _logger.LogWarning("Lab ID {LabId} not found.", labId);
                     return NotFound(ApiResponseFactory.Fail($"Lab with ID {labId} not found."));
                 }
 
                 int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
 
-                var mainLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == mainLabId && l.DeletedBy == 0);
+                var mainLab = await _context.LabSignups
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(l => l.Id == mainLabId && l.DeletedBy == 0)
+                    .ConfigureAwait(false);
+
                 if (mainLab == null)
                 {
-                    _logger.LogWarning("Lab fetching failed: Main lab ID {MainLabId} not found.", mainLabId);
+                    _logger.LogWarning("Main lab ID {MainLabId} not found.", mainLabId);
                     return NotFound(ApiResponseFactory.Fail($"Main lab with ID {mainLabId} not found."));
                 }
 
                 _logger.LogInformation("Fetching branches for Main Lab ID: {MainLabId}", mainLabId);
-                var branches = await _context.LabSignups.Where(l => l.LabReference == mainLabId && l.DeletedBy == 0).ToListAsync();
+                var branches = await _context.LabSignups
+                    .AsNoTracking()
+                    .Where(l => l.LabReference == mainLabId && l.DeletedBy == 0)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
 
-                _logger.LogInformation("Total branches found: {BranchCount}", branches.Count);
+                _logger.LogInformation("Total branches found: {Count}", branches.Count);
 
                 var result = new List<LabInfo>
-                {
-                    new()
-                    {
-                        LabId = mainLab.Id,
-                        LabName = mainLab.LabName,
-                        HFID = mainLab.HFID,
-                        Email = mainLab.Email ?? "No email available",
-                        PhoneNumber = mainLab.PhoneNumber ?? "No phone number available",
-                        Pincode = mainLab.Pincode ?? "No pincode available",
-                        Location = await _locationService.GetLocationDetails(mainLab.Pincode),
-                        Address = mainLab.Address ?? "No address available",
-                        ProfilePhoto = mainLab.ProfilePhoto ?? "No image preview available",
-                        LabType = "mainLab"
-                    }
-                };
+        {
+            new()
+            {
+                LabId = mainLab.Id,
+                LabName = mainLab.LabName,
+                HFID = mainLab.HFID,
+                Email = mainLab.Email ?? "No email available",
+                PhoneNumber = mainLab.PhoneNumber ?? "No phone number available",
+                Pincode = mainLab.Pincode ?? "No pincode available",
+                Location = await _locationService.GetLocationDetails(mainLab.Pincode),
+                Address = mainLab.Address ?? "No address available",
+                ProfilePhoto = mainLab.ProfilePhoto ?? "No image preview available",
+                LabType = "mainLab"
+            }
+        };
 
                 var branchTasks = branches.Select(async branch => new LabInfo
                 {
@@ -265,23 +300,24 @@ namespace HFiles_Backend.API.Controllers.Labs
                     LabType = "branch"
                 });
 
-                result.AddRange(await Task.WhenAll(branchTasks));
+                result.AddRange(await Task.WhenAll(branchTasks).ConfigureAwait(false));
 
                 var response = new
                 {
-                    LabCounts = branches.Count + 1,
+                    LabCounts = result.Count,
                     Labs = result
                 };
 
-                _logger.LogInformation("Successfully fetched lab branches. Returning response.");
+                _logger.LogInformation("Successfully returning all labs and branches.");
                 return Ok(ApiResponseFactory.Success(response, "Lab branches fetched successfully."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Lab fetching failed due to an unexpected error.");
-                return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
+                _logger.LogError(ex, "Unexpected error occurred while fetching lab branches.");
+                return StatusCode(500, ApiResponseFactory.Fail($"Unexpected error: {ex.Message}"));
             }
         }
+
 
 
 
@@ -299,93 +335,90 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
-                var labAdminIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
-                var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-                var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role);
+                var labAdminIdStr = User.FindFirst("LabAdminId")?.Value;
+                var labIdStr = User.FindFirst("UserId")?.Value;
+                var role = User.FindFirst(ClaimTypes.Role)?.Value;
 
-                if (roleClaim?.Value == "Admin" || roleClaim?.Value == "Member")
+                if (role is "Admin" or "Member")
                 {
-                    _logger.LogWarning("Branch deletion failed: Unauthorized role {Role} attempted deletion.", roleClaim.Value);
-                    return Unauthorized(ApiResponseFactory.Fail($"{roleClaim.Value} has no permissions."));
+                    _logger.LogWarning("Branch deletion failed: Unauthorized role {Role} attempted deletion.", role);
+                    return Unauthorized(ApiResponseFactory.Fail($"{role} has no permissions."));
                 }
 
-                if (labAdminIdClaim == null || !int.TryParse(labAdminIdClaim.Value, out int labAdminId))
+                if (!int.TryParse(labAdminIdStr, out int labAdminId) || !int.TryParse(labIdStr, out int labId))
                 {
-                    _logger.LogWarning("Branch deletion failed: Invalid or missing Super Admin Id.");
-                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing Super Admin Id in token."));
+                    _logger.LogWarning("Branch deletion failed: Invalid LabId or LabAdminId claim.");
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing lab claims."));
                 }
 
-                if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-                {
-                    _logger.LogWarning("Branch deletion failed: Invalid or missing LabId.");
-                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
-                }
-
-                if (!await _labAuthorizationService.IsLabAuthorized(branchId, User))
+                if (!await _labAuthorizationService.IsLabAuthorized(branchId, User).ConfigureAwait(false))
                 {
                     _logger.LogWarning("Branch deletion failed: Unauthorized attempt to delete Branch ID {BranchId}", branchId);
-                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main lab or its branches."));
+                    return Unauthorized(ApiResponseFactory.Fail("You can only manage your main lab or its branches."));
                 }
 
-                var labSuperAdmin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a => a.Id == labAdminId);
+                var labSuperAdmin = await _context.LabSuperAdmins
+                    .FirstOrDefaultAsync(a => a.Id == labAdminId)
+                    .ConfigureAwait(false);
                 if (labSuperAdmin == null)
-                {
-                    _logger.LogWarning("Branch deletion failed: No Super Admin found.");
                     return BadRequest(ApiResponseFactory.Fail("No Super Admin found."));
-                }
 
-                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
+                var loggedInLab = await _context.LabSignups
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(l => l.Id == labId)
+                    .ConfigureAwait(false);
                 if (loggedInLab == null)
-                {
-                    _logger.LogWarning("Branch deletion failed: Lab with ID {LabId} not found.", labId);
                     return NotFound(ApiResponseFactory.Fail($"Lab with ID {labId} not found."));
-                }
 
                 int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
 
-                var branch = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == branchId);
+                var branch = await _context.LabSignups
+                    .FirstOrDefaultAsync(l => l.Id == branchId)
+                    .ConfigureAwait(false);
+
                 if (branch == null)
-                {
-                    _logger.LogWarning("Branch deletion failed: Branch with ID {BranchId} not found.", branchId);
                     return NotFound(ApiResponseFactory.Fail($"Branch with ID {branchId} not found."));
-                }
 
                 if (branch.LabReference == 0)
-                {
-                    _logger.LogWarning("Branch deletion failed: Attempted to delete main lab {BranchId}.", branchId);
                     return BadRequest(ApiResponseFactory.Fail("Cannot delete the main lab."));
-                }
 
                 if (branch.LabReference != mainLabId)
-                {
-                    _logger.LogWarning("Branch deletion failed: Branch ID {BranchId} does not belong to the main lab {MainLabId}.", branchId, mainLabId);
                     return Unauthorized(ApiResponseFactory.Fail($"Branch with ID {branchId} does not belong to your lab."));
-                }
 
                 if (branch.DeletedBy != 0)
-                {
-                    _logger.LogWarning("Branch deletion failed: Branch ID {BranchId} has already been deleted.", branchId);
                     return BadRequest(ApiResponseFactory.Fail("This branch has already been deleted."));
-                }
+
+                await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
 
                 branch.DeletedBy = labSuperAdmin.Id;
-                await _context.SaveChangesAsync();
+                _context.LabSignups.Update(branch);
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
 
-                var deletedByUser = await _context.UserDetails.FirstOrDefaultAsync(u => u.user_id == labSuperAdmin.UserId);
+                var deletedByUser = await _context.UserDetails
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.user_id == labSuperAdmin.UserId)
+                    .ConfigureAwait(false);
+
                 if (deletedByUser == null)
-                {
-                    _logger.LogWarning("Branch deletion failed: No user found for Super Admin ID {SuperAdminId}.", labSuperAdmin.Id);
                     return BadRequest(ApiResponseFactory.Fail("No user found."));
-                }
 
-                var deletedByUserName = $"{deletedByUser.user_firstname} {deletedByUser.user_lastname}";
+                string deletedByUserName = $"{deletedByUser.user_firstname} {deletedByUser.user_lastname}".Trim();
 
                 var response = new
                 {
                     BranchId = branch.Id,
                     BranchName = branch.LabName,
-                    DeletedBy = deletedByUserName
+                    DeletedBy = deletedByUserName,
+                    NotificationContext = new
+                    {
+                        BranchId = branch.Id,
+                        BranchName = branch.LabName,
+                        DeletedBy = deletedByUserName
+                    },
+                    NotificationMessage = $"Branch '{branch.LabName}' was deleted by {deletedByUserName}."
                 };
+
 
                 _logger.LogInformation("Branch ID {BranchId} successfully deleted by {DeletedBy}.", branch.Id, deletedByUserName);
                 return Ok(ApiResponseFactory.Success(response, $"Branch deleted successfully."));
@@ -401,37 +434,40 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-        // Method to fetch Area, City & State Based on Pincode
+
         [HttpGet("labs/branches/{pincode}")]
         [Authorize]
-        public async Task<IActionResult> GetLocation(string pincode)
+        public async Task<IActionResult> GetLocation([FromRoute][RegularExpression(@"^\d{6}$", ErrorMessage = "Pincode must be a 6-digit number.")] string pincode)
         {
             HttpContext.Items["Log-Category"] = "Location Retrieval";
+            _logger.LogInformation("Fetching location details for Pincode: {Pincode}", pincode);
 
-            _logger.LogInformation("Received request to fetch location details for Pincode: {Pincode}", pincode);
-
-            if (string.IsNullOrEmpty(pincode))
+            if (string.IsNullOrWhiteSpace(pincode))
             {
-                _logger.LogWarning("Location retrieval failed: Pincode is missing.");
+                _logger.LogWarning("Pincode missing.");
                 return BadRequest(ApiResponseFactory.Fail("Pincode is required."));
             }
 
             try
             {
-                var location = await _locationService.GetLocationDetails(pincode);
+                await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+
+                var location = await _locationService.GetLocationDetails(pincode).ConfigureAwait(false);
 
                 if (location == null)
                 {
-                    _logger.LogWarning("Location retrieval failed: No details found for Pincode {Pincode}", pincode);
+                    _logger.LogWarning("No details found for Pincode {Pincode}", pincode);
                     return NotFound(ApiResponseFactory.Fail($"No location details found for pincode {pincode}."));
                 }
 
-                _logger.LogInformation("Successfully fetched location details for Pincode {Pincode}. Returning response.", pincode);
+                await tx.CommitAsync().ConfigureAwait(false);
+
+                _logger.LogInformation("Location fetched for Pincode {Pincode}", pincode);
                 return Ok(ApiResponseFactory.Success(new { success = true, location }, "Location details fetched successfully."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Location retrieval failed due to an unexpected error for Pincode {Pincode}", pincode);
+                _logger.LogError(ex, "Unexpected error during location fetch for Pincode {Pincode}", pincode);
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
@@ -441,40 +477,46 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-        // Get Deleted Branches
         [HttpGet("labs/deleted-branches")]
         [Authorize]
         public async Task<IActionResult> GetDeletedBranches()
         {
             HttpContext.Items["Log-Category"] = "Lab Management";
 
-            _logger.LogInformation("Received request to fetch deleted branches for Lab ID: {LabId}", User.Claims.FirstOrDefault(c => c.Type == "UserId")?.Value);
+            var userLabIdStr = User.Claims.FirstOrDefault(c => c.Type == "UserId")?.Value;
+            _logger.LogInformation("Fetching deleted branches for Lab ID: {LabId}", userLabIdStr);
+
+            if (!int.TryParse(userLabIdStr, out int labId))
+            {
+                _logger.LogWarning("Invalid or missing LabId claim.");
+                return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+            }
 
             try
             {
-                var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-                if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                if (!await _labAuthorizationService.IsLabAuthorized(labId, User).ConfigureAwait(false))
                 {
-                    _logger.LogWarning("Deleted branch retrieval failed: Invalid or missing LabId claim.");
-                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
-                }
-
-                if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
-                {
-                    _logger.LogWarning("Deleted branch retrieval failed: Unauthorized access for Lab ID {LabId}", labId);
+                    _logger.LogWarning("Unauthorized access for Lab ID {LabId}", labId);
                     return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main lab or its branches."));
                 }
 
-                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
+                var loggedInLab = await _context.LabSignups
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(l => l.Id == labId)
+                    .ConfigureAwait(false);
+
                 if (loggedInLab == null)
                 {
-                    _logger.LogWarning("Deleted branch retrieval failed: Lab ID {LabId} not found.", labId);
+                    _logger.LogWarning("Lab ID {LabId} not found.", labId);
                     return NotFound(ApiResponseFactory.Fail($"Lab with ID {labId} not found."));
                 }
 
                 int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
 
-                _logger.LogInformation("Fetching deleted branches for Main Lab ID: {MainLabId}", mainLabId);
+                _logger.LogInformation("Retrieving deleted branches for Main Lab ID: {MainLabId}", mainLabId);
+
+                await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+
                 var deletedBranches = await _context.LabSignups
                     .AsNoTracking()
                     .Where(l => l.LabReference == mainLabId && l.DeletedBy != 0)
@@ -489,25 +531,25 @@ namespace HFiles_Backend.API.Controllers.Labs
                                          join ud in _context.UserDetails on sa.UserId equals ud.user_id
                                          where sa.Id == l.DeletedBy
                                          select ud.user_firstname + " " + ud.user_lastname)
-                                        .FirstOrDefault(),
+                                         .FirstOrDefault(),
                         DeletedByUserRole = "Super Admin"
                     })
-                    .ToListAsync();
+                    .ToListAsync().ConfigureAwait(false);
 
-                _logger.LogInformation("Total deleted branches found: {BranchCount}", deletedBranches.Count);
+                await tx.CommitAsync().ConfigureAwait(false);
 
                 if (!deletedBranches.Any())
                 {
-                    _logger.LogWarning("No deleted branches found for Lab ID {LabId}.", labId);
-                    return NotFound(ApiResponseFactory.Fail($"No deleted branches found."));
+                    _logger.LogWarning("No deleted branches found for Lab ID {LabId}", labId);
+                    return NotFound(ApiResponseFactory.Fail("No deleted branches found."));
                 }
 
-                _logger.LogInformation("Successfully fetched deleted branches for Lab ID {LabId}. Returning response.", labId);
+                _logger.LogInformation("Returning {Count} deleted branches for Lab ID {LabId}", deletedBranches.Count, labId);
                 return Ok(ApiResponseFactory.Success(deletedBranches, "Deleted branches fetched successfully."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Deleted branch retrieval failed due to an unexpected error.");
+                _logger.LogError(ex, "Error while fetching deleted branches.");
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
@@ -516,116 +558,110 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
+
         // Revert Branches
         [HttpPatch("labs/revert-branch")]
-        [Authorize (Policy = "SuperAdminOrAdminPolicy")]
+        [Authorize(Policy = "SuperAdminOrAdminPolicy")]
         public async Task<IActionResult> RevertDeletedBranch([FromBody] RevertBranch dto)
         {
             HttpContext.Items["Log-Category"] = "Lab Management";
+            _logger.LogInformation("Revert request received for Branch ID: {BranchId}", dto.Id);
 
-            _logger.LogInformation("Received request to revert deleted branch. Branch ID: {BranchId}", dto.Id);
+            var labIdStr = User.FindFirst("UserId")?.Value;
+            var revertedByIdStr = User.FindFirst("LabAdminId")?.Value;
+            var revertedByRole = User.FindFirst(ClaimTypes.Role)?.Value;
+
+            if (!int.TryParse(labIdStr, out int labId) || !int.TryParse(revertedByIdStr, out int revertedById))
+            {
+                _logger.LogWarning("Revert failed: Invalid LabId or LabAdminId claims.");
+                return Unauthorized(ApiResponseFactory.Fail("Invalid or missing lab claims."));
+            }
 
             try
             {
-                var labIdClaim = User.FindFirst("UserId")?.Value;
-                if (labIdClaim == null || !int.TryParse(labIdClaim, out int requestLabId))
+                if (!await _labAuthorizationService.IsLabAuthorized(labId, User).ConfigureAwait(false))
                 {
-                    _logger.LogWarning("Revert failed: Invalid or missing LabId claim.");
-                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+                    _logger.LogWarning("Revert failed: Unauthorized lab access for Lab ID {LabId}", labId);
+                    return Unauthorized(ApiResponseFactory.Fail("Unauthorized lab access."));
                 }
 
-                var revertedByIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
-                var revertedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role);
-
-                if (revertedByIdClaim == null || revertedByIdClaim == null ||
-                    !int.TryParse(revertedByIdClaim.Value, out int revertedById))
-                {
-                    _logger.LogWarning("Member deletion failed: Missing or invalid deletion claims (LabAdminId/Role).");
-                    return Unauthorized(ApiResponseFactory.Fail("Missing or invalid deletion claims (LabAdminId/Role)."));
-                }
-
-                var labSuperAdmin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a => a.Id == revertedById);
-                if (labSuperAdmin == null)
-                {
-                    _logger.LogWarning("Branch deletion failed: No Super Admin found.");
-                    return BadRequest(ApiResponseFactory.Fail("No Super Admin found."));
-                }
-
-                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == requestLabId);
+                var loggedInLab = await _context.LabSignups
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(l => l.Id == labId)
+                    .ConfigureAwait(false);
                 if (loggedInLab == null)
-                {
-                    _logger.LogWarning("Promotion failed: Lab ID {LabId} not found.", requestLabId);
-                    return BadRequest(ApiResponseFactory.Fail("Lab not found"));
-                }
+                    return BadRequest(ApiResponseFactory.Fail("Lab not found."));
 
-                int mainLabId = loggedInLab.LabReference == 0 ? requestLabId : loggedInLab.LabReference;
+                int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
 
                 var branchIds = await _context.LabSignups
+                    .AsNoTracking()
                     .Where(l => l.LabReference == mainLabId)
                     .Select(l => l.Id)
-                    .ToListAsync();
-
+                    .ToListAsync()
+                    .ConfigureAwait(false);
                 branchIds.Add(mainLabId);
 
-                if (!await _labAuthorizationService.IsLabAuthorized(requestLabId, User))
-                {
-                    _logger.LogWarning("Revert failed: Unauthorized access for Lab ID {LabId}.", requestLabId);
-                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main lab or its branches."));
-                }
-
-
-                var branch = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == dto.Id && (branchIds.Contains(l.Id) || l.Id == mainLabId) && l.DeletedBy != 0);
+                var branch = await _context.LabSignups
+                    .FirstOrDefaultAsync(l => l.Id == dto.Id && branchIds.Contains(l.Id) && l.DeletedBy != 0)
+                    .ConfigureAwait(false);
 
                 if (branch == null)
                 {
-                    _logger.LogWarning("Revert failed: Branch ID {BranchId} is not marked as deleted.", dto.Id);
+                    _logger.LogWarning("Revert failed: Branch ID {BranchId} not found or not deleted.", dto.Id);
                     return NotFound(ApiResponseFactory.Fail("Branch not found or not deleted."));
                 }
 
-                var revertedByUser = await _context.UserDetails.FirstOrDefaultAsync(u => u.user_id == labSuperAdmin.UserId);
+                var admin = await _context.LabSuperAdmins
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(a => a.Id == revertedById)
+                    .ConfigureAwait(false);
+                if (admin == null)
+                    return BadRequest(ApiResponseFactory.Fail("Super Admin not found."));
+
+                var revertedByUser = await _context.UserDetails
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.user_id == admin.UserId)
+                    .ConfigureAwait(false);
                 if (revertedByUser == null)
+                    return BadRequest(ApiResponseFactory.Fail("Admin user details not found."));
+
+                string revertedBy = $"{revertedByUser.user_firstname} {revertedByUser.user_lastname}".Trim();
+
+                await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
+                branch.DeletedBy = 0;
+                _context.LabSignups.Update(branch);
+                await _context.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
+
+                var response = new
                 {
-                    _logger.LogWarning("Branch deletion failed: No user found for Super Admin ID {SuperAdminId}.", labSuperAdmin.Id);
-                    return BadRequest(ApiResponseFactory.Fail("No user found."));
-                }
-
-                var revertedBy = $"{revertedByUser.user_firstname} {revertedByUser.user_lastname}";
-
-                using var transaction = await _context.Database.BeginTransactionAsync();
-
-                try
-                {
-                    branch.DeletedBy = 0;
-
-                    _context.Update(branch);
-                    await _context.SaveChangesAsync();
-                    await transaction.CommitAsync();
-
-                    var response = new
+                    BranchId = dto.Id,
+                    BranchName = branch.LabName,
+                    RevertedBy = revertedBy,
+                    RevertedByRole = revertedByRole,
+                    NotificationContext = new
                     {
                         BranchId = dto.Id,
+                        BranchName = branch.LabName,
                         RevertedBy = revertedBy,
-                        RevertedByRole = revertedByRoleClaim?.Value
-                    };
+                        RevertedByRole = revertedByRole
+                    },
+                    NotificationMessage = $"Branch '{branch.LabName}' was restored by {revertedBy} ({revertedByRole})."
+                };
 
-                    _logger.LogInformation("Successfully reverted Branch ID {BranchId} by User ID {RevertedBy}, Role: {RevertedByRole}",
-                        response.BranchId, response.RevertedBy, response.RevertedByRole);
 
-                    return Ok(ApiResponseFactory.Success(response, "Branch reverted successfully."));
+                _logger.LogInformation("Branch ID {BranchId} reverted by {RevertedBy} ({Role})",
+                    dto.Id, revertedBy, revertedByRole);
 
-                }
-                catch (Exception ex)
-                {
-                    await transaction.RollbackAsync();
-                    _logger.LogError(ex, "Revert failed: Error occurred while reverting Branch ID {BranchId}.", dto.Id);
-                    return StatusCode(500, ApiResponseFactory.Fail("An unexpected error occurred while reverting the branch."));
-                }
+                return Ok(ApiResponseFactory.Success(response, "Branch reverted successfully."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected error occurred in Branch Revert API.");
-                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error."));
+                _logger.LogError(ex, "Unexpected error during branch revert for ID {BranchId}.", dto.Id);
+                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while reverting the branch."));
             }
         }
+
     }
 }

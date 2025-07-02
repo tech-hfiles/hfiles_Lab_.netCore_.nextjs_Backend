@@ -536,8 +536,16 @@ namespace HFiles_Backend.API.Controllers.Labs
                     UpdatedDeletedBy = member.DeletedBy,
                     NewSuperAdminUsername = newSuperAdminName,
                     OldSuperAdminUsername = oldSuperAdminName,
-                    BranchLabId = member.LabId != mainLabId ? member.LabId : 0
+                    BranchLabId = member.LabId != mainLabId ? member.LabId : 0,
+                    NotificationContext = new
+                    {
+                        PromotedTo = "Super Admin",
+                        NewSuperAdminName = newSuperAdminName,
+                        OldSuperAdminName = oldSuperAdminName
+                    },
+                    NotificationMessage = $"{newSuperAdminName} has been promoted to Super Admin, replacing {oldSuperAdminName}."
                 };
+
 
                 _logger.LogInformation("Promotion successful. New SuperAdmin: {NewSuperAdminId}, Old SuperAdmin: {OldSuperAdminId}", newSuperAdmin.Id, currentSuperAdmin.Id);
 

@@ -494,7 +494,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 _context.LabOtpEntries.RemoveRange(expiredOtps);
                 _context.LabOtpEntries.Remove(otpEntry);
-
+                    
                 await _context.SaveChangesAsync().ConfigureAwait(false);
                 await transaction.CommitAsync().ConfigureAwait(false);
 

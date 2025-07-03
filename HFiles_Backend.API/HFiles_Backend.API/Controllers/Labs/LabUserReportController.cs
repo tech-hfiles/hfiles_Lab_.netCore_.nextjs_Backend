@@ -1,6 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.Globalization;
-using System.Linq;
 using System.Security.Claims;
 using HFiles_Backend.API.DTOs.Labs;
 using HFiles_Backend.API.Services;
@@ -818,7 +817,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                     .Select(l => l.Id)
                     .ToListAsync();
 
-                branchIds.Add(mainLabId); 
+                branchIds.Add(mainLabId);
 
                 _logger.LogInformation("Resending reports from MainLabId: {MainLabId}, BranchIds: {BranchIds}", mainLabId, string.Join(",", branchIds));
 
@@ -1144,10 +1143,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                 {
                     epochStart = timeframe switch
                     {
-                        1 => currentEpoch - 86400,      
-                        2 => currentEpoch - 604800,   
-                        3 => currentEpoch - 2592000,    
-                        _ => 0                          
+                        1 => currentEpoch - 86400,
+                        2 => currentEpoch - 604800,
+                        3 => currentEpoch - 2592000,
+                        _ => 0
                     };
                     epochEnd = currentEpoch;
                 }
@@ -1158,16 +1157,18 @@ namespace HFiles_Backend.API.Controllers.Labs
                                  n.Timestamp >= epochStart &&
                                  n.Timestamp <= epochEnd)
                      .OrderByDescending(n => n.Timestamp)
-                     .Select(n => new
-                     {
-                         n.Id,
-                         n.LabId,
-                         n.UserRole,
-                         n.EntityName,
-                         n.Category,
-                         n.Timestamp,
-                         n.Notifications
-                     })
+                    .Select(n => new
+                    {
+                        n.Id,
+                        n.LabId,
+                        n.UserRole,
+                        n.EntityName,
+                        n.Category,
+                        n.Timestamp,
+                        n.Notifications,
+                        ElapsedMinutes = (currentEpoch - n.Timestamp) / 60
+                    })
+
                      .ToListAsync()
                      .ConfigureAwait(false);
 

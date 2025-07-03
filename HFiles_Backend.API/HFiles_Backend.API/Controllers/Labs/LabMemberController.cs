@@ -67,6 +67,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
+
         // Create Member
         [HttpPost("labs/members")]
         [Authorize(Policy = "SuperAdminOrAdminPolicy")]
@@ -360,7 +361,9 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var deletedByUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == deletedById).ConfigureAwait(false);
 
                 string memberName = $"{memberUser?.FirstName} {memberUser?.LastName}".Trim();
-                string deletedByName = $"{deletedByUser?.FirstName} {deletedByUser?.LastName}".Trim();
+                string? deletedByName = await ResolveUsernameFromClaims(HttpContext, _context);
+                if (string.IsNullOrWhiteSpace(deletedByName))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
 
                 member.DeletedBy = deletedById;
                 _context.LabMembers.Update(member);
@@ -557,7 +560,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                     .FirstOrDefaultAsync(u => u.Id == user.UserId)
                     .ConfigureAwait(false);
 
-                string revertedByName = $"{revertedByUser?.FirstName} {revertedByUser?.LastName}".Trim();
+
+                string? revertedByName = await ResolveUsernameFromClaims(HttpContext, _context);
+                if (string.IsNullOrWhiteSpace(revertedByName))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
                 string reinstatedUserName = $"{reinstatedUser?.FirstName} {reinstatedUser?.LastName}".Trim();
 
                 user.DeletedBy = 0;
@@ -641,7 +647,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (deletedByUser == null)
                     return BadRequest(ApiResponseFactory.Fail("User details for Super Admin not found."));
 
-                var deletedBy = $"{deletedByUser.FirstName} {deletedByUser.LastName}".Trim();
+
+                string? deletedBy = await ResolveUsernameFromClaims(HttpContext, _context);
+                if (string.IsNullOrWhiteSpace(deletedBy))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
 
                 var userBeingDeleted = await _context.Users
                     .FirstOrDefaultAsync(u => u.Id == user.UserId).ConfigureAwait(false);

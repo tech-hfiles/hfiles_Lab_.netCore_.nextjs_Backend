@@ -18,7 +18,9 @@ namespace HFiles_Backend.API.Services
                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
             };
 
-            _cache.Set(GetCacheKey(email, purpose), entry, expiration ?? TimeSpan.FromMinutes(10));
+            var key = GetCacheKey(email, purpose);
+            Console.WriteLine($"[OTP Store] Storing OTP for Key: {key}");
+            _cache.Set(key, entry, expiration ?? TimeSpan.FromMinutes(10));
         }
 
         public bool IsVerified(string email, string purpose)
@@ -29,7 +31,9 @@ namespace HFiles_Backend.API.Services
         public bool Consume(string email, string purpose)
         {
             var key = GetCacheKey(email, purpose);
-            if (_cache.TryGetValue<OtpVerificationEntry>(key, out var _))
+            var result = _cache.TryGetValue<OtpVerificationEntry>(key, out var _);
+            Console.WriteLine($"[OTP Store] Consume called. Key: {key}, Found: {result}");
+            if (result)
             {
                 _cache.Remove(key);
                 return true;

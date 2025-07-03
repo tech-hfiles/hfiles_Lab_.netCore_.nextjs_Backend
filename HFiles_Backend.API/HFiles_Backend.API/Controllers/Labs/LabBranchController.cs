@@ -21,7 +21,35 @@ namespace HFiles_Backend.API.Controllers.Labs
         private readonly LocationService _locationService = locationService;
         private readonly ILogger<LabBranchController> _logger = logger;
 
+        private async Task<string?> ResolveUsernameFromClaims(HttpContext httpContext, AppDbContext dbContext)
+        {
+            var role = httpContext.User.FindFirst(ClaimTypes.Role)?.Value;
+            var adminIdStr = httpContext.User.FindFirst("LabAdminId")?.Value;
 
+            if (!int.TryParse(adminIdStr, out var adminId)) return null;
+
+            if (role == "Super Admin")
+            {
+                var superAdmin = await dbContext.LabSuperAdmins.FirstOrDefaultAsync(sa => sa.Id == adminId);
+                if (superAdmin != null)
+                {
+                    var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == superAdmin.UserId && u.DeletedBy == 0);
+                    return $"{user?.FirstName} {user?.LastName}".Trim();
+                }
+            }
+
+            if (role == "Admin")
+            {
+                var member = await dbContext.LabMembers.FirstOrDefaultAsync(m => m.Id == adminId);
+                if (member != null)
+                {
+                    var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == member.UserId && u.DeletedBy == 0);
+                    return $"{user?.FirstName} {user?.LastName}".Trim();
+                }
+            }
+
+            return null;
+        }
 
 
 
@@ -101,6 +129,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                 await _context.SaveChangesAsync().ConfigureAwait(false);
                 await tx.CommitAsync().ConfigureAwait(false);
 
+                string? createdByName = await ResolveUsernameFromClaims(HttpContext, _context);
+                if (string.IsNullOrWhiteSpace(createdByName))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
+
                 var response = new
                 {
                     newBranch.Id,
@@ -109,9 +141,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                     {
                         BranchName = newBranch.LabName,
                         BranchEmail = newBranch.Email,
-                        HFID = newBranch.HFID
+                        HFID = newBranch.HFID,
+                        createdByName = createdByName
                     },
-                    NotificationMessage = $"Branch {newBranch.LabName} created successfully."
+                    NotificationMessage = $"Branch {newBranch.LabName} created successfully by {createdByName}."
                 };
 
 
@@ -395,32 +428,34 @@ namespace HFiles_Backend.API.Controllers.Labs
                 await _context.SaveChangesAsync().ConfigureAwait(false);
                 await tx.CommitAsync().ConfigureAwait(false);
 
-                var deletedByUser = await _context.UserDetails
+                var deletedByUser = await _context.Users
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(u => u.user_id == labSuperAdmin.UserId)
+                    .FirstOrDefaultAsync(u => u.Id == labSuperAdmin.UserId)
                     .ConfigureAwait(false);
 
                 if (deletedByUser == null)
                     return BadRequest(ApiResponseFactory.Fail("No user found."));
 
-                string deletedByUserName = $"{deletedByUser.user_firstname} {deletedByUser.user_lastname}".Trim();
+                string? deletedByName = await ResolveUsernameFromClaims(HttpContext, _context);
+                if (string.IsNullOrWhiteSpace(deletedByName))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
 
                 var response = new
                 {
                     BranchId = branch.Id,
                     BranchName = branch.LabName,
-                    DeletedBy = deletedByUserName,
+                    DeletedBy = deletedByName,
                     NotificationContext = new
                     {
                         BranchId = branch.Id,
                         BranchName = branch.LabName,
-                        DeletedBy = deletedByUserName
+                        DeletedBy = deletedByName
                     },
-                    NotificationMessage = $"Branch '{branch.LabName}' was deleted by {deletedByUserName}."
+                    NotificationMessage = $"Branch '{branch.LabName}' was deleted by {deletedByName}."
                 };
 
 
-                _logger.LogInformation("Branch ID {BranchId} successfully deleted by {DeletedBy}.", branch.Id, deletedByUserName);
+                _logger.LogInformation("Branch ID {BranchId} successfully deleted by {DeletedBy}.", branch.Id, deletedByName);
                 return Ok(ApiResponseFactory.Success(response, $"Branch deleted successfully."));
             }
             catch (Exception ex)
@@ -528,9 +563,9 @@ namespace HFiles_Backend.API.Controllers.Labs
                         l.HFID,
                         l.ProfilePhoto,
                         DeletedByUser = (from sa in _context.LabSuperAdmins
-                                         join ud in _context.UserDetails on sa.UserId equals ud.user_id
+                                         join ud in _context.Users on sa.UserId equals ud.Id
                                          where sa.Id == l.DeletedBy
-                                         select ud.user_firstname + " " + ud.user_lastname)
+                                         select ud.FirstName + " " + ud.LastName)
                                          .FirstOrDefault(),
                         DeletedByUserRole = "Super Admin"
                     })
@@ -619,14 +654,16 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (admin == null)
                     return BadRequest(ApiResponseFactory.Fail("Super Admin not found."));
 
-                var revertedByUser = await _context.UserDetails
+                var revertedByUser = await _context.Users
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(u => u.user_id == admin.UserId)
+                    .FirstOrDefaultAsync(u => u.Id == admin.UserId)
                     .ConfigureAwait(false);
                 if (revertedByUser == null)
                     return BadRequest(ApiResponseFactory.Fail("Admin user details not found."));
 
-                string revertedBy = $"{revertedByUser.user_firstname} {revertedByUser.user_lastname}".Trim();
+                string? revertedByName = await ResolveUsernameFromClaims(HttpContext, _context);
+                if (string.IsNullOrWhiteSpace(revertedByName))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
 
                 await using var tx = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
                 branch.DeletedBy = 0;
@@ -638,21 +675,21 @@ namespace HFiles_Backend.API.Controllers.Labs
                 {
                     BranchId = dto.Id,
                     BranchName = branch.LabName,
-                    RevertedBy = revertedBy,
+                    RevertedBy = revertedByName,
                     RevertedByRole = revertedByRole,
                     NotificationContext = new
                     {
                         BranchId = dto.Id,
                         BranchName = branch.LabName,
-                        RevertedBy = revertedBy,
+                        RevertedBy = revertedByName,
                         RevertedByRole = revertedByRole
                     },
-                    NotificationMessage = $"Branch '{branch.LabName}' was restored by {revertedBy} ({revertedByRole})."
+                    NotificationMessage = $"Branch '{branch.LabName}' was restored by {revertedByName} ({revertedByRole})."
                 };
 
 
                 _logger.LogInformation("Branch ID {BranchId} reverted by {RevertedBy} ({Role})",
-                    dto.Id, revertedBy, revertedByRole);
+                    dto.Id, revertedByName, revertedByRole);
 
                 return Ok(ApiResponseFactory.Success(response, "Branch reverted successfully."));
             }

@@ -276,8 +276,18 @@ namespace HFiles_Backend.API.Controllers.Labs
                         if (string.IsNullOrWhiteSpace(createdByName))
                             return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
 
-                        string reportCountText = uploadedFiles.Count == 1 ? "1 report" : $"{uploadedFiles.Count} reports";
+                        var reportNames = uploadedFiles
+                            .Select(f => f.GetType().GetProperty("FileName")?.GetValue(f)?.ToString())
+                            .Where(name => !string.IsNullOrWhiteSpace(name))
+                            .ToList();
+
+                        string reportNameList = string.Join(", ", reportNames);
+                        string reportCountText = uploadedFiles.Count == 1
+                            ? $"1 report ({reportNameList})"
+                            : $"{uploadedFiles.Count} reports ({reportNameList})";
+
                         string notificationMessage = $"{reportCountText} uploaded for patient {userDetails.FirstName} {userDetails.LastName} (HFID: {entry.HFID}) by {createdByName}";
+
 
                         var notificationContext = new
                         {
@@ -1092,12 +1102,20 @@ namespace HFiles_Backend.API.Controllers.Labs
         }
 
 
-        [HttpGet("labs/{labId}/ok")]
+
+
+
+        // New Notifications 
+        [HttpGet("labs/{labId}/notification")]
         [Authorize(Policy = "SuperAdminOrAdminPolicy")]
-        public async Task<IActionResult> GetLabNotifications([FromRoute][Range(1, int.MaxValue)] int labId)
+        public async Task<IActionResult> GetLabNotification(
+            [FromRoute][Range(1, int.MaxValue)] int labId,
+            [FromQuery] int? timeframe,
+            [FromQuery] string? startDate,
+            [FromQuery] string? endDate)
         {
             HttpContext.Items["Log-Category"] = "Notification Management";
-            _logger.LogInformation("Fetching notifications for Lab ID: {LabId}", labId);
+            _logger.LogInformation("Fetching notifications for Lab ID: {LabId}, Timeframe: {Timeframe}, StartDate: {StartDate}, EndDate: {EndDate}", labId, timeframe, startDate, endDate);
 
             try
             {
@@ -1107,22 +1125,52 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return Unauthorized(ApiResponseFactory.Fail("Unauthorized access."));
                 }
 
-                var notifications = await _context.LabAuditLogs
-                    .AsNoTracking()
-                    .Where(n => n.LabId == labId)
-                    .OrderByDescending(n => n.Timestamp)
-                    .Select(n => new
+                long currentEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                long epochStart, epochEnd;
+
+                if (!string.IsNullOrEmpty(startDate) && !string.IsNullOrEmpty(endDate))
+                {
+                    if (!DateTimeOffset.TryParseExact(startDate, "dd/MM/yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var startDateParsed) ||
+                        !DateTimeOffset.TryParseExact(endDate, "dd/MM/yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var endDateParsed))
                     {
-                        n.Id,
-                        n.LabId,
-                        n.UserRole,
-                        n.EntityName,
-                        n.Category,
-                        CreatedAt = DateTimeOffset.FromUnixTimeSeconds(n.Timestamp).UtcDateTime,
-                        n.Notifications
-                    })
-                    .ToListAsync()
-                    .ConfigureAwait(false);
+                        _logger.LogWarning("Invalid date format received: StartDate={StartDate}, EndDate={EndDate}", startDate, endDate);
+                        return BadRequest(ApiResponseFactory.Fail("Invalid date format. Please use DD/MM/YYYY."));
+                    }
+
+                    epochStart = startDateParsed.ToUnixTimeSeconds();
+                    epochEnd = endDateParsed.AddHours(23).AddMinutes(59).AddSeconds(59).ToUnixTimeSeconds();
+                }
+                else
+                {
+                    epochStart = timeframe switch
+                    {
+                        1 => currentEpoch - 86400,      
+                        2 => currentEpoch - 604800,   
+                        3 => currentEpoch - 2592000,    
+                        _ => 0                          
+                    };
+                    epochEnd = currentEpoch;
+                }
+
+                var notifications = await _context.LabAuditLogs
+                     .AsNoTracking()
+                     .Where(n => n.LabId == labId &&
+                                 n.Timestamp >= epochStart &&
+                                 n.Timestamp <= epochEnd)
+                     .OrderByDescending(n => n.Timestamp)
+                     .Select(n => new
+                     {
+                         n.Id,
+                         n.LabId,
+                         n.UserRole,
+                         n.EntityName,
+                         n.Category,
+                         n.Timestamp,
+                         n.Notifications
+                     })
+                     .ToListAsync()
+                     .ConfigureAwait(false);
+
 
                 return Ok(ApiResponseFactory.Success(notifications, "Notifications fetched successfully."));
             }

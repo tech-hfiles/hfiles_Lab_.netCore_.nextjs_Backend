@@ -8,7 +8,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using HFiles_Backend.Domain.Entities.Users; 
+using HFiles_Backend.Domain.Entities.Users;
+using System.Security.Claims;
 
 
 namespace HFiles_Backend.API.Controllers.Labs
@@ -33,8 +34,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             public const string Member = "Member";
         }
 
-
-
+   
 
 
         // Create Lab Super Admin

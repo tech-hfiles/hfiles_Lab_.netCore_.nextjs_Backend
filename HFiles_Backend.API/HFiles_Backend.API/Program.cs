@@ -1,9 +1,14 @@
-﻿using System.Text;
+﻿using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.API.Middleware;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.API.Settings;
+using HFiles_Backend.Application.DTOs.Clinics;
+using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Entities.Labs;
+using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
+using HFiles_Backend.Infrastructure.Repositories;
+using HFiles_Main.API.Middlewares;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
@@ -13,6 +18,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using MySqlConnector;
 using Serilog;
+using System.Text;
 
 // Configure Serilog at the top
 Log.Logger = new LoggerConfiguration()
@@ -103,13 +109,13 @@ try
       .AddPolicy("SuperAdminPolicy", policy => policy.RequireRole("Super Admin"))
       .AddPolicy("AdminPolicy", policy => policy.RequireRole("Admin"))
       .AddPolicy("MemberPolicy", policy => policy.RequireRole("Member"))
-      .AddPolicy("SuperAdminOrAdminPolicy", policy => policy.RequireRole("Super Admin","Admin"));
+      .AddPolicy("SuperAdminOrAdminPolicy", policy => policy.RequireRole("Super Admin", "Admin"));
     builder.Services.AddMemoryCache();
     builder.Services.AddSingleton<OtpVerificationStore>();
     builder.Services.Configure<FormOptions>(options =>
     {
-        options.MultipartBodyLengthLimit = 1024 * 1024 * 500; 
-    });
+        options.MultipartBodyLengthLimit = 1024 * 1024 * 500;
+    });
 
 
 
@@ -154,11 +160,19 @@ try
     builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, RoleBasedAuthorization>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<AuditLogFilter>();
+    builder.Services.AddScoped<IEmailTemplateService, EmailTemplateService>();
 
     builder.Services.AddControllers(options =>
     {
-        options.Filters.Add<AuditLogFilter>(); 
+        options.Filters.Add<AuditLogFilter>();
     });
+
+
+    // Clinic Services
+    builder.Services.AddScoped<IClinicRepository, ClinicRepository>();
+    builder.Services.AddScoped<IPasswordHasher<HFiles_Backend.Domain.Entities.Clinics.ClinicSignup>, PasswordHasher<HFiles_Backend.Domain.Entities.Clinics.ClinicSignup>>();
+    builder.Services.AddScoped<EmailService>();
+
 
 
     // DbContext
@@ -223,7 +237,7 @@ try
     }
 
     // Middleware
-    if (app.Environment.IsDevelopment())
+    if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
     {
         app.UseSwagger();
         app.UseSwaggerUI();
@@ -239,8 +253,8 @@ try
     //    RequestPath = "/uploads"
     //});
 
+    app.UseMiddleware<GlobalExceptionMiddleware>();
     app.UseRouting();
-
     app.UseSession();
     app.UseCors("AllowFrontend");
     app.UseAuthentication();

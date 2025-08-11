@@ -3,6 +3,7 @@ using System;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,135 +11,16 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250703113547_AddIndexing")]
+    partial class AddIndexing
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
                 .HasAnnotation("ProductVersion", "7.0.2")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
-
-            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicOtpEntry", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<DateTime>("ExpiryTime")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("OtpCode")
-                        .IsRequired()
-                        .HasMaxLength(6)
-                        .HasColumnType("varchar(6)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Email")
-                        .HasDatabaseName("IX_ClinicOtpEntry_Email");
-
-                    b.HasIndex("Email", "CreatedAt")
-                        .HasDatabaseName("IX_ClinicOtpEntry_Email_CreatedAt");
-
-                    b.HasIndex("Email", "CreatedAt", "ExpiryTime")
-                        .HasDatabaseName("IX_ClinicOtpEntry_Email_CreatedAt_ExpiryTime");
-
-                    b.ToTable("ClinicOtpEntries");
-                });
-
-            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicSignup", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    b.Property<string>("Address")
-                        .HasMaxLength(250)
-                        .HasColumnType("varchar(250)");
-
-                    b.Property<string>("ClinicName")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<int>("ClinicReference")
-                        .HasColumnType("int");
-
-                    b.Property<long>("CreatedAtEpoch")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("DeletedBy")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("HFID")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.Property<bool>("IsSuperAdmin")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("PasswordHash")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("PhoneNumber")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<string>("Pincode")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<string>("ProfilePhoto")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Email")
-                        .IsUnique()
-                        .HasDatabaseName("IX_ClinicSignup_Email");
-
-                    b.HasIndex("HFID")
-                        .IsUnique()
-                        .HasDatabaseName("IX_ClinicSignup_HFID");
-
-                    b.HasIndex("Id")
-                        .HasDatabaseName("IX_ClinicSignup_Id");
-
-                    b.HasIndex("PhoneNumber")
-                        .HasDatabaseName("IX_ClinicSignup_PhoneNumber");
-
-                    b.HasIndex("Pincode")
-                        .HasDatabaseName("IX_ClinicSignup_Pincode");
-
-                    b.HasIndex("ClinicReference", "DeletedBy")
-                        .HasDatabaseName("IX_ClinicSignup_ClinicReference_DeletedBy");
-
-                    b.HasIndex("Id", "ClinicReference")
-                        .HasDatabaseName("IX_ClinicSignup_Id_Reference");
-
-                    b.HasIndex("Id", "Email", "DeletedBy")
-                        .HasDatabaseName("IX_ClinicSignup_Id_Email_DeletedBy");
-
-                    b.ToTable("ClinicSignups");
-                });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Labs.LabAuditLog", b =>
                 {

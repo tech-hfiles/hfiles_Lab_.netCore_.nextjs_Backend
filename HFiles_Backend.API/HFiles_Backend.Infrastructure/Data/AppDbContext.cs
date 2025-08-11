@@ -1,4 +1,5 @@
-﻿using HFiles_Backend.Domain.Entities.Labs;
+﻿using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Domain.Entities.Users;
 using Microsoft.EntityFrameworkCore;
 
@@ -106,10 +107,62 @@ namespace HFiles_Backend.Infrastructure.Data
             modelBuilder.Entity<User>().ToTable("users", t => t.ExcludeFromMigrations());
 
 
+
+            // Clinics
+            modelBuilder.Entity<ClinicSignup>()
+                .HasIndex(c => c.Id)
+                .HasDatabaseName("IX_ClinicSignup_Id");
+
+            modelBuilder.Entity<ClinicSignup>()
+                .HasIndex(c => c.HFID)
+                .IsUnique()
+                .HasDatabaseName("IX_ClinicSignup_HFID");
+
+            modelBuilder.Entity<ClinicSignup>()
+                .HasIndex(c => c.Email)
+                .IsUnique()
+                .HasDatabaseName("IX_ClinicSignup_Email");
+
+            modelBuilder.Entity<ClinicSignup>()
+                .HasIndex(c => c.PhoneNumber)
+                .HasDatabaseName("IX_ClinicSignup_PhoneNumber");
+
+            modelBuilder.Entity<ClinicSignup>()
+                .HasIndex(c => new { c.Id, c.Email, c.DeletedBy })
+                .HasDatabaseName("IX_ClinicSignup_Id_Email_DeletedBy");
+
+            modelBuilder.Entity<ClinicSignup>()
+                .HasIndex(c => new { c.Id, c.ClinicReference })
+                .HasDatabaseName("IX_ClinicSignup_Id_Reference");
+
+            modelBuilder.Entity<ClinicSignup>()
+                .HasIndex(c => c.Pincode)
+                .HasDatabaseName("IX_ClinicSignup_Pincode");
+
+            modelBuilder.Entity<ClinicSignup>()
+                .HasIndex(c => new { c.ClinicReference, c.DeletedBy })
+                .HasDatabaseName("IX_ClinicSignup_ClinicReference_DeletedBy");
+
+
+
+
+
+            modelBuilder.Entity<ClinicOtpEntry>()
+                .HasIndex(o => o.Email)
+                .HasDatabaseName("IX_ClinicOtpEntry_Email");
+
+            modelBuilder.Entity<ClinicOtpEntry>()
+                .HasIndex(o => new { o.Email, o.CreatedAt })
+                .HasDatabaseName("IX_ClinicOtpEntry_Email_CreatedAt");
+
+            modelBuilder.Entity<ClinicOtpEntry>()
+                .HasIndex(o => new { o.Email, o.CreatedAt, o.ExpiryTime })
+                .HasDatabaseName("IX_ClinicOtpEntry_Email_CreatedAt_ExpiryTime");
+
         }
 
         //public DbSet<UserReports> UserReports { get; set; }
-        public DbSet<UserDetails> UserDetails { get; set; }
+        //public DbSet<UserDetails> UserDetails { get; set; }
         public DbSet<LabUserReports> LabUserReports { get; set; }
         public DbSet<LabSuperAdmin> LabSuperAdmins { get; set; }
         public DbSet<LabMember> LabMembers { get; set; }
@@ -118,5 +171,10 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<LabErrorLog> LabErrorLogs { get; set; }
         public DbSet<User> Users { get; set; }
         public DbSet <UserReport> UserReports { get; set; }
+
+
+        // Clinics
+        public DbSet<ClinicSignup> ClinicSignups { get; set; }
+        public DbSet<ClinicOtpEntry> ClinicOtpEntries { get; set; }
     }
 }

@@ -36,7 +36,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
    
 
-
+                 
         // Create Lab Super Admin
         [HttpPost("labs/super-admins")]
         public async Task<IActionResult> CreateLabAdmin([FromBody] CreateSuperAdmin dto)

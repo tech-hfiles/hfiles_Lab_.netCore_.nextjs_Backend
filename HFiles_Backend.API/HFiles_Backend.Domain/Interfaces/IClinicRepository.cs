@@ -9,12 +9,14 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<bool> EmailExistsAsync(string email);
         Task<ClinicSignup?> GetByEmailAsync(string email);
         Task<ClinicSignup?> GetByPhoneAsync(string phoneNumber);
+        Task<ClinicSignup?> GetByIdAndEmailAsync(int id, string email);
         Task<ClinicOtpEntry?> GetLatestOtpAsync(string emailOrPhone);
         Task AddSignupAsync(ClinicSignup signup);
         Task RemoveOtpAsync(ClinicOtpEntry otpEntry);
         Task<List<ClinicOtpEntry>> GetExpiredOtpsAsync(string identifier, DateTime now);
         Task RemoveOtpsAsync(IEnumerable<ClinicOtpEntry> otpEntries);
         Task AddOtpAsync(ClinicOtpEntry entry);
+        Task UpdateAsync(ClinicSignup clinic);
         Task SaveChangesAsync();
     }
 }

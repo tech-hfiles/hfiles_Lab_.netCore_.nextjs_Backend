@@ -1,5 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-using HFiles_Backend.API.Services;
+﻿using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
@@ -8,8 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using HFiles_Backend.Domain.Entities.Users;
-using System.Security.Claims;
+using System.ComponentModel.DataAnnotations;
 
 
 namespace HFiles_Backend.API.Controllers.Labs
@@ -34,9 +32,9 @@ namespace HFiles_Backend.API.Controllers.Labs
             public const string Member = "Member";
         }
 
-   
 
-                 
+
+
         // Create Lab Super Admin
         [HttpPost("labs/super-admins")]
         public async Task<IActionResult> CreateLabAdmin([FromBody] CreateSuperAdmin dto)

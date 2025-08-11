@@ -159,6 +159,46 @@ namespace HFiles_Backend.Infrastructure.Data
                 .HasIndex(o => new { o.Email, o.CreatedAt, o.ExpiryTime })
                 .HasDatabaseName("IX_ClinicOtpEntry_Email_CreatedAt_ExpiryTime");
 
+
+
+
+
+            modelBuilder.Entity<ClinicSuperAdmin>()
+                .ToTable("ClinicSuperAdmins")
+                .HasIndex(a => new { a.UserId, a.ClinicId, a.IsMain })
+                .HasDatabaseName("IX_ClinicSuperAdmins_UserId_ClinicId_IsMain");
+
+            modelBuilder.Entity<ClinicSuperAdmin>()
+                .HasIndex(a => new { a.ClinicId, a.IsMain })
+                .HasDatabaseName("IX_ClinicSuperAdmins_ClinicId_IsMain");
+
+            modelBuilder.Entity<ClinicSuperAdmin>()
+                .HasIndex(a => new { a.Id, a.UserId })
+                .HasDatabaseName("IX_ClinicSuperAdmins_Id_UserId");
+
+            modelBuilder.Entity<ClinicSuperAdmin>()
+                .ToTable("ClinicSuperAdmins")
+                .HasOne(csa => csa.User)
+                .WithMany()
+                .HasForeignKey(csa => csa.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ClinicSuperAdmin>()
+                .HasOne(csa => csa.Clinic)
+                .WithMany()
+                .HasForeignKey(csa => csa.ClinicId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ClinicSuperAdmin>()
+                .ToTable("ClinicSuperAdmins")
+                .HasOne(csa => csa.Clinic)
+                .WithMany()
+                .HasForeignKey(csa => csa.ClinicId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+
+
+
         }
 
         //public DbSet<UserReports> UserReports { get; set; }
@@ -176,5 +216,6 @@ namespace HFiles_Backend.Infrastructure.Data
         // Clinics
         public DbSet<ClinicSignup> ClinicSignups { get; set; }
         public DbSet<ClinicOtpEntry> ClinicOtpEntries { get; set; }
+        public DbSet<ClinicSuperAdmin> ClinicSuperAdmins { get; set; }
     }
 }

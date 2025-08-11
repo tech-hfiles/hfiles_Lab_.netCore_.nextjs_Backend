@@ -175,7 +175,9 @@ try
 
     // Clinic Services
     builder.Services.AddScoped<IClinicRepository, ClinicRepository>();
-    builder.Services.AddScoped<IPasswordHasher<HFiles_Backend.Domain.Entities.Clinics.ClinicSignup>, PasswordHasher<HFiles_Backend.Domain.Entities.Clinics.ClinicSignup>>();
+    builder.Services.AddScoped<IPasswordHasher<ClinicSignup>, PasswordHasher<ClinicSignup>>();
+    builder.Services.AddScoped<IClinicSuperAdminRepository, ClinicSuperAdminRepository>();
+    builder.Services.AddScoped<IPasswordHasher<ClinicSuperAdmin>, PasswordHasher<ClinicSuperAdmin>>();
     builder.Services.AddScoped<EmailService>();
 
 

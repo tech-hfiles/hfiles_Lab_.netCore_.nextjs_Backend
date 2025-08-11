@@ -1,20 +1,20 @@
 ﻿using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
+using HFiles_Backend.Application.DTOs.Clinics.Login;
 using HFiles_Backend.Application.DTOs.Clinics.Signup;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
 using System.Security.Cryptography;
-using HFiles_Backend.Application.DTOs.Clinics.Login;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
     [Route("api/")]
     [ApiController]
     public class ClinicOtpController(
-         ILogger<ClinicOtpController> logger,
+        ILogger<ClinicOtpController> logger,
         IClinicRepository clinicRepository,
         EmailService emailService,
         IWhatsappService whatsappService,

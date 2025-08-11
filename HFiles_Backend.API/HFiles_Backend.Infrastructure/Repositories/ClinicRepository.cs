@@ -49,6 +49,13 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .FirstOrDefaultAsync();
         }
 
+        public async Task<ClinicSignup?> GetByIdAndEmailAsync(int id, string email)
+        {
+            return await _context.ClinicSignups
+                .Where(c => c.Id == id && c.Email == email)
+                .FirstOrDefaultAsync();
+        }
+
         public async Task<List<ClinicOtpEntry>> GetExpiredOtpsAsync(string identifier, DateTime now)
         {
             return await _context.ClinicOtpEntries
@@ -76,6 +83,15 @@ namespace HFiles_Backend.Infrastructure.Repositories
         public async Task AddOtpAsync(ClinicOtpEntry entry)
         {
             await _context.ClinicOtpEntries.AddAsync(entry);
+        }
+
+        public async Task UpdateAsync(ClinicSignup clinic)
+        {
+            var existing = await _context.ClinicSignups.FindAsync(clinic.Id);
+            if (existing == null) return;
+
+            _context.Entry(existing).CurrentValues.SetValues(clinic);
+            await _context.SaveChangesAsync();
         }
 
         public async Task SaveChangesAsync()

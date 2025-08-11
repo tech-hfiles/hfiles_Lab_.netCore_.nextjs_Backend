@@ -18,6 +18,7 @@ namespace HFiles_Backend.Domain.Interfaces
         Task RemoveOtpsAsync(IEnumerable<ClinicOtpEntry> otpEntries);
         Task AddOtpAsync(ClinicOtpEntry entry);
         Task UpdateAsync(ClinicSignup clinic);
+        Task<List<int>> GetBranchIdsAsync(int mainClinicId);
         Task SaveChangesAsync();
     }
 }

@@ -1,11 +1,11 @@
 ﻿using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.Member;
+using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +23,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
           IClinicSuperAdminRepository clinicSuperAdminRepository,
           IClinicMemberRepository clinicMemberRepository,
           IClinicAuthorizationService clinicAuthorizationService,
+          IUserRepository userRepository,
           AppDbContext context
         ) : ControllerBase
     {
@@ -32,6 +33,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IClinicSuperAdminRepository _clinicSuperAdminRepository = clinicSuperAdminRepository;
         private readonly IClinicMemberRepository _clinicMemberRepository = clinicMemberRepository;
         private readonly IClinicAuthorizationService _clinicAuthorizationService = clinicAuthorizationService;
+        private readonly IUserRepository _userRepository = userRepository;
         private readonly AppDbContext _context = context;
 
 
@@ -65,6 +67,17 @@ namespace HFiles_Backend.API.Controllers.Clinics
             return null;
         }
 
+        private static string GenerateNotificationMessage(List<string> names, string promoter)
+        {
+            if (names == null || names.Count == 0)
+                return "No members promoted.";
+
+            if (names.Count == 1)
+                return $"{names[0]} was promoted to Admin by {promoter}.";
+
+            string joinedNames = string.Join(", ", names);
+            return $"{joinedNames} were promoted to Admin by {promoter}.";
+        }
 
 
 
@@ -155,6 +168,128 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 _logger.LogInformation("New clinic member created successfully. User ID: {UserId}, Clinic ID: {ClinicId}.", newMember.UserId, newMember.ClinicId);
                 return Ok(ApiResponseFactory.Success(responseData, "Member added successfully."));
+            }
+            finally
+            {
+                if (transaction.GetDbTransaction().Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+            }
+        }
+
+
+
+
+
+        [HttpPost("clinics/members/promote")]
+        [Authorize(Policy = "SuperAdminOrAdminPolicy")]
+        public async Task<IActionResult> PromoteClinicMembers(
+        [FromBody] PromoteMembersRequest dto)
+        {
+            HttpContext.Items["Log-Category"] = "Role Management";
+            _logger.LogInformation("Promote request received for members: {Ids}", dto.Ids);
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            var clinicIdStr = User.FindFirst("UserId")?.Value;
+            var promoterIdStr = User.FindFirst("ClinicAdminId")?.Value;
+            var promoterRole = User.FindFirst(ClaimTypes.Role)?.Value ?? "Unknown";
+
+            if (!int.TryParse(clinicIdStr, out var clinicId) || !int.TryParse(promoterIdStr, out var promoterId))
+                return Unauthorized(ApiResponseFactory.Fail("Missing or invalid clinic/user claims."));
+
+            if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))
+                return Unauthorized(ApiResponseFactory.Fail("Permission denied to promote members."));
+
+            var promoterUser = await _userRepository.GetByIdAsync(promoterId);
+            var promoterName = $"{promoterUser?.FirstName} {promoterUser?.LastName}".Trim();
+
+            var clinicEntry = await _clinicRepository.GetByIdAsync(clinicId);
+            if (clinicEntry == null)
+                return NotFound(ApiResponseFactory.Fail("Main clinic not found."));
+
+            int mainClinicId = clinicEntry.ClinicReference == 0 ? clinicId : clinicEntry.ClinicReference;
+
+            var branchIds = await _clinicRepository.GetBranchIdsAsync(mainClinicId);
+            branchIds.Add(mainClinicId);
+
+            var promoteResults = new List<object>();
+            var memberNames = new List<string>();
+            int? branchIdForAudit = null;
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+
+            try
+            {
+                foreach (var memberId in dto.Ids)
+                {
+                    var member = await _clinicMemberRepository.GetByIdInBranchesAsync(memberId, branchIds);
+                    if (member == null)
+                    {
+                        promoteResults.Add(new { Id = memberId, Status = "Failed", Reason = "Member not found" });
+                        continue;
+                    }
+
+                    if (member.Role == "Admin")
+                    {
+                        promoteResults.Add(new { Id = member.Id, Status = "Skipped", Reason = "Already an Admin" });
+                        continue;
+                    }
+
+                    member.Role = "Admin";
+                    member.PromotedBy = promoterId;
+                    await _clinicMemberRepository.UpdateAsync(member);
+
+                    var memberUser = await _userRepository.GetByIdAsync(member.UserId);
+                    var memberName = $"{memberUser?.FirstName} {memberUser?.LastName}".Trim();
+                    memberNames.Add(memberName);
+
+                    if (member.ClinicId != clinicId)
+                        branchIdForAudit = member.ClinicId;
+
+                    promoteResults.Add(new
+                    {
+                        member.Id,
+                        Status = "Success",
+                        NewRole = "Admin",
+                        PromotedBy = promoterId,
+                        PromotedByName = promoterName,
+                        MemberName = memberName,
+                        BranchClinicId = branchIdForAudit
+                    });
+                }
+
+                await _clinicRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                if (!promoteResults.Any(r => ((dynamic)r).Status == "Success"))
+                    return BadRequest(ApiResponseFactory.Fail(promoteResults.Select(r => ((dynamic)r).Reason).ToList()));
+
+                string? createdByName = await ResolveUsernameFromClaims(HttpContext, _context);
+                if (string.IsNullOrWhiteSpace(createdByName))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
+
+                var response = new
+                {
+                    PromotedBy = promoterName,
+                    PromotedById = promoterId,
+                    Members = promoteResults,
+                    BranchClinicId = branchIdForAudit,
+                    PromotedNames = memberNames,
+                    NotificationContext = new
+                    {
+                        PromotedNames = memberNames,
+                        PromoterName = createdByName
+                    },
+                    NotificationMessage = GenerateNotificationMessage(memberNames, createdByName)
+                };
+
+                return Ok(ApiResponseFactory.Success(response, "Member(s) promoted successfully."));
             }
             finally
             {

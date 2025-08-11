@@ -109,7 +109,13 @@ namespace HFiles_Backend.Infrastructure.Repositories
             _context.Entry(existing).CurrentValues.SetValues(clinic);
             await _context.SaveChangesAsync();
         }
-
+        public async Task<List<int>> GetBranchIdsAsync(int mainClinicId)
+        {
+            return await _context.ClinicSignups
+                .Where(c => c.ClinicReference == mainClinicId)
+                .Select(c => c.Id)
+                .ToListAsync();
+        }
         public async Task SaveChangesAsync()
         {
             await _context.SaveChangesAsync();

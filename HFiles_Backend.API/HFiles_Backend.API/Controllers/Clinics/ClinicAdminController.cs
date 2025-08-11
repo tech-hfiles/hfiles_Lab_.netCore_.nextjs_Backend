@@ -3,9 +3,11 @@ using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.SuperAdmin;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
+using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
+using System.ComponentModel.DataAnnotations;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -17,7 +19,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
          IClinicSuperAdminRepository clinicSuperAdminRepository,
          JwtTokenService jwtTokenService,
           IPasswordHasher<ClinicSuperAdmin> passwordHasher,
-          IClinicMemberRepository clinicMemberRepository
+          IClinicMemberRepository clinicMemberRepository,
+          IUserRepository userRepository
         ) : ControllerBase
     {
         private readonly ILogger<ClinicAdminController> _logger = logger;
@@ -26,6 +29,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly JwtTokenService _jwtTokenService = jwtTokenService;
         private readonly IPasswordHasher<ClinicSuperAdmin> _passwordHasher = passwordHasher;
         private readonly IClinicMemberRepository _clinicMemberRepository = clinicMemberRepository;
+        private readonly IUserRepository _userRepository = userRepository;
 
 
 
@@ -217,5 +221,69 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
             }
         }
+
+
+
+
+
+        // Get Clinic Users
+        [HttpGet("clinics/{clinicId}/users")]
+        public async Task<IActionResult> GetAllClinicUsers(
+         [FromRoute][Range(1, int.MaxValue, ErrorMessage = "Clinic ID must be greater than zero.")] int clinicId,
+         [FromServices] ClinicSuperAdminRepository clinicSuperAdminRepository,
+         [FromServices] ClinicMemberRepository clinicMemberRepository)
+        {
+            HttpContext.Items["Log-Category"] = "User Retrieval";
+            _logger.LogInformation("Received request to fetch all users for Clinic ID: {ClinicId}", clinicId);
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+
+            try
+            {
+                var clinicEntry = await _clinicRepository.GetByIdAsync(clinicId);
+                if (clinicEntry == null)
+                {
+                    _logger.LogWarning("Clinic with ID {ClinicId} not found.", clinicId);
+                    return NotFound(ApiResponseFactory.Fail($"Clinic with ID {clinicId} not found."));
+                }
+
+                int mainClinicId = clinicEntry.ClinicReference == 0 ? clinicId : clinicEntry.ClinicReference;
+
+                var superAdminDto = await clinicSuperAdminRepository.GetMainSuperAdminDtoAsync(mainClinicId);
+                var memberDtos = await clinicMemberRepository.GetMemberDtosByClinicIdAsync(clinicId);
+
+                _logger.LogInformation("Total Members found: {MemberCount}", memberDtos.Count);
+
+                if (superAdminDto == null && memberDtos.Count == 0)
+                {
+                    _logger.LogWarning("No active admins or members found for Clinic ID {ClinicId}.", clinicId);
+                    return NotFound(ApiResponseFactory.Fail($"No active admins or members found for Clinic ID {clinicId}."));
+                }
+
+                await transaction.CommitAsync();
+
+                var response = new
+                {
+                    ClinicId = clinicId,
+                    MainClinicId = mainClinicId,
+                    UserCounts = memberDtos.Count + 1,
+                    SuperAdmin = superAdminDto,
+                    Members = memberDtos
+                };
+
+                _logger.LogInformation("Successfully fetched users for Clinic ID {ClinicId}.", clinicId);
+                return Ok(ApiResponseFactory.Success(response, "Users fetched successfully."));
+            }
+            finally
+            {
+                if (transaction.GetDbTransaction().Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+            }
+        }
+
+
+
     }
 }

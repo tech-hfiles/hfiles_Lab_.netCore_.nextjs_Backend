@@ -33,5 +33,61 @@ namespace HFiles_Backend.Infrastructure.Repositories
         {
             await _context.ClinicMembers.AddAsync(member);
         }
+
+        public async Task<List<Application.DTOs.Labs.User>> GetMemberDtosByClinicIdAsync(int clinicId)
+        {
+            var members = await _context.ClinicMembers
+                .Include(m => m.User)
+                .Include(m => m.CreatedByUser)
+                .Include(m => m.PromotedByUser)
+                .Where(m => m.ClinicId == clinicId && m.DeletedBy == 0)
+                .ToListAsync();
+
+            var memberDtos = new List<Application.DTOs.Labs.User>();
+
+            foreach (var m in members)
+            {
+                string createdByName = m.CreatedByUser != null
+                    ? $"{m.CreatedByUser.FirstName} {m.CreatedByUser.LastName}".Trim()
+                    : "Itself";
+
+                string promotedByName = m.PromotedByUser != null
+                    ? $"{m.PromotedByUser.FirstName} {m.PromotedByUser.LastName}".Trim()
+                    : "Not Promoted Yet";
+
+                memberDtos.Add(new Application.DTOs.Labs.User
+                {
+                    MemberId = m.Id,
+                    HFID = m.User?.HfId ?? string.Empty,
+                    Name = $"{m.User?.FirstName} {m.User?.LastName}".Trim(),
+                    Email = m.User?.Email ?? string.Empty,
+                    Role = m.Role,
+                    CreatedByName = createdByName,
+                    PromotedByName = promotedByName,
+                    ProfilePhoto = string.IsNullOrEmpty(m.User?.ProfilePhoto)
+                        ? "No image preview available"
+                        : m.User.ProfilePhoto
+                });
+            }
+
+            return memberDtos;
+        }
+
+
+        public async Task<Dictionary<int, ClinicMember>> GetAllMembersAsync()
+        {
+            return await _context.ClinicMembers.ToDictionaryAsync(m => m.Id);
+        }
+        public async Task<ClinicMember?> GetByIdInBranchesAsync(int memberId, List<int> branchIds)
+        {
+            return await _context.ClinicMembers
+                .FirstOrDefaultAsync(m => m.Id == memberId && branchIds.Contains(m.ClinicId) && m.DeletedBy == 0);
+        }
+
+        public async Task UpdateAsync(ClinicMember member)
+        {
+            _context.ClinicMembers.Update(member);
+            await _context.SaveChangesAsync();
+        }
     }
 }

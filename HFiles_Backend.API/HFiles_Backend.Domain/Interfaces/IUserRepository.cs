@@ -1,0 +1,10 @@
+﻿using HFiles_Backend.Domain.Entities.Users;
+
+namespace HFiles_Backend.Domain.Interfaces
+{
+    public interface IUserRepository
+    {
+        Task<Dictionary<int, User>> GetAllUsersAsync();
+        Task<User?> GetByIdAsync(int id);
+    }
+}

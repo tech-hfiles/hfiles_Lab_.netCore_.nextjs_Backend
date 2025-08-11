@@ -108,6 +108,8 @@ namespace HFiles_Backend.Infrastructure.Data
 
 
 
+
+
             // Clinics
             modelBuilder.Entity<ClinicSignup>()
                 .HasIndex(c => c.Id)
@@ -199,6 +201,41 @@ namespace HFiles_Backend.Infrastructure.Data
 
 
 
+
+            modelBuilder.Entity<ClinicMember>()
+              .ToTable("ClinicMembers")
+              .HasIndex(m => new { m.UserId, m.ClinicId, m.DeletedBy })
+              .HasDatabaseName("IX_ClinicMembers_UserId_ClinicId_DeletedBy");
+
+            modelBuilder.Entity<ClinicMember>()
+                .HasIndex(m => new { m.UserId, m.ClinicId, m.DeletedBy, m.Role })
+                .HasDatabaseName("IX_ClinicMembers_UserId_ClinicId_DeletedBy_Role");
+
+            modelBuilder.Entity<ClinicMember>()
+                .HasIndex(m => new { m.ClinicId, m.DeletedBy })
+                .HasDatabaseName("IX_ClinicMembers_ClinicId_DeletedBy");
+
+            modelBuilder.Entity<ClinicMember>()
+                .HasIndex(m => new { m.Id, m.ClinicId, m.DeletedBy })
+                .HasDatabaseName("IX_ClinicMembers_Id_ClinicId_DeletedBy");
+
+            modelBuilder.Entity<ClinicMember>()
+                .HasOne(m => m.User)
+                .WithMany()
+                .HasForeignKey(m => m.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ClinicMember>()
+                .HasOne(m => m.Clinic)
+                .WithMany()
+                .HasForeignKey(m => m.ClinicId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ClinicMember>()
+                .HasOne(m => m.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(m => m.CreatedBy)
+                .OnDelete(DeleteBehavior.Restrict);
         }
 
         //public DbSet<UserReports> UserReports { get; set; }
@@ -217,5 +254,6 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<ClinicSignup> ClinicSignups { get; set; }
         public DbSet<ClinicOtpEntry> ClinicOtpEntries { get; set; }
         public DbSet<ClinicSuperAdmin> ClinicSuperAdmins { get; set; }
+        public DbSet<ClinicMember> ClinicMembers { get; set; }
     }
 }

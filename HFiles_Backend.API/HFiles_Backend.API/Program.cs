@@ -182,7 +182,8 @@ try
     builder.Services.AddScoped<IPasswordHasher<ClinicSuperAdmin>, PasswordHasher<ClinicSuperAdmin>>();
     builder.Services.AddScoped<IClinicMemberRepository, ClinicMemberRepository>();
     builder.Services.AddScoped<ClinicMemberRepository, ClinicMemberRepository>();
-
+    builder.Services.AddScoped<IClinicAuthorizationService, ClinicAuthorizationService>();
+    builder.Services.AddScoped<IPasswordHasher<ClinicMember>, PasswordHasher<ClinicMember>>();
 
 
     // DbContext

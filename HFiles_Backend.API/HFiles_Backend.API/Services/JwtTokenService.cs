@@ -32,7 +32,7 @@ namespace HFiles_Backend.API.Services
                 throw new ArgumentException("JWT duration must be a positive number.");
         }
 
-        public (string Token, string SessionId) GenerateToken(int userId, string email, int labAdminId, string role)
+        public (string Token, string SessionId) GenerateToken(int userId, string email, int labAdminId, string role, int clinicAdminId)
         {
             try
             {
@@ -55,6 +55,7 @@ namespace HFiles_Backend.API.Services
                     new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                     new("UserId", userId.ToString()),
                     new("LabAdminId", labAdminId.ToString()),
+                    new("ClinicAdminId", clinicAdminId.ToString()),
                     new(ClaimTypes.Role, role),
                     new("SessionId", sessionId),
                     new("iat", issuedAt.ToString()),

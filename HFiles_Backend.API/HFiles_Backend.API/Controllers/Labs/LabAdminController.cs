@@ -103,7 +103,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 await _context.SaveChangesAsync().ConfigureAwait(false);
                 await transaction.CommitAsync().ConfigureAwait(false);
 
-                var tokenData = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, newAdmin.Id, dto.Role);
+                var tokenData = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, newAdmin.Id, dto.Role, 0);
 
                 _logger.LogInformation("Super Admin created successfully. Token issued. Session ID: {SessionId}", tokenData.SessionId);
 
@@ -196,7 +196,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                         return Unauthorized(ApiResponseFactory.Fail("Invalid password."));
                     }
 
-                    var (Token, SessionId) = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, admin.Id, dto.Role);
+                    var (Token, SessionId) = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, admin.Id, dto.Role, 0);
                     _logger.LogInformation("Super Admin login success: {Username} | Session ID: {SessionId}", username, SessionId);
 
                     response = new { Username = username, Token, SessionId };
@@ -229,7 +229,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                         return Unauthorized(ApiResponseFactory.Fail("Invalid password."));
                     }
 
-                    var tokenData = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, member.Id, dto.Role);
+                    var tokenData = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, member.Id, dto.Role, 0);
                     _logger.LogInformation("{Role} login success: {Username} | Session ID: {SessionId}", dto.Role, username, tokenData.SessionId);
 
                     response = new { Username = username, tokenData.Token, tokenData.SessionId };

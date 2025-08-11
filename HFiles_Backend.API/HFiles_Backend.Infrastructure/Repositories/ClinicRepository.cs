@@ -1,9 +1,9 @@
-﻿using HFiles_Backend.Domain.Entities.Clinics;
+﻿using HFiles_Backend.Application.DTOs.Clinics.HFID;
+using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
-using HFiles_Backend.Application.DTOs.Clinics.HFID;
 
 
 namespace HFiles_Backend.Infrastructure.Repositories
@@ -64,6 +64,12 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     HFID = u.HFID
                 })
                 .FirstOrDefaultAsync();
+        }
+        public async Task<ClinicSignup?> GetByIdAsync(int id)
+        {
+            return await _context.ClinicSignups
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == id);
         }
 
         public async Task<List<ClinicOtpEntry>> GetExpiredOtpsAsync(string identifier, DateTime now)

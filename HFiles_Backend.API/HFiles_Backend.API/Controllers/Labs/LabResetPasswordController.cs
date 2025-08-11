@@ -1,5 +1,4 @@
-﻿using System.Security.Cryptography;
-using HFiles_Backend.API.Services;
+﻿using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
@@ -7,6 +6,7 @@ using HFiles_Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -494,7 +494,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 _context.LabOtpEntries.RemoveRange(expiredOtps);
                 _context.LabOtpEntries.Remove(otpEntry);
-                    
+
                 await _context.SaveChangesAsync().ConfigureAwait(false);
                 await transaction.CommitAsync().ConfigureAwait(false);
 

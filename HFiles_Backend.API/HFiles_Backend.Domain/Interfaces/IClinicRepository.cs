@@ -10,6 +10,7 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<ClinicSignup?> GetByEmailAsync(string email);
         Task<ClinicSignup?> GetByPhoneAsync(string phoneNumber);
         Task<ClinicSignup?> GetByIdAndEmailAsync(int id, string email);
+        Task<ClinicSignup?> GetByIdAsync(int id);
         Task<ClinicOtpEntry?> GetLatestOtpAsync(string emailOrPhone);
         Task AddSignupAsync(ClinicSignup signup);
         Task RemoveOtpAsync(ClinicOtpEntry otpEntry);

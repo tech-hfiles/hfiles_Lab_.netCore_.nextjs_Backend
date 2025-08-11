@@ -1,15 +1,20 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace HFiles_Backend.Application.DTOs.Clinics
+namespace HFiles_Backend.Application.DTOs.Clinics.Login
 {
-    internal class ClinicLoginOtpRequest : IValidatableObject
+    public class ClinicOtpLogin : IValidatableObject
     {
         [EmailAddress(ErrorMessage = "Invalid email address.")]
-        [MaxLength(100)]
+        [MaxLength(100, ErrorMessage = "Email must not exceed 100 characters.")]
         public string? Email { get; set; }
 
         [RegularExpression(@"^\d{10}$", ErrorMessage = "Phone number must be exactly 10 digits.")]
         public string? PhoneNumber { get; set; }
+
+        [Required(ErrorMessage = "OTP is required.")]
+        [MaxLength(6, ErrorMessage = "OTP must not exceed 6 digits.")]
+        [RegularExpression(@"^\d+$", ErrorMessage = "OTP must contain only digits.")]
+        public string Otp { get; set; } = null!;
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {

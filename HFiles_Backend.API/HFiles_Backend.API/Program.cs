@@ -124,6 +124,10 @@ try
     {
         options.SwaggerDoc("v1", new OpenApiInfo { Title = "HFiles API", Version = "v1" });
 
+        // Fix for schema ID conflicts (e.g., Labs.Signup vs Clinics.Signup)
+        options.CustomSchemaIds(type => type.FullName);
+
+        // JWT Bearer token support
         options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
         {
             Name = "Authorization",
@@ -135,16 +139,17 @@ try
         });
 
         options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
         {
+            new OpenApiSecurityScheme
             {
-                new OpenApiSecurityScheme
-                {
-                    Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
-                },
-                Array.Empty<string>()
-            }
-        });
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+            Array.Empty<string>()
+        }
     });
+    });
+
 
     // Scoped services
     builder.Services.AddScoped<IPasswordHasher<LabSignup>, PasswordHasher<LabSignup>>();

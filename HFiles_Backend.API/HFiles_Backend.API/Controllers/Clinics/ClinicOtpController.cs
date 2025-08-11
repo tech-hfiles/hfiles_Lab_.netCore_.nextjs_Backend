@@ -1,12 +1,13 @@
 ﻿using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
-using HFiles_Backend.Application.DTOs.Clinics;
+using HFiles_Backend.Application.DTOs.Clinics.Signup;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
 using System.Security.Cryptography;
+using HFiles_Backend.Application.DTOs.Clinics.Login;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -32,7 +33,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
         // Signup OTP
         [HttpPost("clinics/signup/otp")]
-        public async Task<IActionResult> GenerateClinicOtp([FromBody] ClinicOtpRequest dto)
+        public async Task<IActionResult> GenerateClinicOtp([FromBody] ClinicSignupOtpRequest dto)
         {
             HttpContext.Items["Log-Category"] = "Clinic Authentication";
 
@@ -96,8 +97,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-        [HttpPost("clinics/otp")]
-        public async Task<IActionResult> SendOtp([FromBody] ClinicOtpRequest dto)
+        // Login OTP
+        [HttpPost("clinics/login/otp")]
+        public async Task<IActionResult> SendOtp([FromBody] ClinicLoginOtpRequest dto)
         {
             HttpContext.Items["Log-Category"] = "Clinic Authentication";
             _logger.LogInformation("Received OTP request for Email: {Email}, Phone: {PhoneNumber}", dto.Email, dto.PhoneNumber);
@@ -155,7 +157,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                     var otpEntry = new ClinicOtpEntry
                     {
-                        Email = dto.PhoneNumber,
+                        Email = dto.Email ?? dto.PhoneNumber!,
                         OtpCode = otp,
                         CreatedAt = now,
                         ExpiryTime = expiryTime

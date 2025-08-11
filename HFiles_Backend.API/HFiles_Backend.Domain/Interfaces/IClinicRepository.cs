@@ -12,6 +12,8 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<ClinicOtpEntry?> GetLatestOtpAsync(string emailOrPhone);
         Task AddSignupAsync(ClinicSignup signup);
         Task RemoveOtpAsync(ClinicOtpEntry otpEntry);
+        Task<List<ClinicOtpEntry>> GetExpiredOtpsAsync(string identifier, DateTime now);
+        Task RemoveOtpsAsync(IEnumerable<ClinicOtpEntry> otpEntries);
         Task AddOtpAsync(ClinicOtpEntry entry);
         Task SaveChangesAsync();
     }

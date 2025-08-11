@@ -49,6 +49,19 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .FirstOrDefaultAsync();
         }
 
+        public async Task<List<ClinicOtpEntry>> GetExpiredOtpsAsync(string identifier, DateTime now)
+        {
+            return await _context.ClinicOtpEntries
+                .Where(x => x.Email == identifier && x.ExpiryTime < now)
+                .ToListAsync();
+        }
+
+        public async Task RemoveOtpsAsync(IEnumerable<ClinicOtpEntry> otpEntries)
+        {
+            _context.ClinicOtpEntries.RemoveRange(otpEntries);
+            await _context.SaveChangesAsync();
+        }
+
         public async Task AddSignupAsync(ClinicSignup signup)
         {
             await _context.ClinicSignups.AddAsync(signup);

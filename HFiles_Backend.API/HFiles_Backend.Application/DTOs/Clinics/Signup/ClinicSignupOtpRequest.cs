@@ -1,8 +1,8 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace HFiles_Backend.Application.DTOs.Clinics
+namespace HFiles_Backend.Application.DTOs.Clinics.Signup
 {
-    public class ClinicOtpRequest
+    public class ClinicSignupOtpRequest
     {
         [Required(ErrorMessage = "Clinic name is required.")]
         [MaxLength(100, ErrorMessage = "Clinic name must not exceed 100 characters.")]

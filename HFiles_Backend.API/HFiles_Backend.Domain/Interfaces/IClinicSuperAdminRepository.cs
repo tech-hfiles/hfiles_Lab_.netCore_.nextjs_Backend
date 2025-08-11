@@ -7,5 +7,6 @@ namespace HFiles_Backend.Domain.Interfaces
     {
         Task<User?> GetUserByHFIDAsync(string hfid);
         Task AddAsync(ClinicSuperAdmin admin);
+        Task<ClinicSuperAdmin?> GetSuperAdminAsync(int userId, int clinicId, int? clinicReference);
     }
 }

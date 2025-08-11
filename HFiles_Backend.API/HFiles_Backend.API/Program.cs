@@ -175,10 +175,13 @@ try
 
     // Clinic Services
     builder.Services.AddScoped<IClinicRepository, ClinicRepository>();
+    builder.Services.AddScoped<ClinicRepository, ClinicRepository>();
     builder.Services.AddScoped<IPasswordHasher<ClinicSignup>, PasswordHasher<ClinicSignup>>();
     builder.Services.AddScoped<IClinicSuperAdminRepository, ClinicSuperAdminRepository>();
+    builder.Services.AddScoped<ClinicSuperAdminRepository, ClinicSuperAdminRepository>();
     builder.Services.AddScoped<IPasswordHasher<ClinicSuperAdmin>, PasswordHasher<ClinicSuperAdmin>>();
-    builder.Services.AddScoped<EmailService>();
+    builder.Services.AddScoped<IClinicMemberRepository, ClinicMemberRepository>();
+    builder.Services.AddScoped<ClinicMemberRepository, ClinicMemberRepository>();
 
 
 

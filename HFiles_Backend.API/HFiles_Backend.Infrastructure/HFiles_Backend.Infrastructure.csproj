@@ -25,6 +25,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\HFiles_Backend.Application\HFiles_Backend.Application.csproj" />
 		<ProjectReference Include="..\HFiles_Backend.Domain\HFiles_Backend.Domain.csproj" />
 	</ItemGroup>
 

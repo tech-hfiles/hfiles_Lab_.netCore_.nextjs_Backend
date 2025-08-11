@@ -21,5 +21,13 @@ namespace HFiles_Backend.Infrastructure.Repositories
         {
             await _context.ClinicSuperAdmins.AddAsync(admin);
         }
+        public async Task<ClinicSuperAdmin?> GetSuperAdminAsync(int userId, int clinicId, int? clinicReference)
+        {
+            return await _context.ClinicSuperAdmins
+                .FirstOrDefaultAsync(a =>
+                    a.UserId == userId &&
+                    (a.ClinicId == clinicId || a.ClinicId == clinicReference) &&
+                    a.IsMain == 1);
+        }
     }
 }

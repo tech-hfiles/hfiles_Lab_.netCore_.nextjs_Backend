@@ -3,17 +3,14 @@ using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using HFiles_Backend.Application.DTOs.Clinics.HFID;
+
 
 namespace HFiles_Backend.Infrastructure.Repositories
 {
-    public class ClinicRepository : IClinicRepository
+    public class ClinicRepository(AppDbContext context) : IClinicRepository
     {
-        private readonly AppDbContext _context;
-
-        public ClinicRepository(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly AppDbContext _context = context;
 
         public async Task<IDbContextTransaction> BeginTransactionAsync()
         {
@@ -53,6 +50,19 @@ namespace HFiles_Backend.Infrastructure.Repositories
         {
             return await _context.ClinicSignups
                 .Where(c => c.Id == id && c.Email == email)
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<ClinicHFIDDto?> GetHFIDByEmailAsync(string email)
+        {
+            return await _context.ClinicSignups
+                .Where(u => u.Email == email)
+                .Select(u => new ClinicHFIDDto
+                {
+                    Email = u.Email,
+                    ClinicName = u.ClinicName,
+                    HFID = u.HFID
+                })
                 .FirstOrDefaultAsync();
         }
 

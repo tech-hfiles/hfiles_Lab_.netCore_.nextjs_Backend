@@ -457,6 +457,94 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
+        // Revert Soft Deleted Members or Admins
+        [HttpPatch("clinics/revert-user")]
+        [Authorize(Policy = "SuperAdminOrAdminPolicy")]
+        public async Task<IActionResult> RevertDeletedClinicUser([FromBody] RevertClinicUser dto, [FromServices] ClinicRepository clinicRepository)
+        {
+            HttpContext.Items["Log-Category"] = "User Management";
+
+            _logger.LogInformation("Reverting clinic user. User ID: {UserId}, Clinic ID: {ClinicId}, New Role: {Role}", dto.Id, dto.ClinicId, dto.Role);
+
+            var clinicIdClaim = User.FindFirst("UserId")?.Value;
+            var clinicAdminIdClaim = User.FindFirst("ClinicAdminId")?.Value;
+            var revertedByRoleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
+
+            if (!int.TryParse(clinicIdClaim, out int requestClinicId) || !int.TryParse(clinicAdminIdClaim, out int revertedById))
+                return Unauthorized(ApiResponseFactory.Fail("Invalid or missing ClinicId/ClinicAdminId claim."));
+
+            if (!await _clinicRepository.IsClinicAuthorizedAsync(requestClinicId, User))
+                return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main clinic or its branches."));
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+
+            try
+            {
+                var loggedInClinic = await _clinicRepository.GetClinicByIdAsync(requestClinicId);
+                if (loggedInClinic == null)
+                    return BadRequest(ApiResponseFactory.Fail("Clinic not found."));
+
+                int mainClinicId = loggedInClinic.ClinicReference == 0 ? requestClinicId : loggedInClinic.ClinicReference;
+                var branchIds = await _clinicRepository.GetBranchClinicIdsAsync(mainClinicId);
+                branchIds.Add(mainClinicId);
+
+                var user = await _clinicRepository.GetDeletedMemberAsync(dto.Id, dto.ClinicId);
+                if (user == null)
+                    return NotFound(ApiResponseFactory.Fail("User not found or not marked as deleted."));
+
+                var clinicSuperAdmin = await _clinicRepository.GetSuperAdminByIdAsync(revertedById);
+                var revertedByUser = await _clinicRepository.GetUserByIdAsync(clinicSuperAdmin?.UserId ?? 0);
+                var reinstatedUser = await _clinicRepository.GetUserByIdAsync(user.UserId);
+
+                string? revertedByName = await clinicRepository.ResolveUsernameFromClaimsAsync(HttpContext);
+                if (string.IsNullOrWhiteSpace(revertedByName))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
+
+                string reinstatedUserName = $"{reinstatedUser?.FirstName} {reinstatedUser?.LastName}".Trim();
+
+                user.DeletedBy = 0;
+                user.Role = dto.Role ?? "Member";
+                user.PromotedBy = int.TryParse(clinicAdminIdClaim, out int adminId) ? adminId : 0;
+
+                _clinicRepository.UpdateClinicMember(user);
+                await _clinicRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                int? branchId = user.ClinicId != requestClinicId ? user.ClinicId : null;
+
+                var response = new
+                {
+                    UserId = user.Id,
+                    user.ClinicId,
+                    BranchClinicId = branchId,
+                    NewRole = user.Role,
+                    user.PromotedBy,
+                    RevertedBy = revertedByName,
+                    RevertedByRole = revertedByRoleClaim,
+                    NotificationContext = new
+                    {
+                        ReinstatedName = reinstatedUserName,
+                        RevertedByName = revertedByName
+                    },
+                    NotificationMessage = $"{user.Role} {reinstatedUserName} was reinstated by {revertedByName}."
+                };
+
+                _logger.LogInformation("Reverted clinic user ID {UserId} with new role {NewRole} by {RevertedBy}", user.Id, user.Role, revertedByName);
+                return Ok(ApiResponseFactory.Success(response, "User reverted successfully."));
+            }
+            finally
+            {
+                if (transaction.GetDbTransaction().Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+            }
+        }
+
+
+
+
+
         // Permanently Deletes User
         [HttpDelete("clinics/remove-user")]
         [Authorize(Policy = "SuperAdminPolicy")]

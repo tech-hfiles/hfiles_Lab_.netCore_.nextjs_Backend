@@ -1,9 +1,12 @@
 ﻿using HFiles_Backend.Application.DTOs.Clinics.HFID;
 using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Entities.Users;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using System.Security.Claims;
 
 
 namespace HFiles_Backend.Infrastructure.Repositories
@@ -116,6 +119,75 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .Select(c => c.Id)
                 .ToListAsync();
         }
+        public void Update(ClinicSignup clinic)
+        {
+            _context.ClinicSignups.Update(clinic);
+        }
+        
+
+        public async Task<bool> IsClinicAuthorizedAsync(int clinicId, ClaimsPrincipal user)
+        {
+            var userIdClaim = user.FindFirst("UserId")?.Value;
+            if (!int.TryParse(userIdClaim, out int userId)) return false;
+
+            var clinic = await _context.ClinicSignups.FirstOrDefaultAsync(c => c.Id == clinicId);
+            if (clinic == null) return false;
+
+            int mainClinicId = clinic.ClinicReference == 0 ? clinicId : clinic.ClinicReference;
+
+            var authorizedClinicIds = await _context.ClinicSignups
+                .Where(c => c.ClinicReference == mainClinicId || c.Id == mainClinicId)
+                .Select(c => c.Id)
+                .ToListAsync();
+
+            return authorizedClinicIds.Contains(clinicId);
+        }
+
+        public async Task<ClinicSignup?> GetClinicByIdAsync(int clinicId)
+        {
+            return await _context.ClinicSignups.FirstOrDefaultAsync(c => c.Id == clinicId);
+        }
+
+        public async Task<List<int>> GetBranchClinicIdsAsync(int mainClinicId)
+        {
+            return await _context.ClinicSignups
+                .Where(c => c.ClinicReference == mainClinicId)
+                .Select(c => c.Id)
+                .ToListAsync();
+        }
+
+        public async Task<ClinicMember?> GetDeletedMemberAsync(int userId, int clinicId)
+        {
+            return await _context.ClinicMembers
+                .FirstOrDefaultAsync(m => m.Id == userId && m.ClinicId == clinicId && m.DeletedBy != 0);
+        }
+
+        public async Task<ClinicSuperAdmin?> GetSuperAdminByIdAsync(int adminId)
+        {
+            return await _context.ClinicSuperAdmins.FirstOrDefaultAsync(a => a.Id == adminId);
+        }
+
+        public async Task<User?> GetUserByIdAsync(int userId)
+        {
+            return await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+        }
+
+        public async Task<string?> ResolveUsernameFromClaimsAsync(HttpContext context)
+        {
+            var userIdClaim = context.User.FindFirst("UserId")?.Value;
+            if (!int.TryParse(userIdClaim, out int userId)) return null;
+
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            if (user == null) return null;
+
+            return $"{user.FirstName} {user.LastName}".Trim();
+        }
+
+        public void UpdateClinicMember(ClinicMember member)
+        {
+            _context.ClinicMembers.Update(member);
+        }
+
         public async Task SaveChangesAsync()
         {
             await _context.SaveChangesAsync();

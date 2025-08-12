@@ -1,5 +1,8 @@
 ﻿using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Entities.Users;
 using Microsoft.EntityFrameworkCore.Storage;
+using System.Net.Http;
+using System.Security.Claims;
 
 namespace HFiles_Backend.Domain.Interfaces
 {
@@ -19,6 +22,14 @@ namespace HFiles_Backend.Domain.Interfaces
         Task AddOtpAsync(ClinicOtpEntry entry);
         Task UpdateAsync(ClinicSignup clinic);
         Task<List<int>> GetBranchIdsAsync(int mainClinicId);
+        void Update(ClinicSignup clinic);
+        Task<bool> IsClinicAuthorizedAsync(int clinicId, ClaimsPrincipal user);
+        Task<ClinicSignup?> GetClinicByIdAsync(int clinicId);
+        Task<List<int>> GetBranchClinicIdsAsync(int mainClinicId);
+        Task<ClinicMember?> GetDeletedMemberAsync(int userId, int clinicId);
+        Task<ClinicSuperAdmin?> GetSuperAdminByIdAsync(int adminId);
+        Task<User?> GetUserByIdAsync(int userId);
+        void UpdateClinicMember(ClinicMember member);
         Task SaveChangesAsync();
     }
 }

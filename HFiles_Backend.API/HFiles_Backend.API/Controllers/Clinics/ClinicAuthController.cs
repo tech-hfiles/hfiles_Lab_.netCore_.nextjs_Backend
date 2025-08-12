@@ -16,9 +16,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
     public class ClinicAuthController(
         ILogger<ClinicAuthController> logger,
         IClinicRepository clinicRepository,
-         IPasswordHasher<ClinicSignup> passwordHasher,
-         EmailService emailService,
-         IEmailTemplateService emailTemplateService
+        IPasswordHasher<ClinicSignup> passwordHasher,
+        EmailService emailService,
+        IEmailTemplateService emailTemplateService
         ) : ControllerBase
     {
         private readonly ILogger<ClinicAuthController> _logger = logger;

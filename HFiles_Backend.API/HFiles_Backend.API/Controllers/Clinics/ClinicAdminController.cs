@@ -20,9 +20,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
          IClinicRepository clinicRepository,
          IClinicSuperAdminRepository clinicSuperAdminRepository,
          JwtTokenService jwtTokenService,
-          IPasswordHasher<ClinicSuperAdmin> passwordHasher,
-          IClinicMemberRepository clinicMemberRepository,
-          IUserRepository userRepository
+         IPasswordHasher<ClinicSuperAdmin> passwordHasher,
+         IClinicMemberRepository clinicMemberRepository,
+         IUserRepository userRepository
         ) : ControllerBase
     {
         private readonly ILogger<ClinicAdminController> _logger = logger;
@@ -434,7 +434,5 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
             }
         }
-
-
     }
 }

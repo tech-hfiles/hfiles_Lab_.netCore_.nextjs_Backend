@@ -5,11 +5,13 @@ using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
+using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 
 namespace HFiles_Backend.API.Controllers.Clinics
@@ -37,6 +39,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly AppDbContext _context = context;
 
 
+        // Method to fetch username from token
         private static async Task<string?> ResolveUsernameFromClaims(HttpContext httpContext, AppDbContext dbContext)
         {
             var role = httpContext.User.FindFirst(ClaimTypes.Role)?.Value;
@@ -67,6 +70,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             return null;
         }
 
+        // Method to generate notification message for promotion member to admin API
         private static string GenerateNotificationMessage(List<string> names, string promoter)
         {
             if (names == null || names.Count == 0)
@@ -182,6 +186,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
+        // Promotes Member to Admin
         [HttpPost("clinics/members/promote")]
         [Authorize(Policy = "SuperAdminOrAdminPolicy")]
         public async Task<IActionResult> PromoteClinicMembers(
@@ -290,6 +295,237 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 };
 
                 return Ok(ApiResponseFactory.Success(response, "Member(s) promoted successfully."));
+            }
+            finally
+            {
+                if (transaction.GetDbTransaction().Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+            }
+        }
+
+
+
+
+
+        // Soft Delete a Member or Admin
+        [HttpPut("clinics/members/{memberId}")]
+        [Authorize(Policy = "SuperAdminOrAdminPolicy")]
+        public async Task<IActionResult> DeleteClinicMember(
+        [FromRoute][Range(1, int.MaxValue)] int memberId)
+        {
+            HttpContext.Items["Log-Category"] = "User Management";
+            HttpContext.Items["MemberId"] = memberId;
+
+            _logger.LogInformation("Request received to delete clinic member ID: {MemberId}", memberId);
+
+            var clinicIdStr = User.FindFirst("UserId")?.Value;
+            var deletedByStr = User.FindFirst("ClinicAdminId")?.Value;
+            var deletedByRole = User.FindFirst(ClaimTypes.Role)?.Value;
+
+            if (!int.TryParse(clinicIdStr, out var clinicId) || !int.TryParse(deletedByStr, out var deletedById))
+                return Unauthorized(ApiResponseFactory.Fail("Missing or invalid user claims."));
+
+            if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to manage this clinic."));
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+
+            try
+            {
+                var clinic = await _clinicRepository.GetByIdAsync(clinicId);
+                if (clinic == null)
+                    return NotFound(ApiResponseFactory.Fail("Clinic not found."));
+
+                int mainClinicId = clinic.ClinicReference == 0 ? clinicId : clinic.ClinicReference;
+
+                var branchIds = await _clinicRepository.GetBranchIdsAsync(mainClinicId);
+                branchIds.Add(mainClinicId);
+
+                var member = await _clinicMemberRepository.GetByIdInBranchesAsync(memberId, branchIds);
+                if (member == null)
+                    return NotFound(ApiResponseFactory.Fail("Clinic member not found."));
+
+                var memberUser = await _userRepository.GetByIdAsync(member.UserId);
+                var deletedByUser = await _userRepository.GetByIdAsync(deletedById);
+
+                string memberName = $"{memberUser?.FirstName} {memberUser?.LastName}".Trim();
+                string? deletedByName = await ResolveUsernameFromClaims(HttpContext, _context);
+                if (string.IsNullOrWhiteSpace(deletedByName))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
+
+                member.DeletedBy = deletedById;
+                _clinicMemberRepository.Update(member);
+
+                await _clinicRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                int? branchClinicId = member.ClinicId != clinicId ? member.ClinicId : null;
+
+                var response = new
+                {
+                    MemberId = member.Id,
+                    DeletedBy = deletedById,
+                    DeletedByRole = deletedByRole,
+                    MemberName = memberName,
+                    DeletedByName = deletedByName,
+                    BranchClinicId = branchClinicId,
+                    NotificationContext = new
+                    {
+                        MemberName = memberName,
+                        DeletedByName = deletedByName,
+                        Role = member.Role
+                    },
+                    NotificationMessage = $"{member.Role} {memberName} was deleted by {deletedByName}."
+                };
+
+                _logger.LogInformation("Successfully deleted clinic member ID: {MemberId} by {DeletedByName} ({Role})", member.Id, deletedByName, deletedByRole);
+                return Ok(ApiResponseFactory.Success(response, $"{member.Role} deleted successfully."));
+            }
+            finally
+            {
+                if (transaction.GetDbTransaction().Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+            }
+        }
+
+
+
+
+
+        // Get Soft Deleted Members or Admins
+        [HttpGet("clinics/{clinicId}/deleted-users")]
+        [Authorize]
+        public async Task<IActionResult> GetDeletedClinicUsers([FromRoute][Range(1, int.MaxValue)] int clinicId, [FromServices] ClinicMemberRepository clinicMemberRepository)
+        {
+            HttpContext.Items["Log-Category"] = "User Management";
+            _logger.LogInformation("Fetching deleted users for Clinic ID: {ClinicId}", clinicId);
+
+            var userClinicIdStr = User.FindFirst("UserId")?.Value;
+            if (!int.TryParse(userClinicIdStr, out int userClinicId))
+            {
+                _logger.LogWarning("Deleted user fetch failed: Invalid or missing ClinicId claim.");
+                return Unauthorized(ApiResponseFactory.Fail("Invalid or missing ClinicId claim."));
+            }
+
+            if (!await _clinicAuthorizationService.IsClinicAuthorized(userClinicId, User))
+            {
+                _logger.LogWarning("Unauthorized access attempt for Clinic ID {ClinicId}", userClinicId);
+                return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main clinic or its branches."));
+            }
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+
+            try
+            {
+                var loggedInClinic = await _clinicRepository.GetByIdAsync(userClinicId);
+                if (loggedInClinic == null)
+                {
+                    _logger.LogWarning("Deleted user fetch failed: Clinic ID {ClinicId} not found.", userClinicId);
+                    return BadRequest(ApiResponseFactory.Fail("Clinic not found"));
+                }
+
+                int mainClinicId = loggedInClinic.ClinicReference == 0 ? userClinicId : loggedInClinic.ClinicReference;
+                var branchIds = await _clinicRepository.GetBranchIdsAsync(mainClinicId);
+                branchIds.Add(mainClinicId);
+
+                var deletedMembers = await clinicMemberRepository.GetDeletedMembersWithDetailsAsync(clinicId, branchIds);
+                if (!deletedMembers.Any())
+                {
+                    _logger.LogWarning("No deleted users found for Clinic ID {ClinicId}.", clinicId);
+                    return NotFound(ApiResponseFactory.Fail("No deleted users found for this clinic."));
+                }
+
+                await transaction.CommitAsync();
+
+                _logger.LogInformation("Deleted users fetched: Clinic ID {ClinicId}, Count = {Count}", clinicId, deletedMembers.Count);
+                return Ok(ApiResponseFactory.Success(new { DeletedMembers = deletedMembers }, "Deleted users fetched successfully."));
+            }
+            finally
+            {
+                if (transaction.GetDbTransaction().Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+            }
+        }
+
+
+
+
+
+        // Permanently Deletes User
+        [HttpDelete("clinics/remove-user")]
+        [Authorize(Policy = "SuperAdminPolicy")]
+        public async Task<IActionResult> PermanentlyDeleteClinicUser([FromBody] PermanentlyDeleteUser dto)
+        {
+            HttpContext.Items["Log-Category"] = "User Management";
+            _logger.LogInformation("Request to permanently delete user. User ID: {UserId}, Clinic ID: {ClinicId}", dto.Id, dto.ClinicId);
+
+            var clinicIdClaim = User.FindFirst("UserId")?.Value;
+            if (!int.TryParse(clinicIdClaim, out int requestClinicId))
+                return Unauthorized(ApiResponseFactory.Fail("Invalid or missing ClinicId claim."));
+
+            if (!await _clinicAuthorizationService.IsClinicAuthorized(requestClinicId, User))
+                return Unauthorized(ApiResponseFactory.Fail("Unauthorized to manage this clinic or its branches."));
+
+            var deletedByIdClaim = User.FindFirst("ClinicAdminId")?.Value;
+            var deletedByRoleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
+
+            if (!int.TryParse(deletedByIdClaim, out int deletedById))
+                return Unauthorized(ApiResponseFactory.Fail("Invalid or missing ClinicAdminId claim."));
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+
+            try
+            {
+                var superAdmin = await _clinicSuperAdminRepository.GetByIdAsync(deletedById);
+                if (superAdmin == null)
+                    return BadRequest(ApiResponseFactory.Fail("No Super Admin found."));
+
+                var member = await _clinicMemberRepository.GetDeletedMemberByIdAsync(dto.Id, dto.ClinicId);
+                if (member == null)
+                    return NotFound(ApiResponseFactory.Fail("User not found."));
+
+                var deletedByUser = await _userRepository.GetByIdAsync(superAdmin.UserId);
+                if (deletedByUser == null)
+                    return BadRequest(ApiResponseFactory.Fail("User details for Super Admin not found."));
+
+                string? deletedBy = await ResolveUsernameFromClaims(HttpContext, _context);
+                if (string.IsNullOrWhiteSpace(deletedBy))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
+
+                var userBeingDeleted = await _userRepository.GetByIdAsync(member.UserId);
+                string deletedUserName = $"{userBeingDeleted?.FirstName} {userBeingDeleted?.LastName}".Trim();
+
+                int? branchId = dto.ClinicId != requestClinicId ? dto.ClinicId : null;
+
+                _clinicMemberRepository.Remove(member);
+                await _clinicRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                var response = new
+                {
+                    UserId = dto.Id,
+                    dto.ClinicId,
+                    BranchClinicId = branchId,
+                    DeletedBy = deletedBy,
+                    DeletedByRole = deletedByRoleClaim,
+                    NotificationContext = new
+                    {
+                        DeletedUserName = deletedUserName,
+                        DeletedByName = deletedBy
+                    },
+                    NotificationMessage = $"{member.Role} {deletedUserName} was permanently deleted by {deletedBy}."
+                };
+
+                _logger.LogInformation("User ID {UserId} permanently deleted from Clinic ID {ClinicId} by {DeletedBy} ({Role})",
+                    response.UserId, response.ClinicId, response.DeletedBy, response.DeletedByRole);
+
+                return Ok(ApiResponseFactory.Success(response, "User permanently deleted successfully."));
             }
             finally
             {

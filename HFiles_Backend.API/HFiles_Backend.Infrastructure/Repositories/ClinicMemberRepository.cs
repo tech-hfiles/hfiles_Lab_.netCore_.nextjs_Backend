@@ -1,4 +1,5 @@
-﻿using HFiles_Backend.Domain.Entities.Clinics;
+﻿using HFiles_Backend.Application.DTOs.Clinics.Member;
+using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -73,15 +74,56 @@ namespace HFiles_Backend.Infrastructure.Repositories
             return memberDtos;
         }
 
-
         public async Task<Dictionary<int, ClinicMember>> GetAllMembersAsync()
         {
             return await _context.ClinicMembers.ToDictionaryAsync(m => m.Id);
         }
+
         public async Task<ClinicMember?> GetByIdInBranchesAsync(int memberId, List<int> branchIds)
         {
             return await _context.ClinicMembers
                 .FirstOrDefaultAsync(m => m.Id == memberId && branchIds.Contains(m.ClinicId) && m.DeletedBy == 0);
+        }
+
+        public async Task<List<DeletedClinicMemberDto>> GetDeletedMembersWithDetailsAsync(int clinicId, List<int> branchIds)
+        {
+            var query = from m in _context.ClinicMembers
+                        where m.ClinicId == clinicId && m.DeletedBy != 0
+                        join ud in _context.Users on m.UserId equals ud.Id
+                        select new DeletedClinicMemberDto
+                        {
+                            Id = m.Id,
+                            UserId = m.UserId,
+                            Name = $"{ud.FirstName} {ud.LastName}",
+                            Email = ud.Email ?? "Email Not Found",
+                            HFID = ud.HfId ?? "HFID Not Found",
+                            ProfilePhoto = string.IsNullOrEmpty(ud.ProfilePhoto) ? "No image preview available" : ud.ProfilePhoto,
+                            ClinicId = m.ClinicId,
+                            Role = m.Role,
+                            DeletedByUser = (
+                                from sa in _context.ClinicSuperAdmins
+                                join sUser in _context.Users on sa.UserId equals sUser.Id
+                                where sa.Id == m.DeletedBy && branchIds.Contains(m.ClinicId)
+                                select $"{sUser.FirstName} {sUser.LastName}"
+                            ).FirstOrDefault() ?? (
+                                from cm in _context.ClinicMembers
+                                join cUser in _context.Users on cm.UserId equals cUser.Id
+                                where cm.Id == m.DeletedBy && branchIds.Contains(m.ClinicId)
+                                select $"{cUser.FirstName} {cUser.LastName}"
+                            ).FirstOrDefault() ?? "Name Not Found",
+
+                            DeletedByUserRole = (
+                                from sa in _context.ClinicSuperAdmins
+                                where sa.Id == m.DeletedBy && branchIds.Contains(m.ClinicId)
+                                select "Super Admin"
+                            ).FirstOrDefault() ?? (
+                                from cm in _context.ClinicMembers
+                                where cm.Id == m.DeletedBy && branchIds.Contains(m.ClinicId)
+                                select cm.Role
+                            ).FirstOrDefault() ?? "Role Not Found"
+                        };
+
+            return await query.ToListAsync();
         }
 
         public async Task UpdateAsync(ClinicMember member)
@@ -89,5 +131,34 @@ namespace HFiles_Backend.Infrastructure.Repositories
             _context.ClinicMembers.Update(member);
             await _context.SaveChangesAsync();
         }
+
+        public void Update(ClinicMember member)
+        {
+            _context.ClinicMembers.Update(member);
+        }
+
+        public async Task<ClinicMember?> GetDeletedMemberByIdAsync(int memberId, int clinicId)
+        {
+            return await _context.ClinicMembers
+                .FirstOrDefaultAsync(m => m.Id == memberId && m.ClinicId == clinicId && m.DeletedBy != 0);
+        }
+
+        public void Remove(ClinicMember member)
+        {
+            _context.ClinicMembers.Remove(member);
+        }
+        public async Task<ClinicMember?> GetEligibleMemberForPromotionAsync(int memberId, List<int> branchIds)
+        {
+            return await _context.ClinicMembers
+                .FirstOrDefaultAsync(m => m.Id == memberId && m.DeletedBy == 0 && branchIds.Contains(m.ClinicId));
+        }
+
+        public async Task<ClinicMember?> GetDeletedMemberByUserIdAsync(int userId, List<int> branchIds)
+        {
+            return await _context.ClinicMembers
+                .FirstOrDefaultAsync(m => m.UserId == userId && branchIds.Contains(m.ClinicId) && m.DeletedBy != 0);
+        }
+
+        public void Add(ClinicMember member) => _context.ClinicMembers.Add(member);
     }
 }

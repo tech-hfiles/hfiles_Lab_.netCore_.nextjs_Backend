@@ -53,5 +53,23 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .Where(a => a.ClinicId == clinicId)
                 .ToDictionaryAsync(a => a.Id);
         }
+        public async Task<ClinicSuperAdmin?> GetByIdAsync(int id)
+        {
+            return await _context.ClinicSuperAdmins.FirstOrDefaultAsync(sa => sa.Id == id);
+        }
+        public async Task<ClinicSuperAdmin?> GetMainSuperAdminAsync(int clinicId)
+        {
+            return await _context.ClinicSuperAdmins
+                .FirstOrDefaultAsync(a => a.IsMain == 1 && a.ClinicId == clinicId);
+        }
+
+        public async Task<ClinicSuperAdmin?> GetExistingSuperAdminAsync(int userId, int clinicId)
+        {
+            return await _context.ClinicSuperAdmins
+                .FirstOrDefaultAsync(a => a.UserId == userId && a.ClinicId == clinicId && a.IsMain == 0);
+        }
+
+        public void Update(ClinicSuperAdmin admin) => _context.ClinicSuperAdmins.Update(admin);
+        public void Add(ClinicSuperAdmin admin) => _context.ClinicSuperAdmins.Add(admin);
     }
 }

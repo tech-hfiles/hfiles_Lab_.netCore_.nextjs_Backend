@@ -1,9 +1,11 @@
 ﻿using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.SuperAdmin;
+using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Repositories;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -283,6 +285,155 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
         }
 
+
+
+
+
+        // Promote admin to super admin
+        [HttpPost("clinics/admin/promote")]
+        [Authorize(Policy = "SuperAdminPolicy")]
+        public async Task<IActionResult> PromoteClinicMemberToSuperAdmin([FromBody] PromoteAdmin dto)
+        {
+            HttpContext.Items["Log-Category"] = "Role Management";
+            _logger.LogInformation("Received promotion request for Clinic Member ID: {MemberId}", dto.MemberId);
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            var clinicAdminIdClaim = User.FindFirst("ClinicAdminId")?.Value;
+            var clinicIdClaim = User.FindFirst("UserId")?.Value;
+
+            if (!int.TryParse(clinicAdminIdClaim, out int clinicAdminId))
+                return Unauthorized(ApiResponseFactory.Fail("Invalid or missing Super Admin Id in token."));
+
+            if (!int.TryParse(clinicIdClaim, out int clinicId))
+                return Unauthorized(ApiResponseFactory.Fail("Invalid or missing ClinicId in token."));
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+
+            try
+            {
+                var loggedInClinic = await _clinicRepository.GetByIdAsync(clinicId);
+                if (loggedInClinic == null)
+                    return BadRequest(ApiResponseFactory.Fail("Clinic not found"));
+
+                int mainClinicId = loggedInClinic.ClinicReference == 0 ? clinicId : loggedInClinic.ClinicReference;
+                var branchIds = await _clinicRepository.GetBranchIdsAsync(mainClinicId);
+                branchIds.Add(mainClinicId);
+
+                var member = await _clinicMemberRepository.GetEligibleMemberForPromotionAsync(dto.MemberId, branchIds);
+                if (member == null)
+                    return NotFound(ApiResponseFactory.Fail("No clinic member found or not eligible for promotion."));
+
+                member.DeletedBy = clinicAdminId;
+                _clinicMemberRepository.Update(member);
+
+                var currentSuperAdmin = await _clinicSuperAdminRepository.GetMainSuperAdminAsync(mainClinicId);
+                if (currentSuperAdmin == null)
+                    return NotFound(ApiResponseFactory.Fail("No active Super Admin found."));
+
+                currentSuperAdmin.IsMain = 0;
+                _clinicSuperAdminRepository.Update(currentSuperAdmin);
+
+                long epoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+                var existedSuperAdmin = await _clinicSuperAdminRepository.GetExistingSuperAdminAsync(member.UserId, mainClinicId);
+                var existedMember = await _clinicMemberRepository.GetDeletedMemberByUserIdAsync(currentSuperAdmin.UserId, branchIds);
+
+                ClinicSuperAdmin newSuperAdmin;
+                ClinicMember newClinicMember;
+
+                if (existedSuperAdmin != null)
+                {
+                    existedSuperAdmin.IsMain = 1;
+                    existedSuperAdmin.PasswordHash = member.PasswordHash;
+                    existedSuperAdmin.EpochTime = epoch;
+                    _clinicSuperAdminRepository.Update(existedSuperAdmin);
+                    newSuperAdmin = existedSuperAdmin;
+                }
+                else
+                {
+                    newSuperAdmin = new ClinicSuperAdmin
+                    {
+                        UserId = member.UserId,
+                        ClinicId = mainClinicId,
+                        PasswordHash = member.PasswordHash,
+                        EpochTime = epoch,
+                        IsMain = 1
+                    };
+                    _clinicSuperAdminRepository.Add(newSuperAdmin);
+                }
+
+                if (existedMember != null)
+                {
+                    existedMember.ClinicId = loggedInClinic.Id;
+                    existedMember.Role = "Admin";
+                    existedMember.DeletedBy = 0;
+                    existedMember.PromotedBy = newSuperAdmin.Id;
+                    existedMember.PasswordHash = currentSuperAdmin.PasswordHash;
+                    existedMember.EpochTime = epoch;
+                    _clinicMemberRepository.Update(existedMember);
+                    newClinicMember = existedMember;
+                }
+                else
+                {
+                    newClinicMember = new ClinicMember
+                    {
+                        UserId = currentSuperAdmin.UserId,
+                        ClinicId = loggedInClinic.Id,
+                        Role = "Admin",
+                        PasswordHash = currentSuperAdmin.PasswordHash,
+                        CreatedBy = currentSuperAdmin.Id,
+                        DeletedBy = 0,
+                        PromotedBy = currentSuperAdmin.Id,
+                        EpochTime = epoch
+                    };
+                    _clinicMemberRepository.Add(newClinicMember);
+                }
+
+                await _clinicRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                var oldSuperAdminUser = await _userRepository.GetByIdAsync(currentSuperAdmin.UserId);
+                var newSuperAdminUser = await _userRepository.GetByIdAsync(member.UserId);
+
+                string newSuperAdminName = $"{newSuperAdminUser?.FirstName} {newSuperAdminUser?.LastName}".Trim();
+                string oldSuperAdminName = $"{oldSuperAdminUser?.FirstName} {oldSuperAdminUser?.LastName}".Trim();
+
+                var response = new
+                {
+                    NewSuperAdminId = newSuperAdmin.Id,
+                    OldSuperAdminId = currentSuperAdmin.Id,
+                    NewMemberId = newClinicMember.Id,
+                    OldMemberId = member.Id,
+                    UpdatedDeletedBy = member.DeletedBy,
+                    NewSuperAdminUsername = newSuperAdminName,
+                    OldSuperAdminUsername = oldSuperAdminName,
+                    BranchClinicId = member.ClinicId != mainClinicId ? member.ClinicId : 0,
+                    NotificationContext = new
+                    {
+                        PromotedTo = "Super Admin",
+                        NewSuperAdminName = newSuperAdminName,
+                        OldSuperAdminName = oldSuperAdminName
+                    },
+                    NotificationMessage = $"{newSuperAdminName} has been promoted to Super Admin, replacing {oldSuperAdminName}."
+                };
+
+                _logger.LogInformation("Promotion successful. New SuperAdmin: {NewSuperAdminId}, Old SuperAdmin: {OldSuperAdminId}", newSuperAdmin.Id, currentSuperAdmin.Id);
+                return Ok(ApiResponseFactory.Success(response, $"{member.Role} promoted to Super Admin successfully."));
+            }
+            finally
+            {
+                if (transaction.GetDbTransaction().Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+            }
+        }
 
 
     }

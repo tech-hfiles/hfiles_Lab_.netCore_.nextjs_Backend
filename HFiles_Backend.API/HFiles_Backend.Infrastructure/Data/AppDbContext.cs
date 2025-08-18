@@ -236,6 +236,12 @@ namespace HFiles_Backend.Infrastructure.Data
                 .WithMany()
                 .HasForeignKey(m => m.CreatedBy)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ClinicMember>()
+                .HasOne(m => m.PromotedByUser)
+                .WithMany()
+                .HasForeignKey(m => m.PromotedBy)
+                .OnDelete(DeleteBehavior.Restrict);
         }
 
         //public DbSet<UserReports> UserReports { get; set; }

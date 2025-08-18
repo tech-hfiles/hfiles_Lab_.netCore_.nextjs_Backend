@@ -13,13 +13,23 @@ namespace HFiles_Backend.Infrastructure.Repositories
         {
             return await _context.Users.ToDictionaryAsync(u => u.Id);
         }
+
         public async Task<User?> GetByIdAsync(int id)
         {
             return await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
         }
+
         public async Task<User?> GetVerifiedUserByEmailAsync(string email)
         {
             return await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsEmailVerified);
+        }
+        public async Task<string?> GetFullNameBySuperAdminIdAsync(int superAdminId)
+        {
+            return await (from sa in _context.ClinicSuperAdmins
+                          join u in _context.Users on sa.UserId equals u.Id
+                          where sa.Id == superAdminId
+                          select u.FirstName + " " + u.LastName)
+                          .FirstOrDefaultAsync();
         }
     }
 }

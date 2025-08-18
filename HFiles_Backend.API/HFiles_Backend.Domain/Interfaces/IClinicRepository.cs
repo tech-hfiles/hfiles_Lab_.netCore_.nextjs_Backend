@@ -1,7 +1,6 @@
 ﻿using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Entities.Users;
 using Microsoft.EntityFrameworkCore.Storage;
-using System.Net.Http;
 using System.Security.Claims;
 
 namespace HFiles_Backend.Domain.Interfaces
@@ -18,6 +17,7 @@ namespace HFiles_Backend.Domain.Interfaces
         Task AddSignupAsync(ClinicSignup signup);
         Task RemoveOtpAsync(ClinicOtpEntry otpEntry);
         Task<List<ClinicOtpEntry>> GetExpiredOtpsAsync(string identifier, DateTime now);
+        Task RemoveExpiredOtpsAsync(string email, DateTime currentTime);
         Task RemoveOtpsAsync(IEnumerable<ClinicOtpEntry> otpEntries);
         Task AddOtpAsync(ClinicOtpEntry entry);
         Task UpdateAsync(ClinicSignup clinic);

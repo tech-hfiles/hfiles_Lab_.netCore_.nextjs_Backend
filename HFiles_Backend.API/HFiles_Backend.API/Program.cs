@@ -186,6 +186,8 @@ try
     builder.Services.AddScoped<IPasswordHasher<ClinicMember>, PasswordHasher<ClinicMember>>();
     builder.Services.AddScoped<IUserRepository, UserRepository>();
     builder.Services.AddScoped<UserRepository, UserRepository>();
+    builder.Services.AddScoped<IClinicBranchRepository, ClinicBranchRepository>();
+    builder.Services.AddScoped<ClinicBranchRepository, ClinicBranchRepository>();
 
 
     // DbContext

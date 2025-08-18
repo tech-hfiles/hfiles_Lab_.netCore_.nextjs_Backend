@@ -82,6 +82,15 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        public async Task RemoveExpiredOtpsAsync(string email, DateTime currentTime)
+        {
+            var expiredOtps = await _context.ClinicOtpEntries
+                .Where(o => o.Email == email && o.ExpiryTime < currentTime)
+                .ToListAsync();
+
+            _context.ClinicOtpEntries.RemoveRange(expiredOtps);
+        }
+
         public async Task RemoveOtpsAsync(IEnumerable<ClinicOtpEntry> otpEntries)
         {
             _context.ClinicOtpEntries.RemoveRange(otpEntries);

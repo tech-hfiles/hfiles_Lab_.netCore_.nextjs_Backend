@@ -12,7 +12,7 @@ using System.Security.Cryptography;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
-    [Route("api/[controller]")]
+    [Route("api/")]
     [ApiController]
     public class ClinicResetPasswordController(
         EmailService emailService,
@@ -185,6 +185,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
             }
         }
+
 
 
 

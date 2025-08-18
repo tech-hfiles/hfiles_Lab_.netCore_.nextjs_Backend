@@ -1,7 +1,9 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HFiles_Backend.Domain.Entities.Labs
 {
+    [Table("labuserreports")]
     public class LabUserReports
     {
         [Key]

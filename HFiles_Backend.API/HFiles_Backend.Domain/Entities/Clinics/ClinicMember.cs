@@ -1,9 +1,10 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using HFiles_Backend.Domain.Entities.Users;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using HFiles_Backend.Domain.Entities.Users;
 
 namespace HFiles_Backend.Domain.Entities.Clinics
 {
+    [Table("clinicmembers")]
     public class ClinicMember
     {
         [Key]

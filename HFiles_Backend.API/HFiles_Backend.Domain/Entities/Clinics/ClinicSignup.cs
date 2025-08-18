@@ -1,7 +1,9 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HFiles_Backend.Domain.Entities.Clinics
 {
+    [Table("clinicsignups")] 
     public class ClinicSignup
     {
         public int Id { get; set; }

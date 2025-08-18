@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HFiles_Backend.Domain.Entities.Clinics
 {
+    [Table("clinicsuperadmins")]
     public class ClinicSuperAdmin
     {
         [Key]

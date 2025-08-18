@@ -255,5 +255,6 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<ClinicOtpEntry> ClinicOtpEntries { get; set; }
         public DbSet<ClinicSuperAdmin> ClinicSuperAdmins { get; set; }
         public DbSet<ClinicMember> ClinicMembers { get; set; }
+        public DbSet<ClinicAppointment> ClinicAppointments { get; set; }
     }
 }

@@ -1,5 +1,8 @@
-﻿namespace HFiles_Backend.Domain.Entities.Labs
+﻿using System.ComponentModel.DataAnnotations.Schema;
+
+namespace HFiles_Backend.Domain.Entities.Labs
 {
+    [Table("laberrorlogs")]
     public class LabErrorLog
     {
         public int Id { get; set; }

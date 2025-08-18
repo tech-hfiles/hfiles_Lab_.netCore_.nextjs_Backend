@@ -230,26 +230,26 @@ try
     var app = builder.Build();
 
     // Migrations
-    using (var scope = app.Services.CreateScope())
-    {
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    //using (var scope = app.Services.CreateScope())
+    //{
+    //    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        Log.Information("MIGRATION DB_HOST: {DB_HOST}", Environment.GetEnvironmentVariable("DB_HOST"));
-        Log.Information("MIGRATION DB_USER: {DB_USER}", Environment.GetEnvironmentVariable("DB_USER"));
+    //    Log.Information("MIGRATION DB_HOST: {DB_HOST}", Environment.GetEnvironmentVariable("DB_HOST"));
+    //    Log.Information("MIGRATION DB_USER: {DB_USER}", Environment.GetEnvironmentVariable("DB_USER"));
 
-        try
-        {
-            using var connection = new MySqlConnection(builder.Configuration.GetConnectionString("DefaultConnection"));
-            connection.Open();
-            Log.Information("Migration connection successful!");
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Migration connection failed");
-        }
+    //    try
+    //    {
+    //        using var connection = new MySqlConnection(builder.Configuration.GetConnectionString("DefaultConnection"));
+    //        connection.Open();
+    //        Log.Information("Migration connection successful!");
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        Log.Error(ex, "Migration connection failed");
+    //    }
 
-        db.Database.Migrate();
-    }
+    //    db.Database.Migrate();
+    //}
 
     // Middleware
     if (app.Environment.IsDevelopment() || app.Environment.IsProduction())

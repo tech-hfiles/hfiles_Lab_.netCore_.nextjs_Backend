@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HFiles_Backend.Domain.Entities.Labs
 {
+    [Table("labauditlogs")]
     public class LabAuditLog
     {
         [Key]

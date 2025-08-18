@@ -188,6 +188,70 @@ namespace HFiles_Backend.Infrastructure.Repositories
             _context.ClinicMembers.Update(member);
         }
 
+        public async Task<ClinicSignup?> GetClinicByEmailAsync(string email)
+        {
+            return await _context.ClinicSignups.FirstOrDefaultAsync(c => c.Email == email);
+        }
+
+        public async Task<ClinicSignup?> GetMainClinicAsync(int clinicId)
+        {
+            var clinic = await _context.ClinicSignups.FirstOrDefaultAsync(c => c.Id == clinicId);
+            if (clinic == null) return null;
+
+            return clinic.ClinicReference == 0
+                ? clinic
+                : await _context.ClinicSignups.FirstOrDefaultAsync(c => c.Id == clinic.ClinicReference);
+        }
+
+        public void AddOtpEntry(ClinicOtpEntry entry)
+        {
+            _context.ClinicOtpEntries.Add(entry);
+        }
+
+        public async Task<ClinicOtpEntry?> GetLatestOtpEntryAsync(string email)
+        {
+            return await _context.ClinicOtpEntries
+                .Where(o => o.Email == email)
+                .OrderByDescending(o => o.CreatedAt)
+                .FirstOrDefaultAsync();
+        }
+
+        public void RemoveOtpEntries(IEnumerable<ClinicOtpEntry> entries)
+        {
+            _context.ClinicOtpEntries.RemoveRange(entries);
+        }
+
+        public void RemoveOtpEntry(ClinicOtpEntry entry)
+        {
+            _context.ClinicOtpEntries.Remove(entry);
+        }
+
+        public void UpdateClinic(ClinicSignup clinic)
+        {
+            _context.ClinicSignups.Update(clinic);
+        }
+        public async Task<User?> GetVerifiedUserByEmailAsync(string email)
+        {
+            return await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsEmailVerified);
+        }
+
+        public async Task<ClinicSuperAdmin?> GetSuperAdminAsync(int userId, int clinicId)
+        {
+            return await _context.ClinicSuperAdmins
+                .FirstOrDefaultAsync(sa => sa.UserId == userId && sa.ClinicId == clinicId && sa.IsMain == 1);
+        }
+
+        public async Task<ClinicMember?> GetClinicMemberAsync(int userId, int clinicId)
+        {
+            return await _context.ClinicMembers
+                .FirstOrDefaultAsync(m => m.UserId == userId && m.ClinicId == clinicId && m.DeletedBy == 0);
+        }
+
+        public void UpdateSuperAdmin(ClinicSuperAdmin admin)
+        {
+            _context.ClinicSuperAdmins.Update(admin);
+        }
+
         public async Task SaveChangesAsync()
         {
             await _context.SaveChangesAsync();

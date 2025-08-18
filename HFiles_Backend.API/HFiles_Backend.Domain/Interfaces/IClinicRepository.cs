@@ -30,6 +30,17 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<ClinicSuperAdmin?> GetSuperAdminByIdAsync(int adminId);
         Task<User?> GetUserByIdAsync(int userId);
         void UpdateClinicMember(ClinicMember member);
+        Task<ClinicSignup?> GetClinicByEmailAsync(string email);
+        Task<ClinicSignup?> GetMainClinicAsync(int clinicId);
+        void AddOtpEntry(ClinicOtpEntry entry);
+        Task<ClinicOtpEntry?> GetLatestOtpEntryAsync(string email);
+        void RemoveOtpEntries(IEnumerable<ClinicOtpEntry> entries);
+        void RemoveOtpEntry(ClinicOtpEntry entry);
+        void UpdateClinic(ClinicSignup clinic);
+        Task<User?> GetVerifiedUserByEmailAsync(string email);
+        Task<ClinicSuperAdmin?> GetSuperAdminAsync(int userId, int clinicId);
+        Task<ClinicMember?> GetClinicMemberAsync(int userId, int clinicId);
+        void UpdateSuperAdmin(ClinicSuperAdmin admin);
         Task SaveChangesAsync();
     }
 }

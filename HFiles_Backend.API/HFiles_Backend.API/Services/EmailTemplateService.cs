@@ -68,5 +68,52 @@ namespace HFiles_Backend.API.Services
             </html>
             """;
         }
+
+        public string GenerateClinicPasswordResetTemplate(string clinicName, string otp, int validityMinutes, string resetLink)
+        {
+            return $"""
+            <html>
+            <body style='font-family:Arial,sans-serif;'>
+                <p>Hello <strong>{clinicName}</strong>,</p>
+                <p>Your OTP for Lab Reset Password is:</p>
+                <h2 style='color: #333;'>{otp}</h2>
+                <p>This OTP is valid for <strong>{validityMinutes} minutes</strong>.</p>
+                <p>You have requested to reset your password for your lab account. Click the button below to proceed:</p>
+                <p>
+                    <a href='{resetLink}' 
+                       style='background-color:#0331B5;color:white;padding:10px 20px;text-decoration:none;font-weight:bold;'>
+                       Reset Password
+                    </a>
+                </p>
+                <p>If you did not request this, please ignore this email.</p>
+                <br />
+                <p>Best regards,<br>The Hfiles Team</p>
+            </body>
+            </html>
+            """;
+        }
+
+        public string GenerateClinicUserPasswordResetTemplate(string firstName, string clinicName, string otp, int validityMinutes, string resetLink)
+        {
+            return $"""
+                <html>
+                <body style='font-family:Arial,sans-serif;'>
+                    <p>Hello <strong>{firstName}</strong>,</p>
+                    <p>Your OTP for Reset Password is:</p>
+                    <h2 style='color: #333;'>{otp}</h2>
+                    <p>This OTP is valid for <strong>{validityMinutes} minutes</strong>.</p>
+                    <p>You requested a reset for <strong>{clinicName}</strong>. Click below to proceed:</p>
+                    <p>
+                        <a href='{resetLink}' style='background-color:#0331B5;color:white;padding:10px 20px;text-decoration:none;font-weight:bold;'>
+                            Reset Password
+                        </a>
+                    </p>
+                    <p>If you didn't request this, just ignore it.</p>
+                    <br />
+                    <p>Regards,<br>The Hfiles Team</p>
+                </body>
+                </html>
+                """;
+        }
     }
 }

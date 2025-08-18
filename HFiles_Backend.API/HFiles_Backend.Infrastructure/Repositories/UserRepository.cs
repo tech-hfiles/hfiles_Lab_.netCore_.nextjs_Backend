@@ -17,5 +17,9 @@ namespace HFiles_Backend.Infrastructure.Repositories
         {
             return await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
         }
+        public async Task<User?> GetVerifiedUserByEmailAsync(string email)
+        {
+            return await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsEmailVerified);
+        }
     }
 }

@@ -6,5 +6,6 @@ namespace HFiles_Backend.Domain.Interfaces
     {
         Task<Dictionary<int, User>> GetAllUsersAsync();
         Task<User?> GetByIdAsync(int id);
+        Task<User?> GetVerifiedUserByEmailAsync(string email);
     }
 }

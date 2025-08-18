@@ -6,5 +6,7 @@
         string GenerateClinicWelcomeTemplate(string clinicName);
         string GenerateClinicAdminNotificationTemplate(string clinicName, string email, string phone, string pincode);
         string GenerateClinicLoginOtpTemplate(string otp, int validityMinutes);
+        string GenerateClinicPasswordResetTemplate(string labName, string otp, int validityMinutes, string resetLink);
+        string GenerateClinicUserPasswordResetTemplate(string firstName, string clinicName, string otp, int validityMinutes, string resetLink);
     }
 }

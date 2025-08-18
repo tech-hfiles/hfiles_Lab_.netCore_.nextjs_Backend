@@ -159,6 +159,11 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .FirstOrDefaultAsync(m => m.UserId == userId && branchIds.Contains(m.ClinicId) && m.DeletedBy != 0);
         }
 
+        public async Task<ClinicMember?> GetActiveMemberAsync(int userId, int clinicId)
+        {
+            return await _context.ClinicMembers.FirstOrDefaultAsync(m => m.UserId == userId && m.DeletedBy == 0 && m.ClinicId == clinicId);
+        }
+
         public void Add(ClinicMember member) => _context.ClinicMembers.Add(member);
     }
 }

@@ -16,6 +16,7 @@ namespace HFiles_Backend.Domain.Interfaces
         void Remove(ClinicMember member);
         Task<ClinicMember?> GetEligibleMemberForPromotionAsync(int memberId, List<int> branchIds);
         Task<ClinicMember?> GetDeletedMemberByUserIdAsync(int userId, List<int> branchIds);
+        Task<ClinicMember?> GetActiveMemberAsync(int userId, int clinicId);
         void Add(ClinicMember member);
     }
 }

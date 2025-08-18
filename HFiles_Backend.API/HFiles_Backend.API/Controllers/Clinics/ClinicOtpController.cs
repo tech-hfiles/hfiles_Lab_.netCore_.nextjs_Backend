@@ -2,7 +2,9 @@
 using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.Login;
+using HFiles_Backend.Application.DTOs.Clinics.ResetPassword;
 using HFiles_Backend.Application.DTOs.Clinics.Signup;
+using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
 using Microsoft.AspNetCore.Mvc;
@@ -18,7 +20,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
         IClinicRepository clinicRepository,
         EmailService emailService,
         IWhatsappService whatsappService,
-        IEmailTemplateService emailTemplateService
+        IEmailTemplateService emailTemplateService,
+        IUserRepository userRepository,
+        IClinicSuperAdminRepository clinicSuperAdminRepository,
+        IClinicMemberRepository clinicMemberRepository
         ) : ControllerBase
     {
         private readonly ILogger<ClinicOtpController> _logger = logger;
@@ -26,6 +31,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly EmailService _emailService = emailService;
         private readonly IWhatsappService _whatsappService = whatsappService;
         private readonly IEmailTemplateService _emailTemplateService = emailTemplateService;
+        private readonly IUserRepository _userRepository = userRepository;
+        private readonly IClinicSuperAdminRepository _clinicSuperAdminRepository = clinicSuperAdminRepository;
+        private readonly IClinicMemberRepository _clinicMemberRepository = clinicMemberRepository;
         private const int OtpValidityMinutes = 5;
 
 
@@ -184,6 +192,201 @@ namespace HFiles_Backend.API.Controllers.Clinics
             finally
             {
                 if (transaction.GetDbTransaction().Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+            }
+        }
+
+
+
+
+
+        // Send OTP for clinic Reset Password
+        [HttpPost("clinics/password-reset/request")]
+        public async Task<IActionResult> RequestClinicPasswordReset([FromBody] PasswordResetRequest dto)
+        {
+            HttpContext.Items["Log-Category"] = "Authentication";
+            _logger.LogInformation("Received password reset request for Email: {Email}", dto.Email);
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            var clinicUser = await _clinicRepository.GetClinicByEmailAsync(dto.Email);
+            if (clinicUser == null)
+            {
+                _logger.LogWarning("No clinic user found with Email {Email}", dto.Email);
+                return NotFound(ApiResponseFactory.Fail("No clinic user found with this email."));
+            }
+
+            if (string.IsNullOrWhiteSpace(clinicUser.Email))
+            {
+                _logger.LogWarning("Clinic user Email is missing for {Email}", dto.Email);
+                return StatusCode(500, ApiResponseFactory.Fail("Clinic user email is missing."));
+            }
+
+            var mainClinic = await _clinicRepository.GetMainClinicAsync(clinicUser.Id);
+            if (mainClinic == null || string.IsNullOrWhiteSpace(mainClinic.Email))
+            {
+                _logger.LogWarning("Main clinic Email is missing for reference ID {RefId}", clinicUser.ClinicReference);
+                return StatusCode(500, ApiResponseFactory.Fail("Main clinic email is missing."));
+            }
+
+            var now = DateTime.UtcNow;
+            var otp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+            var otpEntry = new ClinicOtpEntry
+            {
+                Email = dto.Email,
+                OtpCode = otp,
+                CreatedAt = now,
+                ExpiryTime = now.AddMinutes(OtpValidityMinutes)
+            };
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+            var committed = false;
+
+            try
+            {
+                _clinicRepository.AddOtpEntry(otpEntry);
+                await _clinicRepository.SaveChangesAsync();
+
+                string recipientEmail = mainClinic.Email;
+                string resetLink = "https://hfiles.co.in/forgot-password";
+                string emailBody = _emailTemplateService.GenerateClinicPasswordResetTemplate(
+                    clinicUser.ClinicName, otp, OtpValidityMinutes, resetLink);
+
+                await _emailService.SendEmailAsync(recipientEmail, $"Password Reset Request for {clinicUser.ClinicName}", emailBody);
+                await transaction.CommitAsync();
+                committed = true;
+
+                _logger.LogInformation("Password reset OTP sent to {Email}", recipientEmail);
+
+                return Ok(ApiResponseFactory.Success(new
+                {
+                    RecipientEmail = recipientEmail,
+                    clinicUser.ClinicName
+                }, $"Password reset link sent to {recipientEmail}."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unhandled error during clinic password reset for {Email}", dto.Email);
+                return StatusCode(500, ApiResponseFactory.Fail($"An error occurred while sending the reset link: {ex.Message}"));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+            }
+        }
+
+
+
+
+
+        // Send OTP for clinic Users Reset Password
+        [HttpPost("clinics/users/password-reset/request")]
+        public async Task<IActionResult> UsersRequestClinicPasswordReset(
+        [FromBody] ClinicUserPasswordResetRequest dto)
+        {
+            HttpContext.Items["Log-Category"] = "Authentication";
+            _logger.LogInformation("Received password reset request for User Email: {Email}, Clinic ID: {ClinicId}", dto.Email, dto.ClinicId);
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            var userDetails = await _userRepository.GetVerifiedUserByEmailAsync(dto.Email);
+            if (userDetails == null || string.IsNullOrWhiteSpace(userDetails.Email) || string.IsNullOrWhiteSpace(userDetails.FirstName))
+            {
+                _logger.LogWarning("No verified user found for {Email}", dto.Email);
+                return NotFound(ApiResponseFactory.Fail("No user found with this email or email not verified."));
+            }
+
+            int userId = userDetails.Id;
+            string? recipientEmail = null;
+            string? userRole = null;
+
+            var superAdmin = await _clinicSuperAdminRepository.GetMainSuperAdminAsync(userId, dto.ClinicId);
+            if (superAdmin != null)
+            {
+                recipientEmail = userDetails.Email;
+                userRole = "Super Admin";
+            }
+            else
+            {
+                var member = await _clinicMemberRepository.GetActiveMemberAsync(userId, dto.ClinicId);
+                if (member != null)
+                {
+                    recipientEmail = userDetails.Email;
+                    userRole = member.Role;
+                }
+            }
+
+            if (recipientEmail == null)
+            {
+                _logger.LogWarning("No matching user found for Clinic ID {ClinicId}", dto.ClinicId);
+                return NotFound(ApiResponseFactory.Fail("No matching user found for password reset."));
+            }
+
+            var clinic = await _clinicRepository.GetClinicByIdAsync(dto.ClinicId);
+            if (clinic == null)
+            {
+                _logger.LogWarning("Clinic not found for ID {ClinicId}", dto.ClinicId);
+                return NotFound(ApiResponseFactory.Fail("Clinic not found."));
+            }
+
+            var otp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+            var now = DateTime.UtcNow;
+            var otpEntry = new ClinicOtpEntry
+            {
+                Email = dto.Email,
+                OtpCode = otp,
+                CreatedAt = now,
+                ExpiryTime = now.AddMinutes(OtpValidityMinutes)
+            };
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+            var committed = false;
+
+            try
+            {
+                _clinicRepository.AddOtpEntry(otpEntry);
+                await _clinicRepository.SaveChangesAsync();
+
+                string resetLink = "https://hfiles.co.in/forgot-password";
+                string emailBody = _emailTemplateService.GenerateClinicUserPasswordResetTemplate(
+                    userDetails.FirstName, clinic.ClinicName, otp, OtpValidityMinutes, resetLink);
+
+                await _emailService.SendEmailAsync(recipientEmail, $"Password Reset Request for {userDetails.FirstName} {userDetails.LastName}", emailBody);
+                await transaction.CommitAsync();
+                committed = true;
+
+                _logger.LogInformation("Password reset email sent to {Email}", recipientEmail);
+
+                return Ok(ApiResponseFactory.Success(new
+                {
+                    RecipientEmail = recipientEmail,
+                    UserRole = userRole,
+                    clinic.ClinicName
+                }, $"Password reset link sent to {recipientEmail} ({userRole})."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during clinic user password reset for {Email}", dto.Email);
+                return StatusCode(500, ApiResponseFactory.Fail($"An error occurred while sending the reset link: {ex.Message}"));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
                 {
                     await transaction.RollbackAsync();
                 }

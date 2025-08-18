@@ -46,13 +46,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private static async Task<string?> ResolveUsernameFromClaims(HttpContext httpContext, AppDbContext dbContext)
         {
             var role = httpContext.User.FindFirst(ClaimTypes.Role)?.Value;
-            var adminIdStr = httpContext.User.FindFirst("LabAdminId")?.Value;
+            var adminIdStr = httpContext.User.FindFirst("ClinicAdminId")?.Value;
 
             if (!int.TryParse(adminIdStr, out var adminId)) return null;
 
             if (role == "Super Admin")
             {
-                var superAdmin = await dbContext.LabSuperAdmins.FirstOrDefaultAsync(sa => sa.Id == adminId);
+                var superAdmin = await dbContext.ClinicSuperAdmins.FirstOrDefaultAsync(sa => sa.Id == adminId);
                 if (superAdmin != null)
                 {
                     var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == superAdmin.UserId && u.DeletedBy == 0);
@@ -62,7 +62,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             if (role == "Admin")
             {
-                var member = await dbContext.LabMembers.FirstOrDefaultAsync(m => m.Id == adminId);
+                var member = await dbContext.ClinicMembers.FirstOrDefaultAsync(m => m.Id == adminId);
                 if (member != null)
                 {
                     var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == member.UserId && u.DeletedBy == 0);

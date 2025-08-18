@@ -1,4 +1,6 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using HFiles_Backend.Domain.Entities.Labs;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HFiles_Backend.Domain.Entities.Clinics
 {
@@ -23,5 +25,12 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Required(ErrorMessage = "Appointment time is required.")]
         [DataType(DataType.Time)]
         public TimeSpan AppointmentTime { get; set; }
+
+        [Required(ErrorMessage = "ClinicId is required.")]
+        [Range(1, int.MaxValue, ErrorMessage = "ClinicId must be a positive number.")]
+        public int ClinicId { get; set; }
+
+        [ForeignKey("ClinicId")]
+        public ClinicSignup Clinics { get; set; } = null!;
     }
 }

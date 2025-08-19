@@ -93,8 +93,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     appointment.ClinicId,
                     appointment.VisitorUsername,
                     appointment.VisitorPhoneNumber,
-                    appointment.AppointmentDate,
-                    appointment.AppointmentTime,
+                    AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
+                    AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
                     appointment.Status
                 };
 

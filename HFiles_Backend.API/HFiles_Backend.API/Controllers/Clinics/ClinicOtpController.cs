@@ -295,7 +295,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [FromBody] ClinicUserPasswordResetRequest dto)
         {
             HttpContext.Items["Log-Category"] = "Authentication";
-            _logger.LogInformation("Received password reset request for User Email: {Email}, User ID: {UserId}", dto.Email, dto.UserId);
+            _logger.LogInformation("Received password reset request for User Email: {Email}, Clinic ID: {UserId}", dto.Email, dto.ClinicId);
 
             if (!ModelState.IsValid)
             {
@@ -315,7 +315,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             string? recipientEmail = null;
             string? userRole = null;
 
-            var superAdmin = await _clinicSuperAdminRepository.GetMainSuperAdminAsync(userId, dto.UserId);
+            var superAdmin = await _clinicSuperAdminRepository.GetMainSuperAdminAsync(userId, dto.ClinicId);
             if (superAdmin != null)
             {
                 recipientEmail = userDetails.Email;
@@ -323,7 +323,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
             else
             {
-                var member = await _clinicMemberRepository.GetActiveMemberAsync(userId, dto.UserId);
+                var member = await _clinicMemberRepository.GetActiveMemberAsync(userId, dto.ClinicId);
                 if (member != null)
                 {
                     recipientEmail = userDetails.Email;
@@ -333,14 +333,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             if (recipientEmail == null)
             {
-                _logger.LogWarning("No matching user found for Clinic ID {ClinicId}", dto.UserId);
+                _logger.LogWarning("No matching user found for Clinic ID {ClinicId}", dto.ClinicId);
                 return NotFound(ApiResponseFactory.Fail("No matching user found for password reset."));
             }
 
-            var clinic = await _clinicRepository.GetClinicByIdAsync(dto.UserId);
+            var clinic = await _clinicRepository.GetClinicByIdAsync(dto.ClinicId);
             if (clinic == null)
             {
-                _logger.LogWarning("Clinic not found for ID {ClinicId}", dto.UserId);
+                _logger.LogWarning("Clinic not found for ID {ClinicId}", dto.ClinicId);
                 return NotFound(ApiResponseFactory.Fail("Clinic not found."));
             }
 

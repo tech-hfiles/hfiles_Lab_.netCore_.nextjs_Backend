@@ -49,5 +49,7 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Required(ErrorMessage = "CreatedAtEpoch is required.")]
         [Range(1, long.MaxValue, ErrorMessage = "CreatedAtEpoch must be a positive number.")]
         public long CreatedAtEpoch { get; set; }
+
+        public ICollection<ClinicVisit> Visits { get; set; } = new List<ClinicVisit>();
     }
 }

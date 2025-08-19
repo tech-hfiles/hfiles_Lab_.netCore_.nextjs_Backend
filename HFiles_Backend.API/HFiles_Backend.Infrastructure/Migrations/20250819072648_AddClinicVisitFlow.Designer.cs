@@ -3,6 +3,7 @@ using System;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250819072648_AddClinicVisitFlow")]
+    partial class AddClinicVisitFlow
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -69,7 +72,7 @@ namespace HFilesBackend.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ClinicConsentForms");
+                    b.ToTable("ClinicConsentForm");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicMember", b =>
@@ -186,7 +189,7 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.HasIndex("HFID")
                         .HasDatabaseName("IX_ClinicPatients_HFID");
 
-                    b.ToTable("ClinicPatients");
+                    b.ToTable("ClinicPatient");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicSignup", b =>
@@ -323,9 +326,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.Property<TimeSpan>("AppointmentTime")
                         .HasColumnType("time(6)");
 
-                    b.Property<int>("ClinicId")
-                        .HasColumnType("int");
-
                     b.Property<int>("ClinicPatientId")
                         .HasColumnType("int");
 
@@ -334,15 +334,13 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.HasIndex("AppointmentDate")
                         .HasDatabaseName("IX_ClinicVisits_AppointmentDate");
 
-                    b.HasIndex("ClinicId");
-
                     b.HasIndex("ClinicPatientId")
                         .HasDatabaseName("IX_ClinicVisits_ClinicPatientId");
 
                     b.HasIndex("AppointmentDate", "ClinicPatientId")
                         .HasDatabaseName("IX_ClinicVisits_Date_Patient");
 
-                    b.ToTable("ClinicVisits");
+                    b.ToTable("ClinicVisit");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicVisitConsentForm", b =>
@@ -365,7 +363,7 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.HasIndex("ConsentFormId")
                         .HasDatabaseName("IX_ClinicVisitConsentForm_ConsentFormId");
 
-                    b.ToTable("ClinicVisitConsentForms");
+                    b.ToTable("ClinicVisitConsentForm");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Labs.LabAuditLog", b =>
@@ -935,19 +933,11 @@ namespace HFilesBackend.Infrastructure.Migrations
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicVisit", b =>
                 {
-                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicSignup", "Clinic")
-                        .WithMany("Visits")
-                        .HasForeignKey("ClinicId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicPatient", "Patient")
-                        .WithMany("Visits")
+                        .WithMany()
                         .HasForeignKey("ClinicPatientId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Clinic");
 
                     b.Navigation("Patient");
                 });
@@ -969,16 +959,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.Navigation("ConsentForm");
 
                     b.Navigation("Visit");
-                });
-
-            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicPatient", b =>
-                {
-                    b.Navigation("Visits");
-                });
-
-            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicSignup", b =>
-                {
-                    b.Navigation("Visits");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicVisit", b =>

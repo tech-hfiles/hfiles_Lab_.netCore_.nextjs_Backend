@@ -241,7 +241,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
         }
         public async Task<User?> GetVerifiedUserByEmailAsync(string email)
         {
-            return await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsEmailVerified);
+            return await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsEmailVerified && u.UserReference == 0);
         }
 
         public async Task<ClinicSuperAdmin?> GetSuperAdminAsync(int userId, int clinicId)
@@ -259,6 +259,16 @@ namespace HFiles_Backend.Infrastructure.Repositories
         public void UpdateSuperAdmin(ClinicSuperAdmin admin)
         {
             _context.ClinicSuperAdmins.Update(admin);
+        }
+
+        public async Task<List<ClinicPatient>> GetClinicPatientsWithVisitsAsync(int clinicId)
+        {
+            return await _context.ClinicPatients
+                .Where(p => p.Visits.Any(v => v.ClinicId == clinicId)) 
+                .Include(p => p.Visits.Where(v => v.ClinicId == clinicId)) 
+                    .ThenInclude(v => v.ConsentFormsSent)
+                        .ThenInclude(cf => cf.ConsentForm)
+                .ToListAsync();
         }
 
         public async Task SaveChangesAsync()

@@ -8,5 +8,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<User?> GetByIdAsync(int id);
         Task<User?> GetVerifiedUserByEmailAsync(string email);
         Task<string?> GetFullNameBySuperAdminIdAsync(int superAdminId);
+        Task<User?> GetUserByHFIDAsync(string hfid);
     }
 }

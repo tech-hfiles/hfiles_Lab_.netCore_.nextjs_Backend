@@ -21,7 +21,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
         public async Task<User?> GetVerifiedUserByEmailAsync(string email)
         {
-            return await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsEmailVerified);
+            return await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsEmailVerified && u.UserReference == 0);
         }
         public async Task<string?> GetFullNameBySuperAdminIdAsync(int superAdminId)
         {
@@ -30,6 +30,13 @@ namespace HFiles_Backend.Infrastructure.Repositories
                           where sa.Id == superAdminId
                           select u.FirstName + " " + u.LastName)
                           .FirstOrDefaultAsync();
+        }
+
+        public async Task<User?> GetUserByHFIDAsync(string hfid)
+        {
+            return await _context.Users
+                .Where(u => u.HfId == hfid && u.DeletedBy == 0)
+                .FirstOrDefaultAsync();
         }
     }
 }

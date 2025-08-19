@@ -242,6 +242,39 @@ namespace HFiles_Backend.Infrastructure.Data
                 .WithMany()
                 .HasForeignKey(m => m.PromotedBy)
                 .OnDelete(DeleteBehavior.Restrict);
+
+
+
+
+
+            // ClinicPatients: Index on HFID
+            modelBuilder.Entity<ClinicPatient>()
+                .HasIndex(p => p.HFID)
+                .HasDatabaseName("IX_ClinicPatients_HFID");
+
+            // ClinicVisits: Index on ClinicPatientId
+            modelBuilder.Entity<ClinicVisit>()
+                .HasIndex(v => v.ClinicPatientId)
+                .HasDatabaseName("IX_ClinicVisits_ClinicPatientId");
+
+            // ClinicVisits: Index on AppointmentDate
+            modelBuilder.Entity<ClinicVisit>()
+                .HasIndex(v => v.AppointmentDate)
+                .HasDatabaseName("IX_ClinicVisits_AppointmentDate");
+
+            // ClinicVisitConsentForm: Index on ClinicVisitId
+            modelBuilder.Entity<ClinicVisitConsentForm>()
+                .HasIndex(c => c.ClinicVisitId)
+                .HasDatabaseName("IX_ClinicVisitConsentForm_ClinicVisitId");
+
+            // ClinicVisitConsentForm: Index on ConsentFormId
+            modelBuilder.Entity<ClinicVisitConsentForm>()
+                .HasIndex(c => c.ConsentFormId)
+                .HasDatabaseName("IX_ClinicVisitConsentForm_ConsentFormId");
+
+            modelBuilder.Entity<ClinicVisit>()
+            .HasIndex(v => new { v.AppointmentDate, v.ClinicPatientId })
+            .HasDatabaseName("IX_ClinicVisits_Date_Patient");
         }
 
         //public DbSet<UserReports> UserReports { get; set; }
@@ -262,5 +295,9 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<ClinicSuperAdmin> ClinicSuperAdmins { get; set; }
         public DbSet<ClinicMember> ClinicMembers { get; set; }
         public DbSet<ClinicAppointment> ClinicAppointments { get; set; }
+        public DbSet<ClinicConsentForm> ClinicConsentForms { get; set; }
+        public DbSet <ClinicPatient> ClinicPatients { get; set; }
+        public DbSet <ClinicVisit> ClinicVisits { get; set; }
+        public DbSet <ClinicVisitConsentForm> ClinicVisitConsentForms { get; set; }
     }
 }

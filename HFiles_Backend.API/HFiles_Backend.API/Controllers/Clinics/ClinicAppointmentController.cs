@@ -32,6 +32,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
+
         // Create an appointment
         [HttpPost]
         [Authorize]
@@ -115,6 +116,46 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     await transaction.RollbackAsync();
                 }
             }
+        }
+
+
+
+
+
+        // Get Appointments
+        [HttpGet("clinic/{clinicId:int}")]
+        [Authorize]
+        public async Task<IActionResult> GetAppointmentsByClinicId([FromRoute] int clinicId)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Appointment";
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized access attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view appointments for this clinic."));
+            }
+
+            var appointments = await _appointmentRepository.GetAppointmentsByClinicIdAsync(clinicId);
+            if (appointments == null || !appointments.Any())
+            {
+                _logger.LogInformation("No appointments found for Clinic ID {ClinicId}", clinicId);
+                return Ok(ApiResponseFactory.Success(new List<object>(), "No appointments found."));
+            }
+
+            var response = appointments.Select(a => new
+            {
+                a.Id,
+                a.ClinicId,
+                a.VisitorUsername,
+                a.VisitorPhoneNumber,
+                AppointmentDate = a.AppointmentDate.ToString("dd-MM-yyyy"),
+                AppointmentTime = a.AppointmentTime.ToString(@"hh\:mm"),
+                a.Status
+            }).ToList();
+
+            _logger.LogInformation("Fetched {Count} appointments for Clinic ID {ClinicId}", response.Count, clinicId);
+            return Ok(ApiResponseFactory.Success(response, "Appointments fetched successfully."));
         }
 
 

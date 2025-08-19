@@ -1,6 +1,7 @@
 ﻿using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace HFiles_Backend.Infrastructure.Repositories
@@ -22,6 +23,21 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 _logger.LogError(ex, "Failed to save appointment");
                 throw;
             }
+        }
+        public async Task<ClinicAppointment?> GetAppointmentByIdAsync(int id)
+        {
+            return await _context.ClinicAppointments
+                .AsNoTracking()
+                .FirstOrDefaultAsync(a => a.Id == id);
+        }
+        public async Task<List<ClinicAppointment>> GetAppointmentsByClinicIdAsync(int clinicId)
+        {
+            return await _context.ClinicAppointments
+                .AsNoTracking()
+                .Where(a => a.ClinicId == clinicId)
+                .OrderByDescending(a => a.AppointmentDate)
+                .ThenByDescending(a => a.AppointmentTime)
+                .ToListAsync();
         }
     }
 }

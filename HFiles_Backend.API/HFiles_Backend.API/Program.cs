@@ -188,6 +188,8 @@ try
     builder.Services.AddScoped<UserRepository, UserRepository>();
     builder.Services.AddScoped<IClinicBranchRepository, ClinicBranchRepository>();
     builder.Services.AddScoped<ClinicBranchRepository, ClinicBranchRepository>();
+    builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+    builder.Services.AddScoped<AppointmentRepository, AppointmentRepository>();
 
 
     // DbContext

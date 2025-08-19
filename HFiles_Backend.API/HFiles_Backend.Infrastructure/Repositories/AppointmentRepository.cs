@@ -12,21 +12,16 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
         public async Task SaveAppointmentAsync(ClinicAppointment appointment)
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
-
             try
             {
                 await _context.ClinicAppointments.AddAsync(appointment);
                 await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to save appointment");
-                await transaction.RollbackAsync();
                 throw;
             }
         }
     }
-
 }

@@ -32,5 +32,9 @@ namespace HFiles_Backend.Domain.Entities.Clinics
 
         [ForeignKey("ClinicId")]
         public ClinicSignup Clinics { get; set; } = null!;
+
+        [Required]
+        [StringLength(20)]
+        public string Status { get; set; } = "Scheduled";
     }
 }

@@ -9,8 +9,8 @@ namespace HFiles_Backend.Application.DTOs.Clinics.ResetPassword
         [MaxLength(100, ErrorMessage = "Email must not exceed 100 characters.")]
         public string Email { get; set; } = null!;
 
-        [Required(ErrorMessage = "ClinicId is required.")]
-        [Range(1, int.MaxValue, ErrorMessage = "ClinicId must be greater than zero.")]
-        public int ClinicId { get; set; }
+        [Required(ErrorMessage = "UserId is required.")]
+        [Range(1, int.MaxValue, ErrorMessage = "UserId must be greater than zero.")]
+        public int UserId { get; set; }
     }
 }

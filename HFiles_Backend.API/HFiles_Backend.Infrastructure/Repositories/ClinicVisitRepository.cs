@@ -51,5 +51,12 @@ namespace HFiles_Backend.Infrastructure.Repositories
             return await _context.ClinicVisits
                 .AnyAsync(v => v.Patient.HFID == hfid && v.ClinicId == clinicId);
         }
+        public async Task<List<ClinicVisit>> GetVisitsByClinicIdAsync(int clinicId)
+        {
+            return await _context.ClinicVisits
+                .Include(v => v.Patient)
+                .Where(v => v.ClinicId == clinicId)
+                .ToListAsync();
+        }
     }
 }

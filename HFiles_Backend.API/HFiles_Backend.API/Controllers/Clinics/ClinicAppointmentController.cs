@@ -137,34 +137,65 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
 
             var appointments = await _appointmentRepository.GetAppointmentsByClinicIdAsync(clinicId);
+            var visits = await _clinicVisitRepository.GetVisitsByClinicIdAsync(clinicId);
+
             if (appointments == null || !appointments.Any())
             {
                 _logger.LogInformation("No appointments found for Clinic ID {ClinicId}", clinicId);
-                return Ok(ApiResponseFactory.Success(new List<object>(), "No appointments found."));
-            }
-
-            var response = new List<object>();
-
-            foreach (var appointment in appointments)
-            {
-                var user = await _userRepository.GetByPhoneNumberAsync(appointment.VisitorPhoneNumber);
-
-                response.Add(new
+                return Ok(ApiResponseFactory.Success(new
                 {
-                    appointment.Id,
-                    appointment.ClinicId,
-                    appointment.VisitorUsername,
-                    appointment.VisitorPhoneNumber,
-                    AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
-                    AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
-                    appointment.Treatment,
-                    appointment.Status,
-                    HFID = user?.HfId
-                });
+                    Appointments = new List<object>(),
+                    TotalAppointmentsToday = 0,
+                    MissedAppointmentsToday = 0
+                }, "No appointments found."));
             }
+
+            var today = DateTime.Today;
+
+            // Build a lookup from VisitId to HFID
+            var visitHfidLookup = visits
+                .Where(v => v.Patient != null)
+                .ToDictionary(v => new
+                {
+                    v.ClinicId,
+                    v.AppointmentDate,
+                    v.AppointmentTime
+                }, v => v.Patient.HFID);
+
+            var response = appointments.Select(a =>
+            {
+                var hfid = visitHfidLookup.TryGetValue(new
+                {
+                    ClinicId = a.ClinicId,
+                    AppointmentDate = a.AppointmentDate.Date,
+                    AppointmentTime = a.AppointmentTime
+                }, out var value) ? value : string.Empty;
+
+                return new
+                {
+                    a.Id,
+                    a.ClinicId,
+                    a.VisitorUsername,
+                    a.VisitorPhoneNumber,
+                    AppointmentDate = a.AppointmentDate.ToString("dd-MM-yyyy"),
+                    AppointmentTime = a.AppointmentTime.ToString(@"hh\:mm"),
+                    a.Treatment,
+                    a.Status,
+                    HFID = hfid
+                };
+            }).ToList();
+
+            int totalAppointmentsToday = appointments.Count(a => a.AppointmentDate.Date == today);
+            int missedAppointmentsToday = appointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Missed");
 
             _logger.LogInformation("Fetched {Count} appointments for Clinic ID {ClinicId}", response.Count, clinicId);
-            return Ok(ApiResponseFactory.Success(response, "Appointments fetched successfully."));
+
+            return Ok(ApiResponseFactory.Success(new
+            {
+                Appointments = response,
+                TotalAppointmentsToday = totalAppointmentsToday,
+                MissedAppointmentsToday = missedAppointmentsToday
+            }, "Appointments fetched successfully."));
         }
 
 

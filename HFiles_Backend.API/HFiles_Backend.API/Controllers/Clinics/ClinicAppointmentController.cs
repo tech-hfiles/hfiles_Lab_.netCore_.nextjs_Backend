@@ -262,6 +262,61 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
+        // Delete Appointment based on appointment Id
+        [HttpDelete("appointments/{appointmentId:int}")]
+        [Authorize]
+        public async Task<IActionResult> DeleteAppointmentById([FromRoute] int appointmentId)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Appointment";
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+            var committed = false;
+
+            try
+            {
+                var appointment = await _appointmentRepository.GetByIdAsync(appointmentId);
+                if (appointment == null)
+                {
+                    _logger.LogWarning("Appointment ID {AppointmentId} not found", appointmentId);
+                    return NotFound(ApiResponseFactory.Fail("Appointment not found."));
+                }
+
+                bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(appointment.ClinicId, User);
+                if (!isAuthorized)
+                {
+                    _logger.LogWarning("Unauthorized delete attempt for appointment ID {AppointmentId} in Clinic ID {ClinicId}", appointmentId, appointment.ClinicId);
+                    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to delete appointments for this clinic."));
+                }
+
+                transaction = await _clinicRepository.BeginTransactionAsync();
+
+                await _appointmentRepository.DeleteAsync(appointment);
+                await _clinicRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+                committed = true;
+
+                _logger.LogInformation("Deleted appointment ID {AppointmentId} from Clinic ID {ClinicId}", appointmentId, appointment.ClinicId);
+                return Ok(ApiResponseFactory.Success("Appointment deleted successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while deleting appointment ID {AppointmentId}", appointmentId);
+                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while deleting the appointment."));
+            }
+            finally
+            {
+                if (!committed && transaction?.GetDbTransaction()?.Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                    _logger.LogWarning("Transaction rolled back for appointment deletion ID {AppointmentId}", appointmentId);
+                }
+            }
+        }
+
+
+
+
+
         // Add new patient API
         [HttpPost("clinics/{clinicId}/follow-up")]
         [Authorize]

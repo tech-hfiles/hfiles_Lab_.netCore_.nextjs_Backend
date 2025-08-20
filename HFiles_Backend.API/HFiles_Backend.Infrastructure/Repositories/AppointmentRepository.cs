@@ -3,6 +3,7 @@ using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Sprache;
 
 namespace HFiles_Backend.Infrastructure.Repositories
 {
@@ -49,6 +50,20 @@ namespace HFiles_Backend.Infrastructure.Repositories
             .OrderByDescending(a => a.AppointmentDate)
             .ThenByDescending(a => a.AppointmentTime)
             .ToListAsync();
+        }
+
+        public async Task<ClinicAppointment?> GetByIdAsync(int appointmentId)
+        {
+            return await _context.ClinicAppointments
+                .FirstOrDefaultAsync(a => a.Id == appointmentId);
+        }
+
+
+        public async Task DeleteAsync(ClinicAppointment appointment)
+        {
+            _context.ClinicAppointments.Remove(appointment);
+            _logger.LogInformation("Marked appointment ID {AppointmentId} for deletion", appointment.Id);
+            await Task.CompletedTask; 
         }
     }
 }

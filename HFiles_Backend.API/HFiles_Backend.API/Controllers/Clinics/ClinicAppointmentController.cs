@@ -560,10 +560,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpGet("clinics/{clinicId}/patients")]
         [Authorize]
         public async Task<IActionResult> GetClinicPatients(
-     [FromRoute] int clinicId,
-     [FromQuery] string? startDate,
-     [FromQuery] string? endDate,
-     [FromServices] ClinicRepository clinicRepository)
+         [FromRoute] int clinicId,
+         [FromQuery] string? startDate,
+         [FromQuery] string? endDate,
+         [FromServices] ClinicRepository clinicRepository)
         {
             HttpContext.Items["Log-Category"] = "Clinic Patient Overview";
 

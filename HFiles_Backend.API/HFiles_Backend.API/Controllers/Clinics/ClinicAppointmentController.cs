@@ -186,7 +186,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }).ToList();
 
             int totalAppointmentsToday = appointments.Count(a => a.AppointmentDate.Date == today);
-            int missedAppointmentsToday = appointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Missed");
+            int missedAppointmentsToday = appointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Absent");
 
             _logger.LogInformation("Fetched {Count} appointments for Clinic ID {ClinicId}", response.Count, clinicId);
 

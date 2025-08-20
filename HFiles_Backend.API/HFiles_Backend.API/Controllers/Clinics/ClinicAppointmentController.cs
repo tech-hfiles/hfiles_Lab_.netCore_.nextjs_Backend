@@ -154,22 +154,23 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             // Build a lookup from VisitId to HFID
             var visitHfidLookup = visits
-                .Where(v => v.Patient != null)
-                .ToDictionary(v => new
-                {
-                    v.ClinicId,
-                    v.AppointmentDate,
-                    v.AppointmentTime
-                }, v => v.Patient.HFID);
+               .Where(v => v.Patient != null)
+               .ToLookup(v => new
+               {
+                   v.ClinicId,
+                   v.AppointmentDate,
+                   v.AppointmentTime
+               }, v => v.Patient.HFID);
+
 
             var response = appointments.Select(a =>
             {
-                var hfid = visitHfidLookup.TryGetValue(new
+                var hfid = visitHfidLookup[new
                 {
                     ClinicId = a.ClinicId,
                     AppointmentDate = a.AppointmentDate.Date,
                     AppointmentTime = a.AppointmentTime
-                }, out var value) ? value : string.Empty;
+                }].FirstOrDefault() ?? string.Empty;
 
                 return new
                 {

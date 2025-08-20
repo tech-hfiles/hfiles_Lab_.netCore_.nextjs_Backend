@@ -45,5 +45,11 @@ namespace HFiles_Backend.Infrastructure.Repositories
             _context.ClinicVisits.Add(visit);
             await _context.SaveChangesAsync();
         }
+
+        public async Task<bool> HasVisitInClinicAsync(string hfid, int clinicId)
+        {
+            return await _context.ClinicVisits
+                .AnyAsync(v => v.Patient.HFID == hfid && v.ClinicId == clinicId);
+        }
     }
 }

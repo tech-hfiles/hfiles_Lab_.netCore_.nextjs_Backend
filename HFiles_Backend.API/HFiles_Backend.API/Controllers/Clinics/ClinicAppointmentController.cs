@@ -220,7 +220,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     if (appointment.AppointmentDate.Date != now.Date || appointmentDateTime > now)
                         return BadRequest(ApiResponseFactory.Fail("Can only mark as completed if appointment is today and time has passed."));
 
-                    appointment.Treatment = dto.Treatment; 
+                    appointment.Treatment = dto.Treatment;
                 }
 
                 if (!string.IsNullOrWhiteSpace(dto.Status))
@@ -262,12 +262,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-        // Add patient and appointment follow ups
+        // Add new patient API
         [HttpPost("clinics/{clinicId}/follow-up")]
         [Authorize]
         public async Task<IActionResult> CreateFollowUpAppointment(
-         [FromBody] FollowUpAppointmentDto dto,
-         [FromRoute] int clinicId)
+        [FromBody] FollowUpAppointmentDto dto,
+        [FromRoute] int clinicId)
         {
             HttpContext.Items["Log-Category"] = "Follow-up Appointment";
 
@@ -289,7 +289,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             try
             {
-                // Authorization check
                 bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
                 if (!isAuthorized)
                 {
@@ -297,7 +296,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can create appointments."));
                 }
 
-                // Validate clinic existence to avoid FK errors
                 var clinicExists = await _clinicRepository.ExistsAsync(clinicId);
                 if (!clinicExists)
                 {
@@ -305,7 +303,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return BadRequest(ApiResponseFactory.Fail("Invalid Clinic ID."));
                 }
 
-                // Resolve user by HFID
+                // Check if patient already has a visit in this clinic
+                bool hasVisit = await _clinicVisitRepository.HasVisitInClinicAsync(dto.HFID, clinicId);
+                if (hasVisit)
+                {
+                    _logger.LogWarning("Patient with HFID {HFID} already has a visit in Clinic ID {ClinicId}", dto.HFID, clinicId);
+                    return BadRequest(ApiResponseFactory.Fail("This patient already exists. Please book a follow-up appointment instead."));
+                }
+
                 var user = await _userRepository.GetUserByHFIDAsync(dto.HFID);
                 if (user == null)
                 {
@@ -316,10 +321,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 var fullName = $"{user.FirstName} {user.LastName}";
                 var phone = user.PhoneNumber ?? "N/A";
 
-                // Resolve or create patient
                 var patient = await _clinicVisitRepository.GetOrCreatePatientAsync(dto.HFID, fullName);
 
-                // Resolve consent forms
                 var consentForms = await _clinicVisitRepository.GetConsentFormsByTitlesAsync(dto.ConsentFormTitles);
                 if (consentForms.Count != dto.ConsentFormTitles.Count)
                 {
@@ -327,11 +330,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return BadRequest(ApiResponseFactory.Fail($"Invalid consent form titles: {string.Join(", ", missing)}"));
                 }
 
-                // Save visit with ClinicId included
                 var visit = new ClinicVisit
                 {
                     ClinicPatientId = patient.Id,
-                    ClinicId = clinicId, 
+                    ClinicId = clinicId,
                     AppointmentDate = date.Date,
                     AppointmentTime = time,
                     ConsentFormsSent = consentForms.Select(f => new ClinicVisitConsentForm
@@ -341,7 +343,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 };
                 await _clinicVisitRepository.SaveVisitAsync(visit);
 
-                // Save appointment
                 var appointment = new ClinicAppointment
                 {
                     VisitorUsername = fullName,
@@ -380,6 +381,119 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 if (!committed && transaction.GetDbTransaction().Connection != null)
                     await transaction.RollbackAsync();
+            }
+        }
+
+
+
+
+
+        // Check existing patient and book follow up appointment
+        [HttpPost("clinics/{clinicId}/appointments/follow-up")]
+        [Authorize]
+        public async Task<IActionResult> BookFollowUpAppointmentForExistingPatient(
+        [FromBody] FollowUpAppointmentDto dto,
+        [FromRoute] int clinicId)
+        {
+            HttpContext.Items["Log-Category"] = "Follow-up Appointment (Existing Patient)";
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            if (!DateTime.TryParseExact(dto.AppointmentDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var date))
+                return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentDate format. Expected dd-MM-yyyy."));
+
+            if (!TimeSpan.TryParse(dto.AppointmentTime, out var time))
+                return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentTime format. Expected HH:mm."));
+
+            try
+            {
+                bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+                if (!isAuthorized)
+                {
+                    _logger.LogWarning("Unauthorized appointment booking attempt for Clinic ID {ClinicId}", clinicId);
+                    return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can book appointments."));
+                }
+
+                var clinicExists = await _clinicRepository.ExistsAsync(clinicId);
+                if (!clinicExists)
+                {
+                    _logger.LogWarning("Clinic ID {ClinicId} does not exist", clinicId);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid Clinic ID."));
+                }
+
+                // Validate patient existence in this clinic
+                bool hasVisit = await _clinicVisitRepository.HasVisitInClinicAsync(dto.HFID, clinicId);
+                if (!hasVisit)
+                {
+                    _logger.LogWarning("Patient with HFID {HFID} not found in Clinic ID {ClinicId}", dto.HFID, clinicId);
+                    return BadRequest(ApiResponseFactory.Fail("Patient not found in this clinic. Please add the patient first."));
+                }
+
+                var user = await _userRepository.GetUserByHFIDAsync(dto.HFID);
+                if (user == null)
+                {
+                    _logger.LogWarning("No user found for HFID {HFID}", dto.HFID);
+                    return NotFound(ApiResponseFactory.Fail("No user found for provided HFID."));
+                }
+
+                var fullName = $"{user.FirstName} {user.LastName}";
+                var phone = user.PhoneNumber ?? "N/A";
+
+                var patient = await _clinicVisitRepository.GetOrCreatePatientAsync(dto.HFID, fullName);
+
+                var consentForms = await _clinicVisitRepository.GetConsentFormsByTitlesAsync(dto.ConsentFormTitles);
+                if (consentForms.Count != dto.ConsentFormTitles.Count)
+                {
+                    var missing = dto.ConsentFormTitles.Except(consentForms.Select(f => f.Title)).ToList();
+                    return BadRequest(ApiResponseFactory.Fail($"Invalid consent form titles: {string.Join(", ", missing)}"));
+                }
+
+                var visit = new ClinicVisit
+                {
+                    ClinicPatientId = patient.Id,
+                    ClinicId = clinicId,
+                    AppointmentDate = date.Date,
+                    AppointmentTime = time,
+                    ConsentFormsSent = consentForms.Select(f => new ClinicVisitConsentForm
+                    {
+                        ConsentFormId = f.Id
+                    }).ToList()
+                };
+                await _clinicVisitRepository.SaveVisitAsync(visit);
+
+                var appointment = new ClinicAppointment
+                {
+                    VisitorUsername = fullName,
+                    VisitorPhoneNumber = phone,
+                    AppointmentDate = date.Date,
+                    AppointmentTime = time,
+                    ClinicId = clinicId,
+                    Status = "Scheduled"
+                };
+                await _appointmentRepository.SaveAppointmentAsync(appointment);
+
+                var response = new
+                {
+                    HFID = dto.HFID,
+                    PatientName = fullName,
+                    AppointmentDate = date.ToString("dd-MM-yyyy"),
+                    AppointmentTime = time.ToString(@"hh\:mm"),
+                    AppointmentStatus = appointment.Status,
+                    ClinicId = clinicId
+                };
+
+                _logger.LogInformation("Follow-up appointment booked for existing patient HFID {HFID} in Clinic ID {ClinicId}", dto.HFID, clinicId);
+                return Ok(ApiResponseFactory.Success(response, "Follow-up appointment booked successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while booking follow-up appointment for HFID {HFID}", dto.HFID);
+                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while booking the follow-up appointment."));
             }
         }
 

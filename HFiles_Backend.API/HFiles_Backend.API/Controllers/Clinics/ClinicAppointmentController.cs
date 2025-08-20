@@ -559,7 +559,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
         // Fetch CLinic Patients
         [HttpGet("clinics/{clinicId}/patients")]
         [Authorize]
-        public async Task<IActionResult> GetClinicPatients([FromRoute] int clinicId, [FromServices] ClinicRepository clinicRepository)
+        public async Task<IActionResult> GetClinicPatients(
+     [FromRoute] int clinicId,
+     [FromQuery] string? startDate,
+     [FromQuery] string? endDate,
+     [FromServices] ClinicRepository clinicRepository)
         {
             HttpContext.Items["Log-Category"] = "Clinic Patient Overview";
 
@@ -573,30 +577,68 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             try
             {
+                // Parse date filters
+                DateTime? start = null;
+                DateTime? end = null;
+                DateTime parsedStart;
+                DateTime parsedEnd;
+
+                if (!string.IsNullOrEmpty(startDate))
+                {
+                    if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out parsedStart))
+                    {
+                        return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
+                    }
+                    start = parsedStart;
+                }
+
+                if (!string.IsNullOrEmpty(endDate))
+                {
+                    if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out parsedEnd))
+                    {
+                        return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
+                    }
+                    end = parsedEnd;
+                }
+
                 var patients = await clinicRepository.GetClinicPatientsWithVisitsAsync(clinicId);
+
+                var filteredPatients = patients
+                    .Select(p => new
+                    {
+                        Patient = p,
+                        LastVisit = p.Visits.OrderByDescending(v => v.AppointmentDate).FirstOrDefault()
+                    })
+                    .Where(x =>
+                        x.LastVisit != null &&
+                        (!start.HasValue || x.LastVisit.AppointmentDate.Date >= start.Value.Date) &&
+                        (!end.HasValue || x.LastVisit.AppointmentDate.Date <= end.Value.Date))
+                    .Select(x => new PatientDto
+                    {
+                        PatientId = x.Patient.Id,
+                        PatientName = x.Patient.PatientName,
+                        HFID = x.Patient.HFID,
+                        LastVisitDate = x.LastVisit?.AppointmentDate.ToString("dd-MM-yyyy"),
+                        Visits = x.Patient.Visits
+                            .Select(v => new VisitDto
+                            {
+                                VisitId = v.Id,
+                                AppointmentDate = v.AppointmentDate.ToString("dd-MM-yyyy"),
+                                AppointmentTime = v.AppointmentTime.ToString(@"hh\:mm"),
+                                ConsentFormsSent = v.ConsentFormsSent.Select(cf => cf.ConsentForm.Title).ToList()
+                            })
+                            .OrderByDescending(v => v.AppointmentDate)
+                            .ToList()
+                    })
+                    .ToList();
 
                 var response = new ClinicPatientResponseDto
                 {
-                    TotalPatients = patients.Count,
-                    Patients = patients.Select(p => new PatientDto
-                    {
-                        PatientId = p.Id,
-                        PatientName = p.PatientName,
-                        HFID = p.HFID,
-                        LastVisitDate = p.Visits
-                            .OrderByDescending(v => v.AppointmentDate)
-                            .FirstOrDefault()?.AppointmentDate.ToString("dd-MM-yyyy"),
-                        Visits = p.Visits.Select(v => new VisitDto
-                        {
-                            VisitId = v.Id,
-                            AppointmentDate = v.AppointmentDate.ToString("dd-MM-yyyy"),
-                            AppointmentTime = v.AppointmentTime.ToString(@"hh\:mm"),
-                            ConsentFormsSent = v.ConsentFormsSent.Select(cf => cf.ConsentForm.Title).ToList()
-                        }).OrderByDescending(v => v.AppointmentDate).ToList()
-                    }).ToList()
+                    TotalPatients = filteredPatients.Count,
+                    Patients = filteredPatients
                 };
 
-                return Ok(ApiResponseFactory.Success(response, "Clinic patient data retrieved successfully."));
+                return Ok(ApiResponseFactory.Success(response, "Filtered clinic patient data retrieved successfully."));
             }
             catch (Exception ex)
             {

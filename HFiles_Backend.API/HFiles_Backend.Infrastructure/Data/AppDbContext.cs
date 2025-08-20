@@ -275,6 +275,11 @@ namespace HFiles_Backend.Infrastructure.Data
             modelBuilder.Entity<ClinicVisit>()
             .HasIndex(v => new { v.AppointmentDate, v.ClinicPatientId })
             .HasDatabaseName("IX_ClinicVisits_Date_Patient");
+
+            modelBuilder.Entity<ClinicAppointment>()
+            .Property(a => a.Treatment)
+            .HasMaxLength(1000)
+            .IsRequired(false);
         }
 
         //public DbSet<UserReports> UserReports { get; set; }

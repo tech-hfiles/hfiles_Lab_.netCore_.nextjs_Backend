@@ -33,11 +33,22 @@ namespace HFiles_Backend.Infrastructure.Repositories
         public async Task<List<ClinicAppointment>> GetAppointmentsByClinicIdAsync(int clinicId)
         {
             return await _context.ClinicAppointments
-                .AsNoTracking()
-                .Where(a => a.ClinicId == clinicId)
-                .OrderByDescending(a => a.AppointmentDate)
-                .ThenByDescending(a => a.AppointmentTime)
-                .ToListAsync();
+            .AsNoTracking()
+            .Where(a => a.ClinicId == clinicId)
+            .Select(a => new ClinicAppointment
+            {
+                Id = a.Id,
+                VisitorUsername = a.VisitorUsername,
+                VisitorPhoneNumber = a.VisitorPhoneNumber,
+                AppointmentDate = a.AppointmentDate,
+                AppointmentTime = a.AppointmentTime,
+                ClinicId = a.ClinicId,
+                Status = a.Status,
+                Treatment = a.Treatment
+            })
+            .OrderByDescending(a => a.AppointmentDate)
+            .ThenByDescending(a => a.AppointmentTime)
+            .ToListAsync();
         }
     }
 }

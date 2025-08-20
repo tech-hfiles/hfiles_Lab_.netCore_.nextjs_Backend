@@ -1,8 +1,9 @@
-﻿using HFiles_Backend.API.Interfaces;
+﻿using Hangfire;
+using Hangfire.MySql;
+using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.API.Middleware;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.API.Settings;
-using HFiles_Backend.Application.DTOs.Clinics;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Domain.Interfaces;
@@ -117,8 +118,6 @@ try
         options.MultipartBodyLengthLimit = 1024 * 1024 * 500;
     });
 
-
-
     // Swagger + JWT
     builder.Services.AddSwaggerGen(options =>
     {
@@ -139,17 +138,16 @@ try
         });
 
         options.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
         {
-            new OpenApiSecurityScheme
             {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
-            },
-            Array.Empty<string>()
-        }
+                new OpenApiSecurityScheme
+                {
+                    Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+                },
+                Array.Empty<string>()
+            }
+        });
     });
-    });
-
 
     // Scoped services
     builder.Services.AddScoped<IPasswordHasher<LabSignup>, PasswordHasher<LabSignup>>();
@@ -166,12 +164,12 @@ try
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<AuditLogFilter>();
     builder.Services.AddScoped<IEmailTemplateService, EmailTemplateService>();
+    builder.Services.AddScoped<AppointmentStatusService>();
 
     builder.Services.AddControllers(options =>
     {
         options.Filters.Add<AuditLogFilter>();
     });
-
 
     // Clinic Services
     builder.Services.AddScoped<IClinicRepository, ClinicRepository>();
@@ -193,7 +191,6 @@ try
     builder.Services.AddScoped<IClinicVisitRepository, ClinicVisitRepository>();
     builder.Services.AddScoped<ClinicVisitRepository, ClinicVisitRepository>();
 
-
     // DbContext
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseMySql(
@@ -202,6 +199,27 @@ try
             mysqlOptions => mysqlOptions.MigrationsAssembly("HFiles_Backend.Infrastructure")
         )
     );
+
+    // Hangfire setup
+    builder.Services.AddHangfire(config =>
+    config.UseStorage(
+        new MySqlStorage(
+            builder.Configuration.GetConnectionString("DefaultConnection"),
+            new MySqlStorageOptions
+            {
+                TransactionIsolationLevel = System.Transactions.IsolationLevel.ReadCommitted,
+                QueuePollInterval = TimeSpan.FromSeconds(15),
+                JobExpirationCheckInterval = TimeSpan.FromHours(1),
+                CountersAggregateInterval = TimeSpan.FromMinutes(5),
+                PrepareSchemaIfNecessary = true, 
+                DashboardJobListLimit = 50000,
+                TransactionTimeout = TimeSpan.FromMinutes(1),
+            }
+          )
+        )
+    );
+
+    builder.Services.AddHangfireServer();
 
     // JWT Setup
     var tempJwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>()
@@ -233,27 +251,22 @@ try
 
     var app = builder.Build();
 
-    // Migrations
-    //using (var scope = app.Services.CreateScope())
-    //{
-    //    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-    //    Log.Information("MIGRATION DB_HOST: {DB_HOST}", Environment.GetEnvironmentVariable("DB_HOST"));
-    //    Log.Information("MIGRATION DB_USER: {DB_USER}", Environment.GetEnvironmentVariable("DB_USER"));
 
-    //    try
-    //    {
-    //        using var connection = new MySqlConnection(builder.Configuration.GetConnectionString("DefaultConnection"));
-    //        connection.Open();
-    //        Log.Information("Migration connection successful!");
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        Log.Error(ex, "Migration connection failed");
-    //    }
+    app.UseHangfireDashboard();
 
-    //    db.Database.Migrate();
-    //}
+    // Register recurring jobs after app startup
+    using (var scope = app.Services.CreateScope())
+    {
+        var recurringJobs = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
+
+        recurringJobs.AddOrUpdate<AppointmentStatusService>(
+            "sweep-absent-appointments",
+            service => service.SweepAbsentAppointmentsAsync(),
+            "*/5 * * * *"
+        );
+    }
+
 
     // Middleware
     if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
@@ -265,13 +278,6 @@ try
     app.UseHttpsRedirection();
     app.UseStaticFiles();
 
-    //app.UseStaticFiles(new StaticFileOptions
-    //{
-    //    FileProvider = new PhysicalFileProvider(
-    //        Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "uploads")),
-    //    RequestPath = "/uploads"
-    //});
-
     app.UseMiddleware<GlobalExceptionMiddleware>();
     app.UseRouting();
     app.UseSession();
@@ -279,12 +285,8 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
 
-    //app.UseMiddleware<ExceptionLoggingMiddleware>();
-    //app.UseMiddleware<ApiLoggingMiddleware>();
-
     app.MapControllers();
     app.Run();
-
 
 }
 catch (Exception ex)

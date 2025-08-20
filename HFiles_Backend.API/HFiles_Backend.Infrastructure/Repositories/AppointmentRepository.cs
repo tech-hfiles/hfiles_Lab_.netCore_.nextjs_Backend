@@ -65,5 +65,26 @@ namespace HFiles_Backend.Infrastructure.Repositories
             _logger.LogInformation("Marked appointment ID {AppointmentId} for deletion", appointment.Id);
             await Task.CompletedTask; 
         }
+
+        public async Task<int> MarkOverdueAppointmentsAsAbsentAsync()
+        {
+            var now = DateTime.UtcNow;
+
+            var overdueAppointments = await _context.ClinicAppointments
+                .Where(a => a.Status == "Scheduled")
+                .Where(a =>
+                    a.AppointmentDate.Date < now.Date ||
+                    (a.AppointmentDate.Date == now.Date &&
+                     a.AppointmentTime < now.TimeOfDay.Subtract(TimeSpan.FromMinutes(15))))
+                .ToListAsync();
+
+            foreach (var appointment in overdueAppointments)
+            {
+                appointment.Status = "Absent";
+            }
+
+            await _context.SaveChangesAsync();
+            return overdueAppointments.Count;
+        }
     }
 }

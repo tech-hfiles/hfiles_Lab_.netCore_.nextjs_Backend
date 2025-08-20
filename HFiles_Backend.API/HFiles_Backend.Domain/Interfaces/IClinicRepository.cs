@@ -8,6 +8,7 @@ namespace HFiles_Backend.Domain.Interfaces
     public interface IClinicRepository
     {
         Task<IDbContextTransaction> BeginTransactionAsync();
+        Task<bool> ExistsAsync(int clinicId);
         Task<bool> EmailExistsAsync(string email);
         Task<ClinicSignup?> GetByEmailAsync(string email);
         Task<ClinicSignup?> GetByPhoneAsync(string phoneNumber);

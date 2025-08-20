@@ -19,6 +19,12 @@ namespace HFiles_Backend.Infrastructure.Repositories
         {
             return await _context.Database.BeginTransactionAsync();
         }
+        public async Task<bool> ExistsAsync(int clinicId)
+        {
+            return await _context.ClinicSignups
+                .AsNoTracking()
+                .AnyAsync(c => c.Id == clinicId && c.DeletedBy == 0);
+        }
 
         public async Task<bool> EmailExistsAsync(string email)
         {
@@ -132,7 +138,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
         {
             _context.ClinicSignups.Update(clinic);
         }
-        
+
 
         public async Task<bool> IsClinicAuthorizedAsync(int clinicId, ClaimsPrincipal user)
         {
@@ -264,8 +270,8 @@ namespace HFiles_Backend.Infrastructure.Repositories
         public async Task<List<ClinicPatient>> GetClinicPatientsWithVisitsAsync(int clinicId)
         {
             return await _context.ClinicPatients
-                .Where(p => p.Visits.Any(v => v.ClinicId == clinicId)) 
-                .Include(p => p.Visits.Where(v => v.ClinicId == clinicId)) 
+                .Where(p => p.Visits.Any(v => v.ClinicId == clinicId))
+                .Include(p => p.Visits.Where(v => v.ClinicId == clinicId))
                     .ThenInclude(v => v.ConsentFormsSent)
                         .ThenInclude(cf => cf.ConsentForm)
                 .ToListAsync();

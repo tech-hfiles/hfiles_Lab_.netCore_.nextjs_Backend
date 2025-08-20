@@ -5,7 +5,7 @@ namespace HFiles_Backend.Domain.Interfaces
     public interface IAppointmentRepository
     {
         Task SaveAppointmentAsync(ClinicAppointment appointment);
-        Task<ClinicAppointment?> GetAppointmentByIdAsync(int id);
+        Task<ClinicAppointment?> GetAppointmentByIdAsync(int appointmentId, int clinicId);
         Task<List<ClinicAppointment>> GetAppointmentsByClinicIdAsync(int clinicId);
     }
 }

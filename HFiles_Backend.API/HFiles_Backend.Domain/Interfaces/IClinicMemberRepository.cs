@@ -1,5 +1,4 @@
 ﻿using HFiles_Backend.Domain.Entities.Clinics;
-using static System.Net.Mime.MediaTypeNames;
 
 namespace HFiles_Backend.Domain.Interfaces
 {

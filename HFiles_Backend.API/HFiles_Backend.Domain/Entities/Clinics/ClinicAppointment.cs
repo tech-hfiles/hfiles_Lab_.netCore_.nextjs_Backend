@@ -28,6 +28,10 @@ namespace HFiles_Backend.Domain.Entities.Clinics
 
         [Required(ErrorMessage = "ClinicId is required.")]
         [Range(1, int.MaxValue, ErrorMessage = "ClinicId must be a positive number.")]
+
+        [MaxLength(1000, ErrorMessage = "Treatment notes must not exceed 1000 characters.")]
+        public string? Treatment { get; set; }
+
         public int ClinicId { get; set; }
 
         [ForeignKey("ClinicId")]

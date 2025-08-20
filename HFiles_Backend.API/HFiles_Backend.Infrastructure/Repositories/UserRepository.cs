@@ -38,5 +38,16 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .Where(u => u.HfId == hfid && u.DeletedBy == 0)
                 .FirstOrDefaultAsync();
         }
+
+        public async Task<List<User>> GetAllAsync()
+        {
+            return await _context.Users.ToListAsync();
+        }
+
+        public async Task<User?> GetByPhoneNumberAsync(string phoneNumber)
+        {
+            return await _context.Users
+                .FirstOrDefaultAsync(u => u.PhoneNumber == phoneNumber && u.UserReference == 0);
+        }
     }
 }

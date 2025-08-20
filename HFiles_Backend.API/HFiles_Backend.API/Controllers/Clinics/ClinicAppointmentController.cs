@@ -143,19 +143,119 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return Ok(ApiResponseFactory.Success(new List<object>(), "No appointments found."));
             }
 
-            var response = appointments.Select(a => new
+            var response = new List<object>();
+
+            foreach (var appointment in appointments)
             {
-                a.Id,
-                a.ClinicId,
-                a.VisitorUsername,
-                a.VisitorPhoneNumber,
-                AppointmentDate = a.AppointmentDate.ToString("dd-MM-yyyy"),
-                AppointmentTime = a.AppointmentTime.ToString(@"hh\:mm"),
-                a.Status
-            }).ToList();
+                var user = await _userRepository.GetByPhoneNumberAsync(appointment.VisitorPhoneNumber);
+
+                response.Add(new
+                {
+                    appointment.Id,
+                    appointment.ClinicId,
+                    appointment.VisitorUsername,
+                    appointment.VisitorPhoneNumber,
+                    AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
+                    AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
+                    appointment.Treatment,
+                    appointment.Status,
+                    HFID = user?.HfId
+                });
+            }
 
             _logger.LogInformation("Fetched {Count} appointments for Clinic ID {ClinicId}", response.Count, clinicId);
             return Ok(ApiResponseFactory.Success(response, "Appointments fetched successfully."));
+        }
+
+
+
+
+
+        // Update Appointments
+        [HttpPut("clinic/{clinicId:int}/appointment/{appointmentId:int}/status")]
+        [Authorize]
+        public async Task<IActionResult> UpdateAppointmentStatus(
+        [FromRoute] int clinicId,
+        [FromRoute] int appointmentId,
+        [FromBody] AppointmentStatusUpdateDto dto)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Appointment";
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed for status update. Errors: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized status update attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can update appointments."));
+            }
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+            var committed = false;
+
+            try
+            {
+                var appointment = await _appointmentRepository.GetAppointmentByIdAsync(appointmentId, clinicId);
+                if (appointment == null)
+                {
+                    _logger.LogWarning("Appointment not found for ID {AppointmentId} in Clinic ID {ClinicId}", appointmentId, clinicId);
+                    return NotFound(ApiResponseFactory.Fail("Appointment not found."));
+                }
+
+                var now = DateTime.Now;
+                var appointmentDateTime = appointment.AppointmentDate.Date + appointment.AppointmentTime;
+
+                if (dto.Status == "Canceled")
+                {
+                    if (appointmentDateTime <= now)
+                        return BadRequest(ApiResponseFactory.Fail("Cannot cancel past or ongoing appointments."));
+                }
+                else if (dto.Status == "Completed")
+                {
+                    if (appointment.AppointmentDate.Date != now.Date || appointmentDateTime > now)
+                        return BadRequest(ApiResponseFactory.Fail("Can only mark as completed if appointment is today and time has passed."));
+
+                    appointment.Treatment = dto.Treatment; 
+                }
+
+                if (!string.IsNullOrWhiteSpace(dto.Status))
+                {
+                    appointment.Status = dto.Status;
+                }
+                await _clinicRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+                committed = true;
+
+                var response = new
+                {
+                    appointment.Id,
+                    appointment.ClinicId,
+                    appointment.VisitorUsername,
+                    appointment.VisitorPhoneNumber,
+                    AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
+                    AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
+                    appointment.Status,
+                    appointment.Treatment
+                };
+
+                _logger.LogInformation("Appointment ID {AppointmentId} status updated to {Status}", appointmentId, dto.Status);
+                return Ok(ApiResponseFactory.Success(response, "Appointment status updated successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while updating appointment status for ID {AppointmentId}", appointmentId);
+                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while updating appointment status."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
         }
 
 
@@ -166,7 +266,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpPost("clinics/{clinicId}/follow-up")]
         [Authorize]
         public async Task<IActionResult> CreateFollowUpAppointment(
-        [FromBody] FollowUpAppointmentDto dto, [FromRoute] int clinicId)
+         [FromBody] FollowUpAppointmentDto dto,
+         [FromRoute] int clinicId)
         {
             HttpContext.Items["Log-Category"] = "Follow-up Appointment";
 
@@ -188,12 +289,20 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             try
             {
-                // Authorization: Ensure clinicId belongs to main clinic or its branches
+                // Authorization check
                 bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
                 if (!isAuthorized)
                 {
                     _logger.LogWarning("Unauthorized appointment creation attempt for Clinic ID {ClinicId}", clinicId);
                     return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can create appointments."));
+                }
+
+                // Validate clinic existence to avoid FK errors
+                var clinicExists = await _clinicRepository.ExistsAsync(clinicId);
+                if (!clinicExists)
+                {
+                    _logger.LogWarning("Clinic ID {ClinicId} does not exist in clinicsignups", clinicId);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid Clinic ID."));
                 }
 
                 // Resolve user by HFID
@@ -218,10 +327,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return BadRequest(ApiResponseFactory.Fail($"Invalid consent form titles: {string.Join(", ", missing)}"));
                 }
 
-                // Save visit
+                // Save visit with ClinicId included
                 var visit = new ClinicVisit
                 {
                     ClinicPatientId = patient.Id,
+                    ClinicId = clinicId, 
                     AppointmentDate = date.Date,
                     AppointmentTime = time,
                     ConsentFormsSent = consentForms.Select(f => new ClinicVisitConsentForm
@@ -253,6 +363,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     AppointmentDate = date.ToString("dd-MM-yyyy"),
                     AppointmentTime = time.ToString(@"hh\:mm"),
                     ConsentFormsSent = consentForms.Select(f => f.Title).ToList(),
+                    Treatment = appointment.Treatment,
                     AppointmentStatus = appointment.Status,
                     ClinicId = clinicId
                 };
@@ -276,6 +387,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
+        // Fetch CLinic Patients
         [HttpGet("clinics/{clinicId}/patients")]
         [Authorize]
         public async Task<IActionResult> GetClinicPatients([FromRoute] int clinicId, [FromServices] ClinicRepository clinicRepository)

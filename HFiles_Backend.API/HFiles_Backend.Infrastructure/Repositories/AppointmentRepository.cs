@@ -24,12 +24,12 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 throw;
             }
         }
-        public async Task<ClinicAppointment?> GetAppointmentByIdAsync(int id)
+        public async Task<ClinicAppointment?> GetAppointmentByIdAsync(int appointmentId, int clinicId)
         {
             return await _context.ClinicAppointments
-                .AsNoTracking()
-                .FirstOrDefaultAsync(a => a.Id == id);
+                .FirstOrDefaultAsync(a => a.Id == appointmentId && a.ClinicId == clinicId);
         }
+
         public async Task<List<ClinicAppointment>> GetAppointmentsByClinicIdAsync(int clinicId)
         {
             return await _context.ClinicAppointments

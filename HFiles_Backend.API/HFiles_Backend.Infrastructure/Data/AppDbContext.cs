@@ -304,5 +304,6 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet <ClinicPatient> ClinicPatients { get; set; }
         public DbSet <ClinicVisit> ClinicVisits { get; set; }
         public DbSet <ClinicVisitConsentForm> ClinicVisitConsentForms { get; set; }
+        public DbSet <ClinicPrescription> ClinicPrescriptions { get; set; }
     }
 }

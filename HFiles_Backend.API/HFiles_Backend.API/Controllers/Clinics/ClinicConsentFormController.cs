@@ -140,7 +140,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
         // Fetch all consent forms
-        [HttpGet("consent/forms/{clinicId}")]
+        [HttpPost("consent/forms/{clinicId}")]
         [Authorize]
         public async Task<IActionResult> GetPatientConsentForms(
         [FromRoute] int clinicId,
@@ -165,6 +165,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 var response = consentForms.Select(cf => new ClinicConsentFormResponse
                 {
+                    ClinicConsentFormId = cf.Id,
                     Title = cf.ConsentForm.Title,
                     ConsentFormUrl = cf.ConsentFormUrl,
                     IsVerified = cf.IsVerified

@@ -20,6 +20,7 @@ using Microsoft.OpenApi.Models;
 using MySqlConnector;
 using Serilog;
 using System.Text;
+using System.Text.Json.Serialization;
 
 // Configure Serilog at the top
 Log.Logger = new LoggerConfiguration()
@@ -190,6 +191,9 @@ try
     builder.Services.AddScoped<AppointmentRepository, AppointmentRepository>();
     builder.Services.AddScoped<IClinicVisitRepository, ClinicVisitRepository>();
     builder.Services.AddScoped<ClinicVisitRepository, ClinicVisitRepository>();
+    builder.Services.AddScoped<IClinicPrescriptionRepository, ClinicPrescriptionRepository>();
+    builder.Services.AddScoped<ClinicPrescriptionRepository, ClinicPrescriptionRepository>();
+
 
     // DbContext
     builder.Services.AddDbContext<AppDbContext>(options =>
@@ -220,6 +224,14 @@ try
     );
 
     builder.Services.AddHangfireServer();
+
+
+    builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
+
 
     // JWT Setup
     var tempJwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>()

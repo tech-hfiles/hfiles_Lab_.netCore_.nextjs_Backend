@@ -184,6 +184,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 _logger.LogInformation("Password reset successful for Email {Email}.", dto.Email);
                 return Ok(ApiResponseFactory.Success(message: "Password successfully reset."));
+
             }
             catch (Exception ex)
             {

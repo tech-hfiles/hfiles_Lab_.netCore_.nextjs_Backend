@@ -27,7 +27,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
         // Add consent form to cloud and generate s3URL
         [HttpPost("consent/{visitConsentFormId}")]
-        [Authorize]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> UploadConsentFormPdf(
         [FromRoute] int visitConsentFormId,

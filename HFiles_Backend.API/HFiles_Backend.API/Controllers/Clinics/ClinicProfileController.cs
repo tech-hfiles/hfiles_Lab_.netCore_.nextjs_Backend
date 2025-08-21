@@ -1,8 +1,10 @@
 ﻿using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.Profile;
+using HFiles_Backend.Application.DTOs.Users;
 using HFiles_Backend.Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace HFiles_Backend.API.Controllers.Clinics
@@ -129,6 +131,40 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     await transaction.RollbackAsync();
                 }
             }
+        }
+
+
+
+
+
+        // Patient Details 
+        [HttpGet("patient/details")]
+        public async Task<IActionResult> GetPatientDetailsByHfId([FromQuery] string hfId)
+        {
+            if (string.IsNullOrWhiteSpace(hfId))
+                return BadRequest(ApiResponseFactory.Fail("HFID is required."));
+
+            var user = await _userRepository.GetUserByHFIDAsync(hfId);
+
+            if (user == null)
+            {
+                _logger.LogInformation("No user found for HFID {HfId}", hfId);
+                return Ok(ApiResponseFactory.Success(new PatientDetailsResponse(), "No patient found."));
+            }
+
+            var response = new PatientDetailsResponse
+            {
+                FullName = $"{user.FirstName} {user.LastName}".Trim(),
+                Gender = user.Gender,
+                DOB = user.DOB,
+                HfId = user.HfId,
+                PhoneNumber = user.PhoneNumber,
+                City = user.City,
+                State = user.State
+            };
+
+            _logger.LogInformation("Fetched patient details for HFID {HfId}", hfId);
+            return Ok(ApiResponseFactory.Success(response, "Patient Details fetched successfully."));
         }
     }
 }

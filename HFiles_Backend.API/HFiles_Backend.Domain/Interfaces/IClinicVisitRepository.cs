@@ -9,5 +9,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task SaveVisitAsync(ClinicVisit visit);
         Task<bool> HasVisitInClinicAsync(string hfid, int clinicId);
         Task<List<ClinicVisit>> GetVisitsByClinicIdAsync(int clinicId);
+        Task<ClinicVisitConsentForm?> GetVisitConsentFormAsync(int visitConsentFormId);
     }
 }

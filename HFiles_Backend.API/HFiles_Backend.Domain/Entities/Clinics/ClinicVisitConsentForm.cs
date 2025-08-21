@@ -19,5 +19,10 @@ namespace HFiles_Backend.Domain.Entities.Clinics
 
         [ForeignKey("ConsentFormId")]
         public ClinicConsentForm ConsentForm { get; set; } = null!;
+
+        [MaxLength(2048)]
+        public string? ConsentFormUrl { get; set; }
+
+        public bool IsVerified { get; set; } = false;
     }
 }

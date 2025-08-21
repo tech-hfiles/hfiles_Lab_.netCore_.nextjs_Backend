@@ -277,6 +277,23 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        public async Task<ClinicPatient?> GetPatientByHFIDAsync(string hfid)
+        => await _context.ClinicPatients.FirstOrDefaultAsync(p => p.HFID == hfid);
+
+        public async Task<ClinicVisit?> GetVisitAsync(int clinicId, int patientId, DateTime visitDate)
+            => await _context.ClinicVisits
+                .Include(v => v.ConsentFormsSent)
+                .ThenInclude(cf => cf.ConsentForm)
+                .FirstOrDefaultAsync(v =>
+                    v.ClinicId == clinicId &&
+                    v.ClinicPatientId == patientId &&
+                    v.AppointmentDate.Date == visitDate.Date);
+
+        public async Task<List<ClinicVisitConsentForm>> GetConsentFormsForVisitAsync(int visitId)
+            => await _context.ClinicVisitConsentForms
+                .Include(cf => cf.ConsentForm)
+                .Where(cf => cf.ClinicVisitId == visitId)
+                .ToListAsync();
         public async Task SaveChangesAsync()
         {
             await _context.SaveChangesAsync();

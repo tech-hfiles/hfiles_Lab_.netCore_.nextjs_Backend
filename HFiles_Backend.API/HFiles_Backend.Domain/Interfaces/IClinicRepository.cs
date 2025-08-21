@@ -42,6 +42,9 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<ClinicSuperAdmin?> GetSuperAdminAsync(int userId, int clinicId);
         Task<ClinicMember?> GetClinicMemberAsync(int userId, int clinicId);
         void UpdateSuperAdmin(ClinicSuperAdmin admin);
+        Task<ClinicPatient?> GetPatientByHFIDAsync(string hfid);
+        Task<ClinicVisit?> GetVisitAsync(int clinicId, int patientId, DateTime visitDate);
+        Task<List<ClinicVisitConsentForm>> GetConsentFormsForVisitAsync(int visitId);
         Task SaveChangesAsync();
     }
 }

@@ -1,6 +1,7 @@
-﻿using Amazon;
-using HFiles_Backend.API.DTOs.Clinics;
+﻿using HFiles_Backend.API.DTOs.Clinics;
 using HFiles_Backend.Application.Common;
+using HFiles_Backend.Application.DTOs.Clinics.ConsentForm;
+using HFiles_Backend.Application.DTOs.Clinics.ConsentForm.HFiles_Backend.API.DTOs.Clinics;
 using HFiles_Backend.Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -24,6 +25,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
+        // Add consent form to cloud and generate s3URL
         [HttpPost("consent/{visitConsentFormId}")]
         [Authorize]
         [Consumes("multipart/form-data")]
@@ -131,6 +133,58 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 ConsentFormTitle = consentFormTitle,
                 IsVerified = true
             }, "Consent form marked as verified."));
+        }
+
+
+
+
+
+        // Fetch all consent forms
+        [HttpGet("consent/forms/{clinicId}")]
+        [Authorize]
+        public async Task<IActionResult> GetPatientConsentForms(
+        [FromRoute] int clinicId,
+        [FromBody] ClinicConsentFormsRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Consent Form Retrieval";
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var patient = await _clinicRepository.GetPatientByHFIDAsync(request.HFID);
+                if (patient == null)
+                    return NotFound(ApiResponseFactory.Fail("Patient not found for given HFID."));
+
+                var visit = await _clinicRepository.GetVisitAsync(clinicId, patient.Id, request.AppointmentDate);
+                if (visit == null)
+                    return NotFound(ApiResponseFactory.Fail("Clinic visit not found for given date."));
+
+                var consentForms = await _clinicRepository.GetConsentFormsForVisitAsync(visit.Id);
+
+                var response = consentForms.Select(cf => new ClinicConsentFormResponse
+                {
+                    Title = cf.ConsentForm.Title,
+                    ConsentFormUrl = cf.ConsentFormUrl,
+                    IsVerified = cf.IsVerified
+                }).ToList();
+
+                await transaction.CommitAsync();
+                committed = true;
+
+                return Ok(ApiResponseFactory.Success(response, "Consent forms retrieved successfully."));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error during consent form retrieval: {ex.Message}");
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while retrieving consent forms."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
         }
     }
 }

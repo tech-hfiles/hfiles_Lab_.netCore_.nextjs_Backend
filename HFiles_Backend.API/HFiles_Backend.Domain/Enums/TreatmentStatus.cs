@@ -2,9 +2,9 @@
 {
     public enum TreatmentStatus
     {
-        NotStarted,
-        InProgress,
-        Completed,
-        Cancelled
+        NotStarted = 1,
+        InProgress = 2,
+        Completed = 3,
+        Cancelled = 4
     }
 }

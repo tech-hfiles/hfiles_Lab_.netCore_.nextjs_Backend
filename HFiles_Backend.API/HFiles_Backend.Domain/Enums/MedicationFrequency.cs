@@ -2,9 +2,9 @@
 {
     public enum MedicationFrequency
     {
-        OnceADay,
-        TwiceADay,
-        ThreeTimesADay,
-        FourTimesADay
+        OnceADay = 1,
+        TwiceADay = 2,
+        ThreeTimesADay = 3,
+        FourTimesADay = 4
     }
 }

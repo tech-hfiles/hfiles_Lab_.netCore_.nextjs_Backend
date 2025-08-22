@@ -171,6 +171,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 var response = treatments.Select(t => new ClinicTreatmentResponse
                 {
+                    TreatmentId = t.Id,
                     TreatmentName = t.TreatmentName,
                     QuantityPerDay = t.QuantityPerDay,
                     Cost = t.Cost,

@@ -112,6 +112,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 var response = prescriptions.Select(p => new PrescriptionResponse
                 {
+                    PrescriptionId = p.Id,
                     MedicationName = p.MedicationName,
                     MedicationDosage = p.MedicationDosage,
                     Frequency = p.Frequency.ToString(),

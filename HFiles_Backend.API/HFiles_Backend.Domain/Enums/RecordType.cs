@@ -5,7 +5,8 @@
         Prescription = 1,
         Treatment = 2,
         Invoice = 3,
-        Receipt = 4
+        Receipt = 4,
+        Images = 5
     }
 }
 

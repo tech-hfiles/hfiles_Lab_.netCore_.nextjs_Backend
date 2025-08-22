@@ -1,4 +1,5 @@
-﻿using HFiles_Backend.API.Interfaces;
+﻿using HFiles_Backend.API.DTOs.Clinics;
+using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.PatientRecord;
 using HFiles_Backend.Domain.Entities.Clinics;
@@ -6,6 +7,7 @@ using HFiles_Backend.Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
+using System.Text.Json;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -15,13 +17,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
         ILogger<ClinicPatientRecordController> logger,
         IClinicAuthorizationService clinicAuthorizationService,
         IClinicRepository clinicRepository,
-        IClinicPatientRecordRepository clinicPatientRecordRepository
+        IClinicPatientRecordRepository clinicPatientRecordRepository,
+        S3StorageService s3StorageService
     ) : ControllerBase
     {
         private readonly ILogger<ClinicPatientRecordController> _logger = logger;
         private readonly IClinicAuthorizationService _clinicAuthorizationService = clinicAuthorizationService;
         private readonly IClinicRepository _clinicRepository = clinicRepository;
         private readonly IClinicPatientRecordRepository _clinicPatientRecordRepository = clinicPatientRecordRepository;
+        private readonly S3StorageService _s3StorageService = s3StorageService;
 
 
 
@@ -129,6 +133,84 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 _logger.LogError(ex, "Error fetching records for Clinic ID {ClinicId}, Visit ID {VisitId}", clinicId, clinicVisitId);
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching records."));
+            }
+        }
+
+
+
+
+
+        // Upload Patient Images
+        [HttpPost("clinic/patient/records/upload")]
+        [Authorize]
+        public async Task<IActionResult> UploadPatientRecordFiles(
+        [FromForm] ClinicPatientRecordFileUploadRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Patient Record Bulk Upload";
+
+            if (!ModelState.IsValid || request.Files == null || request.Files.Count == 0)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed for bulk upload. Errors: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized bulk upload attempt for Clinic ID {ClinicId}", request.ClinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to upload records for this clinic."));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var s3Urls = new List<string>();
+
+                foreach (var file in request.Files)
+                {
+                    var fileName = $"{request.PatientId}_{request.ClinicVisitId}_{Path.GetFileName(file.FileName)}";
+                    var tempPath = Path.Combine(Path.GetTempPath(), fileName);
+
+                    using (var stream = new FileStream(tempPath, FileMode.Create))
+                    {
+                        await file.CopyToAsync(stream);
+                    }
+
+                    var s3Url = await _s3StorageService.UploadFileToS3(tempPath, $"clinic-records/{fileName}");
+                    if (s3Url != null)
+                        s3Urls.Add(s3Url);
+
+                    System.IO.File.Delete(tempPath);
+                }
+
+                var record = new ClinicPatientRecord
+                {
+                    ClinicId = request.ClinicId,
+                    PatientId = request.PatientId,
+                    ClinicVisitId = request.ClinicVisitId,
+                    Type = request.Type,
+                    JsonData = JsonSerializer.Serialize(s3Urls)
+                };
+
+                await _clinicPatientRecordRepository.SaveAsync(record);
+                await transaction.CommitAsync();
+                committed = true;
+
+                _logger.LogInformation("Uploaded {Count} files for Clinic ID {ClinicId}, Patient ID {PatientId}", s3Urls.Count, request.ClinicId, request.PatientId);
+                return Ok(ApiResponseFactory.Success("Files uploaded and record saved successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during bulk upload for Clinic ID {ClinicId}", request.ClinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while uploading files."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
             }
         }
     }

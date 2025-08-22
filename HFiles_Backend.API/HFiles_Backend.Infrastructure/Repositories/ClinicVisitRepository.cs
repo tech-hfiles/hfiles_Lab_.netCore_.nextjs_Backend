@@ -65,5 +65,14 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .Include(v => v.Visit)
                 .FirstOrDefaultAsync(v => v.Id == visitConsentFormId);
         }
+
+        public async Task<ClinicVisit?> GetByIdAsync(int visitId)
+       => await _context.ClinicVisits.FindAsync(visitId);
+
+        public async Task UpdateAsync(ClinicVisit visit)
+        {
+            _context.ClinicVisits.Update(visit);
+            await _context.SaveChangesAsync();
+        }
     }
 }

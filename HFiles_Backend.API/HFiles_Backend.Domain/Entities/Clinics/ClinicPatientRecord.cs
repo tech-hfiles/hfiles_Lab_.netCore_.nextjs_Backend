@@ -33,5 +33,6 @@ namespace HFiles_Backend.Domain.Entities.Clinics
 
         [Required]
         public string JsonData { get; set; } = null!;
+        public bool SendToPatient { get; set; } 
     }
 }

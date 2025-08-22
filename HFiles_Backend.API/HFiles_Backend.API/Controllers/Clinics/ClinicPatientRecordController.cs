@@ -3,10 +3,12 @@ using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.PatientRecord;
 using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 
 namespace HFiles_Backend.API.Controllers.Clinics
@@ -18,7 +20,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         IClinicAuthorizationService clinicAuthorizationService,
         IClinicRepository clinicRepository,
         IClinicPatientRecordRepository clinicPatientRecordRepository,
-        S3StorageService s3StorageService
+        S3StorageService s3StorageService,
+        IClinicVisitRepository clinicVisitRepository
     ) : ControllerBase
     {
         private readonly ILogger<ClinicPatientRecordController> _logger = logger;
@@ -26,6 +29,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IClinicRepository _clinicRepository = clinicRepository;
         private readonly IClinicPatientRecordRepository _clinicPatientRecordRepository = clinicPatientRecordRepository;
         private readonly S3StorageService _s3StorageService = s3StorageService;
+        private readonly IClinicVisitRepository _clinicVisitRepository = clinicVisitRepository;
 
 
 
@@ -206,6 +210,119 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 _logger.LogError(ex, "Error during bulk upload for Clinic ID {ClinicId}", request.ClinicId);
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while uploading files."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
+
+
+
+
+
+        // Mass Send to User
+        [HttpPost("clinic/patient/documents/upload")]
+        [Authorize]
+        public async Task<IActionResult> UploadPatientDocuments([FromForm] ClinicPatientDocumentUploadRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Patient Document Upload";
+
+            if (!ModelState.IsValid || request.Documents == null || !request.Documents.Any())
+                return BadRequest(ApiResponseFactory.Fail("Invalid request. Documents are required."));
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+            if (!isAuthorized)
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to upload documents for this clinic."));
+
+            var visit = await _clinicVisitRepository.GetByIdAsync(request.ClinicVisitId);
+            if (visit == null || visit.ClinicId != request.ClinicId)
+                return NotFound(ApiResponseFactory.Fail("Clinic visit not found."));
+
+            visit.PaymentMethod = request.PaymentMethod;
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                foreach (var doc in request.Documents)
+                {
+                    //var allowedExtension = ".pdf";
+                    var uploadedExtension = Path.GetExtension(doc.PdfFile?.FileName)?.ToLower();
+                    var fileSize = doc.PdfFile?.Length;
+
+                    //if (uploadedExtension != allowedExtension)
+                    //{
+                    //    return BadRequest(ApiResponseFactory.Fail("Only PDF files are allowed."));
+                    //}
+
+                    if (fileSize > 10 * 1024 * 1024)
+                    {
+                        return BadRequest(ApiResponseFactory.Fail("File size exceeds the 50MB limit."));
+                    }
+
+                    if ((doc.Type == RecordType.Invoice || doc.Type == RecordType.Receipt) && doc.PdfFile == null)
+                        return BadRequest(ApiResponseFactory.Fail($"{doc.Type} PDF is required."));
+
+                    if (doc.Type == RecordType.Images)
+                    {
+                        var existingRecord = await _clinicPatientRecordRepository
+                            .GetReportImageRecordAsync(request.ClinicId, request.PatientId, request.ClinicVisitId);
+
+                        if (existingRecord == null)
+                            return BadRequest(ApiResponseFactory.Fail("ReportImage record not found for this visit."));
+
+                        existingRecord.SendToPatient = doc.SendToPatient;
+                        await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
+                        continue;
+                    }
+
+                    string jsonData = string.Empty;
+
+                    if (doc.PdfFile != null)
+                    {
+                        var fileName = $"{doc.Type.ToString().ToLower()}_clinic{request.ClinicId}_patient{request.PatientId}_{Guid.NewGuid()}{Path.GetExtension(doc.PdfFile.FileName)}";
+
+                        var tempPath = Path.Combine(Path.GetTempPath(), fileName);
+
+                        using (var stream = new FileStream(tempPath, FileMode.Create))
+                            await doc.PdfFile.CopyToAsync(stream);
+
+                        var s3Url = await _s3StorageService.UploadFileToS3(tempPath, $"clinic-records/{fileName}");
+                        System.IO.File.Delete(tempPath);
+
+                        if (s3Url == null)
+                            return StatusCode(500, ApiResponseFactory.Fail("Failed to upload file to S3."));
+
+                        jsonData = JsonSerializer.Serialize(new { url = s3Url });
+                    }
+
+                    var record = new ClinicPatientRecord
+                    {
+                        ClinicId = request.ClinicId,
+                        PatientId = request.PatientId,
+                        ClinicVisitId = request.ClinicVisitId,
+                        Type = doc.Type,
+                        JsonData = jsonData,
+                        SendToPatient = doc.SendToPatient
+                    };
+
+                    await _clinicPatientRecordRepository.SaveAsync(record);
+                }
+
+                await _clinicVisitRepository.UpdateAsync(visit);
+                await transaction.CommitAsync();
+                committed = true;
+
+                _logger.LogInformation("Uploaded documents for Clinic ID {ClinicId}, Patient ID {PatientId}", request.ClinicId, request.PatientId);
+                return Ok(ApiResponseFactory.Success("Documents uploaded successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error uploading documents for Clinic ID {ClinicId}", request.ClinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while uploading documents."));
             }
             finally
             {

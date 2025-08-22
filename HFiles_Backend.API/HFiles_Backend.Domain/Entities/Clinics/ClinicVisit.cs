@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using HFiles_Backend.Domain.Enums;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HFiles_Backend.Domain.Entities.Clinics
@@ -27,6 +28,8 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Required(ErrorMessage = "Appointment time is required.")]
         [DataType(DataType.Time)]
         public TimeSpan AppointmentTime { get; set; }
+
+        public PaymentMethod? PaymentMethod { get; set; }
 
         public ICollection<ClinicVisitConsentForm> ConsentFormsSent { get; set; } = new List<ClinicVisitConsentForm>();
     }

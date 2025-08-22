@@ -157,6 +157,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 FullName = $"{user.FirstName} {user.LastName}".Trim(),
                 Gender = user.Gender,
                 DOB = user.DOB,
+                BloodGroup = user.BloodGroup,
                 HfId = user.HfId,
                 PhoneNumber = user.PhoneNumber,
                 City = user.City,

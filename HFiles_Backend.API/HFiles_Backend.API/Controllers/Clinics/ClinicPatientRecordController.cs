@@ -229,6 +229,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         {
             HttpContext.Items["Log-Category"] = "Patient Document Upload";
 
+
             if (!ModelState.IsValid || request.Documents == null || !request.Documents.Any())
                 return BadRequest(ApiResponseFactory.Fail("Invalid request. Documents are required."));
 

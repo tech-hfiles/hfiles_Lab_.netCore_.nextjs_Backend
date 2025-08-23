@@ -159,6 +159,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 DOB = user.DOB,
                 BloodGroup = user.BloodGroup,
                 HfId = user.HfId,
+                ProfileURL = user.ProfilePhoto,
                 PhoneNumber = user.PhoneNumber,
                 City = user.City,
                 State = user.State

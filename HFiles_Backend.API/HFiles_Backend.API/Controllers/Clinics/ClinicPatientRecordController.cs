@@ -5,10 +5,10 @@ using HFiles_Backend.Application.DTOs.Clinics.PatientRecord;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
+using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
-using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 
 namespace HFiles_Backend.API.Controllers.Clinics
@@ -323,6 +323,63 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 _logger.LogError(ex, "Error uploading documents for Clinic ID {ClinicId}", request.ClinicId);
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while uploading documents."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
+
+
+
+
+
+        // Patient History
+        [HttpGet("clinic/{clinicId}/patient/{patientId}/history")]
+        [Authorize]
+        public async Task<IActionResult> GetPatientHistory(
+        int clinicId,
+        int patientId,
+        [FromServices] ClinicPatientRecordRepository clinicPatientRecordRepository)
+        {
+            HttpContext.Items["Log-Category"] = "Patient History Fetch";
+
+            if (clinicId <= 0 || patientId <= 0)
+            {
+                _logger.LogWarning("Invalid Clinic ID or Patient ID. ClinicId: {ClinicId}, PatientId: {PatientId}", clinicId, patientId);
+                return BadRequest(ApiResponseFactory.Fail("Clinic ID and Patient ID must be valid."));
+            }
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized history fetch attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view this patient's history."));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var history = await clinicPatientRecordRepository.GetPatientHistoryAsync(clinicId, patientId);
+                if (history == null)
+                {
+                    _logger.LogInformation("No history found for Clinic ID {ClinicId}, Patient ID {PatientId}", clinicId, patientId);
+                    return NotFound(ApiResponseFactory.Fail("No history found for this patient."));
+                }
+
+                await transaction.CommitAsync();
+                committed = true;
+
+                _logger.LogInformation("Fetched history for Clinic ID {ClinicId}, Patient ID {PatientId}", clinicId, patientId);
+                return Ok(ApiResponseFactory.Success(history, "Patient history fetched successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching patient history for Clinic ID {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching patient history."));
             }
             finally
             {

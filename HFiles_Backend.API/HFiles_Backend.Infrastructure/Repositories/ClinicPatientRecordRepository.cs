@@ -143,7 +143,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     AppointmentDate = visit.AppointmentDate,
                     IsVerified = visit.ConsentFormsSent.Any(f => f.IsVerified),
                     ConsentForms = visit.ConsentFormsSent
-                        .Select(f => f.ConsentFormUrl ?? f.ConsentFormId.Value)
+                        .Select(f => f.ConsentFormUrl ?? string.Empty)
                         .ToList(),
                     Records = recordItems
                 };

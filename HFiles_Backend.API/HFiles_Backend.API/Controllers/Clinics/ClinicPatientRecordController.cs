@@ -259,9 +259,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     //    return BadRequest(ApiResponseFactory.Fail("Only PDF files are allowed."));
                     //}
 
-                    if (fileSize > 10 * 1024 * 1024)
+                    if (fileSize > 20 * 1024 * 1024)
                     {
-                        return BadRequest(ApiResponseFactory.Fail("File size exceeds the 50MB limit."));
+                        return BadRequest(ApiResponseFactory.Fail("File size exceeds the 100MB limit."));
                     }
 
                     if ((doc.Type == RecordType.Invoice || doc.Type == RecordType.Receipt) && doc.PdfFile == null)

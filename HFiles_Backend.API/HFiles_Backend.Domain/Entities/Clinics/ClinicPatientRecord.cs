@@ -20,7 +20,7 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         public int PatientId { get; set; }
 
         [ForeignKey("PatientId")]
-        public User Patient { get; set; } = null!;
+        public ClinicPatient Patient { get; set; } = null!;
 
         [Required]
         public int ClinicVisitId { get; set; }

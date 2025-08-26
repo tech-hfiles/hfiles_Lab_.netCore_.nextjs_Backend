@@ -4,7 +4,7 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Appointment
 {
     public class AppointmentStatusUpdateDto : IValidatableObject
     {
-        [RegularExpression("^(Canceled|Completed)$", ErrorMessage = "Status must be either 'Canceled' or 'Completed'.")]
+        [RegularExpression("^(Scheduled|Canceled|Completed)$", ErrorMessage = "Status must be either 'Canceled' or 'Completed'.")]
         public string? Status { get; set; }
 
         [MaxLength(1000, ErrorMessage = "Treatment notes must not exceed 1000 characters.")]

@@ -182,6 +182,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     TreatmentName = t.TreatmentName,
                     QuantityPerDay = t.QuantityPerDay,
                     Cost = t.Cost,
+                    Duration = t.Duration,
+                    Sessions = t.Sessions,
                     Total = t.Total,
                     Status = t.Status
                 }).ToList();

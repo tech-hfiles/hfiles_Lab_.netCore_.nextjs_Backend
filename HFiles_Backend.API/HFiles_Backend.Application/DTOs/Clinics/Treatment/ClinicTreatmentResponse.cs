@@ -9,6 +9,8 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Treatment
         public int QuantityPerDay { get; set; }
         public decimal Cost { get; set; }
         public decimal Total { get; set; }
+        public int? Sessions { get; set; }
+        public int? Duration { get; set; }
         public TreatmentStatus Status { get; set; }
     }
 }

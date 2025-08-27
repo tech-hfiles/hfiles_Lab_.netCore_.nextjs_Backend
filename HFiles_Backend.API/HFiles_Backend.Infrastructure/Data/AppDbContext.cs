@@ -105,8 +105,14 @@ namespace HFiles_Backend.Infrastructure.Data
 
 
             modelBuilder.Entity<User>().ToTable("users", t => t.ExcludeFromMigrations());
-
-
+            modelBuilder.Entity<UserSurgeryDetails>().ToTable("user_surgery_details", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<UserStaticAllergy>().ToTable("userstaticallergies", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<UserMedicationAllergy>().ToTable("usermedicationallergies", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<UserDynamicAllergy>().ToTable("userdynamicallergies", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<UserStaticDisease>().ToTable("userstaticdiseases", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<UserDynamicDiseaseType>().ToTable("userdynamicdiseasetypes", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<UserDynamicDiseaseRecord>().ToTable("userdynamicdiseaserecords", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<UserSocialHistory>().ToTable("usersocialhistories", t => t.ExcludeFromMigrations());
 
 
 
@@ -290,8 +296,19 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<LabResendReports> LabResendReports { get; set; }
         public DbSet<LabAuditLog> LabAuditLogs { get; set; }
         public DbSet<LabErrorLog> LabErrorLogs { get; set; }
+
+
+        // Users
         public DbSet<User> Users { get; set; }
         public DbSet <UserReport> UserReports { get; set; }
+        public DbSet<UserSurgeryDetails> UserSurgeryDetails { get; set; }
+        public DbSet<UserStaticAllergy> UserStaticAllergies { get; set; }
+        public DbSet<UserMedicationAllergy> UserMedicationAllergies { get; set; }
+        public DbSet<UserDynamicAllergy> UserDynamicAllergies { get; set; }
+        public DbSet<UserStaticDisease> UserStaticDiseases { get; set; }
+        public DbSet<UserDynamicDiseaseRecord> UserDynamicDiseaseRecords { get; set; }
+        public DbSet<UserDynamicDiseaseType> UserDynamicDiseaseTypes { get; set; }
+        public DbSet<UserSocialHistory> UserSocialHistories { get; set; }
 
 
         // Clinics

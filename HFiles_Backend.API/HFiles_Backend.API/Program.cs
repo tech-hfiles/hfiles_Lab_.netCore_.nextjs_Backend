@@ -199,6 +199,7 @@ try
     builder.Services.AddScoped<ClinicTreatmentRepository, ClinicTreatmentRepository>();
     builder.Services.AddScoped<IClinicPatientRecordRepository, ClinicPatientRecordRepository>();
     builder.Services.AddScoped<ClinicPatientRecordRepository, ClinicPatientRecordRepository>();
+    builder.Services.AddScoped<ClinicMedicalHistoryRepository, ClinicMedicalHistoryRepository>();
 
 
     // DbContext

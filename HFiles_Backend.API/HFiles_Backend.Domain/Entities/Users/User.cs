@@ -18,17 +18,23 @@ namespace HFiles_Backend.Domain.Entities.Users
         [MaxLength(10)]
         public string? Gender { get; set; }
 
+        [RegularExpression(@"^\d{2}-\d{2}-\d{4}$")]
         [MaxLength(10)]
         public string? DOB { get; set; }
 
         [MaxLength(10)]
         public string? CountryCallingCode { get; set; }
 
-        [MaxLength(10)]
-        public string? PhoneNumber { get; set; }
+        [Required]
+        [MaxLength(20)]
+        public string PhoneNumber { get; set; } = default!;
 
+        public bool IsPhoneVerified { get; set; }
+
+        [Required]
+        [EmailAddress]
         [MaxLength(100)]
-        public string? Email { get; set; }
+        public string Email { get; set; } = default!;
 
         public bool IsEmailVerified { get; set; }
 
@@ -44,15 +50,34 @@ namespace HFiles_Backend.Domain.Entities.Users
         [MaxLength(100)]
         public string? State { get; set; }
 
+        [RegularExpression(@"^(A|B|AB|O)[+-]$")]
+        [MaxLength(5)]
+        public string? BloodGroup { get; set; }
+
+        [Range(0, 9)]
+        public int? HeightFeet { get; set; }
+
+        [Range(0, 11)]
+        public int? HeightInches { get; set; }
+
+        [Range(0, 500)]
+        public float? WeightKg { get; set; }
+
+        [MaxLength(255)]
+        public string? ProfilePhoto { get; set; }
+
         [MaxLength(255)]
         public string? Password { get; set; }
 
-        public int? UserReference { get; set; }
+        public int UserReference { get; set; }
+
+        public int InvitedByUserId { get; set; }
 
         [MaxLength(50)]
         public string? Relation { get; set; }
 
-        public int? DeletedBy { get; set; }
+        [Required]
+        public int DeletedBy { get; set; } = 0;
 
         [MaxLength(10)]
         public string? EmergencyContactCountryCode { get; set; }
@@ -61,15 +86,5 @@ namespace HFiles_Backend.Domain.Entities.Users
         public string? EmergencyContactPhoneNumber { get; set; }
 
         public long CreatedEpoch { get; set; }
-
-        [MaxLength(5)]
-        public string? BloodGroup { get; set; }
-
-        [MaxLength(255)]
-        public string? ProfilePhoto { get; set; }
-
-        public bool IsPhoneVerified { get; set; }
-
-        public int? InvitedByUserId { get; set; }
     }
 }

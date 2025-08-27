@@ -154,6 +154,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             var response = new PatientDetailsResponse
             {
+                PatientId = user.Id,
                 FullName = $"{user.FirstName} {user.LastName}".Trim(),
                 Gender = user.Gender,
                 DOB = user.DOB,

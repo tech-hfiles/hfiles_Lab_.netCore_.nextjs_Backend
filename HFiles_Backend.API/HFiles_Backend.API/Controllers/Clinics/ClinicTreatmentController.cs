@@ -2,6 +2,7 @@
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.Treatment;
 using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -57,7 +58,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 {
                     ClinicId = request.ClinicId,
                     TreatmentName = request.TreatmentName,
-                    Cost = request.Cost
+                    Cost = request.Cost,
+                    QuantityPerDay = request.Frequency ?? 1,
+                    Sessions = request.Sessions,
+                    Duration = request.Duration,
+                    Status = TreatmentStatus.NotStarted
                 };
 
                 await _clinicTreatmentRepository.SaveAsync(treatment);
@@ -115,6 +120,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (request.Total.HasValue) existing.Total = request.Total.Value;
                 if (request.Status.HasValue)
                     existing.Status = request.Status.Value;
+                if(request.Duration.HasValue) existing.Duration = request.Duration.Value;
+                if (request.Sessions.HasValue) existing.Sessions = request.Sessions.Value;
 
                 await _clinicTreatmentRepository.UpdateAsync(existing);
                 await transaction.CommitAsync();

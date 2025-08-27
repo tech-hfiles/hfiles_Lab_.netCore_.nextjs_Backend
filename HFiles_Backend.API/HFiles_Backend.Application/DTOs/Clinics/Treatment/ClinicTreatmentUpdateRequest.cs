@@ -21,5 +21,11 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Treatment
         [EnumDataType(typeof(TreatmentStatus))]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public TreatmentStatus? Status { get; set; }
+
+        [Range(0, int.MaxValue)]
+        public int? Duration { get; set; }
+
+        [Range(0, int.MaxValue)]
+        public int? Sessions { get; set; }
     }
 }

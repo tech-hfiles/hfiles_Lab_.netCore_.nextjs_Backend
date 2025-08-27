@@ -33,5 +33,9 @@ namespace HFiles_Backend.Domain.Entities.Clinics
 
         [Required]
         public TreatmentStatus Status { get; set; }
+
+        public int? Duration { get; set; }
+
+        public int? Sessions { get; set; }
     }
 }

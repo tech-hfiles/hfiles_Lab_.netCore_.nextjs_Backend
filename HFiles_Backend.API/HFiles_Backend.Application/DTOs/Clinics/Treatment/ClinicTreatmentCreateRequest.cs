@@ -14,5 +14,14 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Treatment
         [Required]
         [Range(0, double.MaxValue)]
         public decimal Cost { get; set; }
+
+        [Range(0, int.MaxValue)]
+        public int? Duration { get; set; }
+
+        [Range(0, int.MaxValue)]
+        public int? Frequency { get; set; }
+
+        [Range(0, int.MaxValue)]
+        public int? Sessions { get; set; }
     }
 }

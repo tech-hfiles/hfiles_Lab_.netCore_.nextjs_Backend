@@ -656,21 +656,23 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         PatientName = patient.PatientName,
                         HFID = patient.HFID,
                         LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
+                        PaymentStatus = lastVisit.PaymentMethod?.ToString() ?? "Pending", 
                         TreatmentNames = treatmentNames.Any()
-                                        ? string.Join(", ", treatmentNames)
-                                        : "-",
+                                         ? string.Join(", ", treatmentNames)
+                                         : "-",
 
                         Visits = patient.Visits
-                            .Select(v => new VisitDto
-                            {
-                                VisitId = v.Id,
-                                AppointmentDate = v.AppointmentDate.ToString("dd-MM-yyyy"),
-                                AppointmentTime = v.AppointmentTime.ToString(@"hh\:mm"),
-                                ConsentFormsSent = v.ConsentFormsSent.Select(cf => cf.ConsentForm.Title).ToList()
-                            })
-                            .OrderByDescending(v => v.AppointmentDate)
-                            .ToList()
+                         .Select(v => new VisitDto
+                         {
+                             VisitId = v.Id,
+                             AppointmentDate = v.AppointmentDate.ToString("dd-MM-yyyy"),
+                             AppointmentTime = v.AppointmentTime.ToString(@"hh\:mm"),
+                             ConsentFormsSent = v.ConsentFormsSent.Select(cf => cf.ConsentForm.Title).ToList()
+                         })
+                         .OrderByDescending(v => v.AppointmentDate)
+                         .ToList()
                     };
+
 
                     filteredPatients.Add(dto);
                 }

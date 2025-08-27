@@ -1,4 +1,5 @@
 ﻿using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Enums;
 
 namespace HFiles_Backend.Domain.Interfaces
 {
@@ -9,5 +10,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<List<ClinicPatientRecord>> GetByClinicPatientVisitAsync(int clinicId, int patientId, int clinicVisitId);
         Task<ClinicPatientRecord?> GetReportImageRecordAsync(int clinicId, int patientId, int visitId);
         Task UpdateAsync(ClinicPatientRecord record);
+        Task<ClinicPatientRecord?> GetByCompositeKeyAsync(int clinicId, int patientId, int visitId, RecordType type);
     }
 }

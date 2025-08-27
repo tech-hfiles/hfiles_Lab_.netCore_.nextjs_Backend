@@ -153,5 +153,15 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
             return response;
         }
+
+        public async Task<ClinicPatientRecord?> GetByCompositeKeyAsync(int clinicId, int patientId, int visitId, RecordType type)
+        {
+            return await _context.ClinicPatientRecords
+                .FirstOrDefaultAsync(r =>
+                    r.ClinicId == clinicId &&
+                    r.PatientId == patientId &&
+                    r.ClinicVisitId == visitId &&
+                    r.Type == type);
+        }
     }
 }

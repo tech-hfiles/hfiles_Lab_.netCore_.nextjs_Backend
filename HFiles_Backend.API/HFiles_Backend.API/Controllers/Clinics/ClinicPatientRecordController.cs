@@ -61,27 +61,45 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             try
             {
-                var record = new ClinicPatientRecord
-                {
-                    ClinicId = request.ClinicId,
-                    PatientId = request.PatientId,
-                    ClinicVisitId = request.ClinicVisitId,
-                    Type = request.Type,
-                    JsonData = request.JsonData
-                };
+                var parsedType = request.Type;
 
-                await _clinicPatientRecordRepository.SaveAsync(record);
+                var existingRecord = await _clinicPatientRecordRepository
+                    .GetByCompositeKeyAsync(request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+
+                if (existingRecord is not null)
+                {
+                    existingRecord.JsonData = request.JsonData;
+                    await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
+
+                    _logger.LogInformation("Existing record updated for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
+                        request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+                }
+                else
+                {
+                    var newRecord = new ClinicPatientRecord
+                    {
+                        ClinicId = request.ClinicId,
+                        PatientId = request.PatientId,
+                        ClinicVisitId = request.ClinicVisitId,
+                        Type = parsedType,
+                        JsonData = request.JsonData
+                    };
+
+                    await _clinicPatientRecordRepository.SaveAsync(newRecord);
+
+                    _logger.LogInformation("New record created for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
+                        request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+                }
+
+
                 await transaction.CommitAsync();
                 committed = true;
 
-                _logger.LogInformation("Record saved for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}",
-                    request.ClinicId, request.PatientId, request.ClinicVisitId);
-
-                return Ok(ApiResponseFactory.Success("Record saved successfully."));
+                return Ok(ApiResponseFactory.Success("Patient record saved successfully."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error saving record for Clinic ID {ClinicId}", request.ClinicId);
+                _logger.LogError(ex, "Error saving/updating record for Clinic ID {ClinicId}", request.ClinicId);
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while saving the record."));
             }
             finally

@@ -12,6 +12,7 @@
         public string? PatientName { get; set; }
         public string? HFID { get; set; }
         public string? LastVisitDate { get; set; }
+        public string? TreatmentNames { get; set; }
         public List<VisitDto>? Visits { get; set; }
     }
 

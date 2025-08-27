@@ -163,5 +163,16 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     r.ClinicVisitId == visitId &&
                     r.Type == type);
         }
+
+        public async Task<List<ClinicPatientRecord>> GetTreatmentRecordsAsync(int clinicId, int patientId, int visitId)
+        {
+            return await _context.ClinicPatientRecords
+                .Where(r =>
+                    r.ClinicId == clinicId &&
+                    r.PatientId == patientId &&
+                    r.ClinicVisitId == visitId &&
+                    r.Type == RecordType.Treatment)
+                .ToListAsync();
+        }
     }
 }

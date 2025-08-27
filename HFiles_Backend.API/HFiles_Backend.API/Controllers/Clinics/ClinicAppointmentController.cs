@@ -1,12 +1,14 @@
 ﻿using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.Appointment;
+using HFiles_Backend.Application.DTOs.Clinics.Treatment;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
+using Newtonsoft.Json;
 using System.Globalization;
 
 namespace HFiles_Backend.API.Controllers.Clinics
@@ -595,11 +597,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
          [FromRoute] int clinicId,
          [FromQuery] string? startDate,
          [FromQuery] string? endDate,
-         [FromServices] ClinicRepository clinicRepository)
+         [FromServices] ClinicRepository clinicRepository,
+         [FromServices] ClinicPatientRecordRepository recordRepository)
         {
             HttpContext.Items["Log-Category"] = "Clinic Patient Overview";
 
-            // Authorization: Ensure clinicId belongs to main clinic or its branches
             bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
             if (!isAuthorized)
             {
@@ -609,49 +611,56 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             try
             {
-                // Parse date filters
                 DateTime? start = null;
                 DateTime? end = null;
                 DateTime parsedStart;
                 DateTime parsedEnd;
 
-                if (!string.IsNullOrEmpty(startDate))
-                {
-                    if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out parsedStart))
-                    {
-                        return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
-                    }
-                    start = parsedStart;
-                }
-
-                if (!string.IsNullOrEmpty(endDate))
-                {
-                    if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out parsedEnd))
-                    {
-                        return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
-                    }
-                    end = parsedEnd;
-                }
+                if (!string.IsNullOrEmpty(startDate)) { if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out parsedStart)) { return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy.")); } start = parsedStart; }
+                if (!string.IsNullOrEmpty(endDate)) { if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out parsedEnd)) { return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy.")); } end = parsedEnd; }
 
                 var patients = await clinicRepository.GetClinicPatientsWithVisitsAsync(clinicId);
 
-                var filteredPatients = patients
-                    .Select(p => new
+                var filteredPatients = new List<PatientDto>();
+
+                foreach (var patient in patients)
+                {
+                    var lastVisit = patient.Visits.OrderByDescending(v => v.AppointmentDate).FirstOrDefault();
+                    if (lastVisit == null) continue;
+
+                    if (start.HasValue && lastVisit.AppointmentDate.Date < start.Value.Date) continue;
+                    if (end.HasValue && lastVisit.AppointmentDate.Date > end.Value.Date) continue;
+
+                    var treatmentRecords = await recordRepository.GetTreatmentRecordsAsync(clinicId, patient.Id, lastVisit.Id);
+
+                    var treatmentNames = treatmentRecords
+                        .SelectMany(r =>
+                        {
+                            try
+                            {
+                                var payload = JsonConvert.DeserializeObject<TreatmentRecordPayload>(r.JsonData);
+                                return payload?.Treatments.Select(t => t.Name) ?? Enumerable.Empty<string>();
+                            }
+                            catch
+                            {
+                                _logger.LogWarning("Failed to parse treatment JSON for PatientId={PatientId}, VisitId={VisitId}", patient.Id, lastVisit.Id);
+                                return Enumerable.Empty<string>();
+                            }
+                        })
+                        .Distinct()
+                        .ToList();
+
+                    var dto = new PatientDto
                     {
-                        Patient = p,
-                        LastVisit = p.Visits.OrderByDescending(v => v.AppointmentDate).FirstOrDefault()
-                    })
-                    .Where(x =>
-                        x.LastVisit != null &&
-                        (!start.HasValue || x.LastVisit.AppointmentDate.Date >= start.Value.Date) &&
-                        (!end.HasValue || x.LastVisit.AppointmentDate.Date <= end.Value.Date))
-                    .Select(x => new PatientDto
-                    {
-                        PatientId = x.Patient.Id,
-                        PatientName = x.Patient.PatientName,
-                        HFID = x.Patient.HFID,
-                        LastVisitDate = x.LastVisit?.AppointmentDate.ToString("dd-MM-yyyy"),
-                        Visits = x.Patient.Visits
+                        PatientId = patient.Id,
+                        PatientName = patient.PatientName,
+                        HFID = patient.HFID,
+                        LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
+                        TreatmentNames = treatmentNames.Any()
+                                        ? string.Join(", ", treatmentNames)
+                                        : "-",
+
+                        Visits = patient.Visits
                             .Select(v => new VisitDto
                             {
                                 VisitId = v.Id,
@@ -661,8 +670,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
                             })
                             .OrderByDescending(v => v.AppointmentDate)
                             .ToList()
-                    })
-                    .ToList();
+                    };
+
+                    filteredPatients.Add(dto);
+                }
 
                 var response = new ClinicPatientResponseDto
                 {

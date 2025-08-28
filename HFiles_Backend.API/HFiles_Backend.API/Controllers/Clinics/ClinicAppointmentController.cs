@@ -128,9 +128,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpGet("clinic/{clinicId:int}")]
         [Authorize]
         public async Task<IActionResult> GetAppointmentsByClinicId(
-          [FromRoute] int clinicId,
-          [FromQuery] string? startDate,
-          [FromQuery] string? endDate)
+         [FromRoute] int clinicId,
+         [FromQuery] string? startDate,
+         [FromQuery] string? endDate)
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
@@ -150,7 +150,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 {
                     Appointments = new List<object>(),
                     TotalAppointmentsToday = 0,
-                    MissedAppointmentsToday = 0
+                    MissedAppointmentsToday = 0,
+                    DailyCounts = new List<object>()
                 }, "No appointments found."));
             }
 
@@ -182,8 +183,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             // Filter appointments by date range
             var filteredAppointments = appointments
-             .Where(a => a.AppointmentDate.Date >= start.Date && a.AppointmentDate.Date <= end.Date)
-             .ToList();
+                .Where(a => a.AppointmentDate.Date >= start.Date && a.AppointmentDate.Date <= end.Date)
+                .ToList();
 
             var today = DateTime.Today;
 
@@ -208,7 +209,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 userMap[hfid] = user?.ProfilePhoto ?? "Not a registered user";
             }
 
-            // Build response
+            // Build filtered response
             var response = filteredAppointments.Select(a =>
             {
                 var hfid = visitHfidLookup[new
@@ -237,6 +238,17 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 };
             }).ToList();
 
+            // Group all appointments by date (not filtered)
+            var dailyCounts = appointments
+                .GroupBy(a => a.AppointmentDate.Date)
+                .OrderBy(g => g.Key)
+                .Select(g => new
+                {
+                    Date = g.Key.ToString("dd-MM-yyyy"),
+                    TotalAppointments = g.Count()
+                })
+                .ToList();
+
             int totalAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today);
             int missedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Absent");
 
@@ -246,7 +258,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 Appointments = response,
                 TotalAppointmentsToday = totalAppointmentsToday,
-                MissedAppointmentsToday = missedAppointmentsToday
+                MissedAppointmentsToday = missedAppointmentsToday,
+                DailyCounts = dailyCounts
             }, "Appointments fetched successfully."));
         }
 
@@ -643,12 +656,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpGet("clinics/{clinicId}/patients")]
         [Authorize]
         public async Task<IActionResult> GetClinicPatients(
-     [FromRoute] int clinicId,
-     [FromQuery] string? startDate,
-     [FromQuery] string? endDate,
-     [FromServices] ClinicRepository clinicRepository,
-     [FromServices] ClinicPatientRecordRepository recordRepository,
-     [FromServices] IUserRepository userRepository)
+         [FromRoute] int clinicId,
+         [FromQuery] string? startDate,
+         [FromQuery] string? endDate,
+         [FromServices] ClinicRepository clinicRepository,
+         [FromServices] ClinicPatientRecordRepository recordRepository,
+         [FromServices] IUserRepository userRepository)
         {
             HttpContext.Items["Log-Category"] = "Clinic Patient Overview";
 

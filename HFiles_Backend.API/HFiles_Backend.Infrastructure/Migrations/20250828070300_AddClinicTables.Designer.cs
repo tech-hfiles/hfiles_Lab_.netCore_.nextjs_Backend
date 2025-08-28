@@ -3,6 +3,7 @@ using System;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250828070300_AddClinicTables")]
+    partial class AddClinicTables
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -130,7 +133,7 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.HasIndex("UserId", "ClinicId", "DeletedBy", "Role")
                         .HasDatabaseName("IX_ClinicMembers_UserId_ClinicId_DeletedBy_Role");
 
-                    b.ToTable("clinicmembers", (string)null);
+                    b.ToTable("ClinicMembers", (string)null);
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicOtpEntry", b =>
@@ -384,7 +387,7 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.HasIndex("UserId", "ClinicId", "IsMain")
                         .HasDatabaseName("IX_ClinicSuperAdmins_UserId_ClinicId_IsMain");
 
-                    b.ToTable("clinicsuperadmins", (string)null);
+                    b.ToTable("ClinicSuperAdmins", (string)null);
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicTreatment", b =>

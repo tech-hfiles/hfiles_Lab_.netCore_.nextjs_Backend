@@ -103,8 +103,22 @@ namespace HFiles_Backend.Infrastructure.Data
 
 
 
+            // Labs
+            modelBuilder.Entity<LabSignup>().ToTable("labsignups", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<LabOtpEntry>().ToTable("labotpentries", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<LabUserReports>().ToTable("labuserreports", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<LabSuperAdmin>().ToTable("labsuperadmins", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<LabMember>().ToTable("labmembers", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<LabResendReports>().ToTable("labresendreports", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<LabAuditLog>().ToTable("labauditlogs", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<LabErrorLog>().ToTable("laberrorlogs", t => t.ExcludeFromMigrations());
 
+
+
+
+            // Users
             modelBuilder.Entity<User>().ToTable("users", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<UserReport>().ToTable("userreports", t => t.ExcludeFromMigrations());
             modelBuilder.Entity<UserSurgeryDetails>().ToTable("user_surgery_details", t => t.ExcludeFromMigrations());
             modelBuilder.Entity<UserStaticAllergy>().ToTable("userstaticallergies", t => t.ExcludeFromMigrations());
             modelBuilder.Entity<UserMedicationAllergy>().ToTable("usermedicationallergies", t => t.ExcludeFromMigrations());
@@ -113,6 +127,23 @@ namespace HFiles_Backend.Infrastructure.Data
             modelBuilder.Entity<UserDynamicDiseaseType>().ToTable("userdynamicdiseasetypes", t => t.ExcludeFromMigrations());
             modelBuilder.Entity<UserDynamicDiseaseRecord>().ToTable("userdynamicdiseaserecords", t => t.ExcludeFromMigrations());
             modelBuilder.Entity<UserSocialHistory>().ToTable("usersocialhistories", t => t.ExcludeFromMigrations());
+
+
+
+
+            // Clinics
+            modelBuilder.Entity<ClinicSignup>().ToTable("clinicsignups");   
+            modelBuilder.Entity<ClinicOtpEntry>().ToTable("clinicotpentries");
+            modelBuilder.Entity<ClinicSuperAdmin>().ToTable("clinicsuperadmins");
+            modelBuilder.Entity<ClinicMember>().ToTable("clinicmembers");
+            modelBuilder.Entity<ClinicAppointment>().ToTable("clinicappointments");
+            modelBuilder.Entity<ClinicConsentForm>().ToTable("clinicconsentforms");
+            modelBuilder.Entity<ClinicPatient>().ToTable("clinicpatients");
+            modelBuilder.Entity<ClinicVisit>().ToTable("clinicvisits");
+            modelBuilder.Entity<ClinicVisitConsentForm>().ToTable("clinicvisitconsentforms");
+            modelBuilder.Entity<ClinicPrescription>().ToTable("clinicprescriptions");
+            modelBuilder.Entity<ClinicTreatment>().ToTable("clinictreatments");
+            modelBuilder.Entity<ClinicPatientRecord>().ToTable("clinicpatientrecords");
 
 
 
@@ -172,7 +203,7 @@ namespace HFiles_Backend.Infrastructure.Data
 
 
             modelBuilder.Entity<ClinicSuperAdmin>()
-                .ToTable("ClinicSuperAdmins")
+                .ToTable("clinicsuperadmins")
                 .HasIndex(a => new { a.UserId, a.ClinicId, a.IsMain })
                 .HasDatabaseName("IX_ClinicSuperAdmins_UserId_ClinicId_IsMain");
 
@@ -185,7 +216,7 @@ namespace HFiles_Backend.Infrastructure.Data
                 .HasDatabaseName("IX_ClinicSuperAdmins_Id_UserId");
 
             modelBuilder.Entity<ClinicSuperAdmin>()
-                .ToTable("ClinicSuperAdmins")
+                .ToTable("clinicsuperadmins")
                 .HasOne(csa => csa.User)
                 .WithMany()
                 .HasForeignKey(csa => csa.UserId)
@@ -198,7 +229,7 @@ namespace HFiles_Backend.Infrastructure.Data
                 .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<ClinicSuperAdmin>()
-                .ToTable("ClinicSuperAdmins")
+                .ToTable("clinicsuperadmins")
                 .HasOne(csa => csa.Clinic)
                 .WithMany()
                 .HasForeignKey(csa => csa.ClinicId)
@@ -209,7 +240,7 @@ namespace HFiles_Backend.Infrastructure.Data
 
 
             modelBuilder.Entity<ClinicMember>()
-              .ToTable("ClinicMembers")
+              .ToTable("clinicmembers")
               .HasIndex(m => new { m.UserId, m.ClinicId, m.DeletedBy })
               .HasDatabaseName("IX_ClinicMembers_UserId_ClinicId_DeletedBy");
 
@@ -258,6 +289,11 @@ namespace HFiles_Backend.Infrastructure.Data
                 .HasIndex(p => p.HFID)
                 .HasDatabaseName("IX_ClinicPatients_HFID");
 
+
+
+
+
+
             // ClinicVisits: Index on ClinicPatientId
             modelBuilder.Entity<ClinicVisit>()
                 .HasIndex(v => v.ClinicPatientId)
@@ -267,6 +303,15 @@ namespace HFiles_Backend.Infrastructure.Data
             modelBuilder.Entity<ClinicVisit>()
                 .HasIndex(v => v.AppointmentDate)
                 .HasDatabaseName("IX_ClinicVisits_AppointmentDate");
+
+            modelBuilder.Entity<ClinicVisit>()
+              .HasIndex(v => new { v.AppointmentDate, v.ClinicPatientId })
+              .HasDatabaseName("IX_ClinicVisits_Date_Patient");
+
+
+
+
+
 
             // ClinicVisitConsentForm: Index on ClinicVisitId
             modelBuilder.Entity<ClinicVisitConsentForm>()
@@ -278,9 +323,9 @@ namespace HFiles_Backend.Infrastructure.Data
                 .HasIndex(c => c.ConsentFormId)
                 .HasDatabaseName("IX_ClinicVisitConsentForm_ConsentFormId");
 
-            modelBuilder.Entity<ClinicVisit>()
-            .HasIndex(v => new { v.AppointmentDate, v.ClinicPatientId })
-            .HasDatabaseName("IX_ClinicVisits_Date_Patient");
+
+
+
 
             modelBuilder.Entity<ClinicAppointment>()
             .Property(a => a.Treatment)

@@ -204,12 +204,16 @@ try
 
     // DbContext
     builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseMySql(
-            builder.Configuration.GetConnectionString("DefaultConnection"),
-            ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("DefaultConnection")),
-            mysqlOptions => mysqlOptions.MigrationsAssembly("HFiles_Backend.Infrastructure")
-        )
-    );
+    options.UseMySql(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("DefaultConnection")),
+        mysqlOptions =>
+        {
+            mysqlOptions.MigrationsAssembly("HFiles_Backend.Infrastructure");
+        }
+    )
+);
+
 
     // Hangfire setup
     builder.Services.AddHangfire(config =>

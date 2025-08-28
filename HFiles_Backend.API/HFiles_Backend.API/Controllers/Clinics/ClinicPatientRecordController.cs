@@ -352,7 +352,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                             EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                             FileSize = Math.Round((decimal)(doc.PdfFile?.Length ?? 0), 2),
                             UploadedBy = "Clinic",
-                            LabId = request.ClinicId,
+                            //LabId = request.ClinicId,
                             UserType = user.UserReference == 0 ? "Independent" : "Dependent",
                             DeletedBy = 0
                         };

@@ -103,7 +103,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     sessionId = tokenData.SessionId
                 };
 
-                return Ok(ApiResponseFactory.Success(responseData, "Clinic Super Admin created successfully."));
+                return Ok(ApiResponseFactory.Success(responseData, "Super Admin created successfully."));
             }
             finally
             {
@@ -213,7 +213,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
 
                 await transaction.CommitAsync();
-                return Ok(ApiResponseFactory.Success(response, $"{dto.Role} successfully logged in."));
+                return Ok(ApiResponseFactory.Success(response, $"{username} successfully logged in."));
             }
             finally
             {

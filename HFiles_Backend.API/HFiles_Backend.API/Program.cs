@@ -286,7 +286,7 @@ try
         recurringJobs.AddOrUpdate<AppointmentStatusService>(
             "sweep-absent-appointments",
             service => service.SweepAbsentAppointmentsAsync(),
-            "*/5 * * * *"
+           "*/1 * * * *"
         );
     }
 

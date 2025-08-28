@@ -73,9 +73,9 @@ namespace HFiles_Backend.Infrastructure.Repositories
             var overdueAppointments = await _context.ClinicAppointments
                 .Where(a => a.Status == "Scheduled")
                 .Where(a =>
-                    a.AppointmentDate.Date < now.Date ||
-                    (a.AppointmentDate.Date == now.Date &&
-                     a.AppointmentTime < now.TimeOfDay.Subtract(TimeSpan.FromMinutes(15))))
+                    a.AppointmentDate
+                        .Add(a.AppointmentTime) <= now.Subtract(TimeSpan.FromMinutes(15))
+                )
                 .ToListAsync();
 
             foreach (var appointment in overdueAppointments)

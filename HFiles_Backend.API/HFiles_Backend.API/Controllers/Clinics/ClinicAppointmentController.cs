@@ -508,7 +508,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 };
 
                 _logger.LogInformation("Follow-up appointment created for HFID {HFID} and ClinicId {ClinicId}", dto.HFID, clinicId);
-                return Ok(ApiResponseFactory.Success(response, "Follow-up appointment and clinic appointment saved successfully."));
+                return Ok(ApiResponseFactory.Success(response, "Appointment saved successfully."));
             }
             catch (Exception ex)
             {

@@ -3,6 +3,7 @@ using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.PatientRecord;
 using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Entities.Users;
 using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Repositories;
@@ -21,7 +22,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         IClinicRepository clinicRepository,
         IClinicPatientRecordRepository clinicPatientRecordRepository,
         S3StorageService s3StorageService,
-        IClinicVisitRepository clinicVisitRepository
+        IClinicVisitRepository clinicVisitRepository,
+        IUserRepository userRepository
     ) : ControllerBase
     {
         private readonly ILogger<ClinicPatientRecordController> _logger = logger;
@@ -30,6 +32,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IClinicPatientRecordRepository _clinicPatientRecordRepository = clinicPatientRecordRepository;
         private readonly S3StorageService _s3StorageService = s3StorageService;
         private readonly IClinicVisitRepository _clinicVisitRepository = clinicVisitRepository;
+        private readonly IUserRepository _userRepository = userRepository;
 
 
 
@@ -247,7 +250,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
         {
             HttpContext.Items["Log-Category"] = "Patient Document Upload";
 
-
             if (!ModelState.IsValid || request.Documents == null || !request.Documents.Any())
                 return BadRequest(ApiResponseFactory.Fail("Invalid request. Documents are required."));
 
@@ -261,6 +263,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             visit.PaymentMethod = request.PaymentMethod;
 
+            var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(request.PatientId);
+            if (clinicPatient == null)
+                return NotFound(ApiResponseFactory.Fail("Clinic patient not found."));
+
+            var user = await _userRepository.GetUserByHFIDAsync(clinicPatient.HFID);
+            if (user == null)
+                return NotFound(ApiResponseFactory.Fail("User not found for provided HFID."));
+
+
             await using var transaction = await _clinicRepository.BeginTransactionAsync();
             bool committed = false;
 
@@ -268,19 +279,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 foreach (var doc in request.Documents)
                 {
-                    //var allowedExtension = ".pdf";
                     var uploadedExtension = Path.GetExtension(doc.PdfFile?.FileName)?.ToLower();
                     var fileSize = doc.PdfFile?.Length;
 
-                    //if (uploadedExtension != allowedExtension)
-                    //{
-                    //    return BadRequest(ApiResponseFactory.Fail("Only PDF files are allowed."));
-                    //}
-
-                    if (fileSize > 20 * 1024 * 1024)
-                    {
+                    if (fileSize > 100 * 1024 * 1024)
                         return BadRequest(ApiResponseFactory.Fail("File size exceeds the 100MB limit."));
-                    }
 
                     if ((doc.Type == RecordType.Invoice || doc.Type == RecordType.Receipt) && doc.PdfFile == null)
                         return BadRequest(ApiResponseFactory.Fail($"{doc.Type} PDF is required."));
@@ -299,17 +302,17 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     }
 
                     string jsonData = string.Empty;
+                    string? s3Url = null;
 
                     if (doc.PdfFile != null)
                     {
                         var fileName = $"{doc.Type.ToString().ToLower()}_clinic{request.ClinicId}_patient{request.PatientId}_{Guid.NewGuid()}{Path.GetExtension(doc.PdfFile.FileName)}";
-
                         var tempPath = Path.Combine(Path.GetTempPath(), fileName);
 
                         using (var stream = new FileStream(tempPath, FileMode.Create))
                             await doc.PdfFile.CopyToAsync(stream);
 
-                        var s3Url = await _s3StorageService.UploadFileToS3(tempPath, $"clinic-records/{fileName}");
+                        s3Url = await _s3StorageService.UploadFileToS3(tempPath, $"clinic-records/{fileName}");
                         System.IO.File.Delete(tempPath);
 
                         if (s3Url == null)
@@ -329,6 +332,33 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     };
 
                     await _clinicPatientRecordRepository.SaveAsync(record);
+
+                    if (s3Url != null)
+                    {
+                        var report = new UserReport
+                        {
+                            UserId = user.Id,
+                            ReportName = $"{doc.Type}",
+                            ReportCategory = doc.Type switch
+                            {
+                                RecordType.Prescription => (int)ReportType.MedicationsPrescription,
+                                RecordType.Treatment => (int)ReportType.MedicationsPrescription,
+                                RecordType.Invoice => (int)ReportType.InvoicesInsurance,
+                                RecordType.Receipt => (int)ReportType.InvoicesInsurance,
+                                RecordType.Images => (int)ReportType.LabReport,
+                                _ => (int)ReportType.Unknown
+                            },
+                            ReportUrl = s3Url,
+                            EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                            FileSize = Math.Round((decimal)(doc.PdfFile?.Length ?? 0), 2),
+                            UploadedBy = "Clinic",
+                            LabId = request.ClinicId,
+                            UserType = user.UserReference == 0 ? "Independent" : "Dependent",
+                            DeletedBy = 0
+                        };
+
+                        await _userRepository.SaveAsync(report);
+                    }
                 }
 
                 await _clinicVisitRepository.UpdateAsync(visit);

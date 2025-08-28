@@ -11,5 +11,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<User?> GetUserByHFIDAsync(string hfid);
         Task<List<User>> GetAllAsync();
         Task<User?> GetByPhoneNumberAsync(string phoneNumber);
+        Task SaveAsync(UserReport report);
     }
 }

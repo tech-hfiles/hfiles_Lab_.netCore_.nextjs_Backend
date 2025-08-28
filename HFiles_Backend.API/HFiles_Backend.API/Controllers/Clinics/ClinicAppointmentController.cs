@@ -155,33 +155,35 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
 
             // Parse date filters
-            DateTime? start = null;
-            DateTime? end = null;
+            DateTime start;
+            DateTime end;
 
             if (!string.IsNullOrEmpty(startDate))
             {
                 if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
-                {
                     return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
-                }
                 start = parsed;
+            }
+            else
+            {
+                start = DateTime.Today;
             }
 
             if (!string.IsNullOrEmpty(endDate))
             {
                 if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
-                {
                     return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
-                }
                 end = parsed;
+            }
+            else
+            {
+                end = DateTime.Today;
             }
 
             // Filter appointments by date range
             var filteredAppointments = appointments
-                .Where(a =>
-                    (!start.HasValue || a.AppointmentDate.Date >= start.Value.Date) &&
-                    (!end.HasValue || a.AppointmentDate.Date <= end.Value.Date))
-                .ToList();
+             .Where(a => a.AppointmentDate.Date >= start.Date && a.AppointmentDate.Date <= end.Date)
+             .ToList();
 
             var today = DateTime.Today;
 

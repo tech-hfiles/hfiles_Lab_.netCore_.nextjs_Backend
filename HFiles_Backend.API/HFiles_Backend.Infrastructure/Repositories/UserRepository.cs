@@ -49,5 +49,11 @@ namespace HFiles_Backend.Infrastructure.Repositories
             return await _context.Users
                 .FirstOrDefaultAsync(u => u.PhoneNumber == phoneNumber && u.UserReference == 0);
         }
+
+        public async Task SaveAsync(UserReport report)
+        {
+            _context.UserReports.Add(report);
+            await _context.SaveChangesAsync();
+        }
     }
 }

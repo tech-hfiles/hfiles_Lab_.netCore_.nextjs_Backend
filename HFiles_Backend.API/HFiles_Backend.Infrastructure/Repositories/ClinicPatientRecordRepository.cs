@@ -174,5 +174,12 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     r.Type == RecordType.Treatment)
                 .ToListAsync();
         }
+
+        public async Task<ClinicPatient?> GetByIdAsync(int patientId)
+        {
+            return await _context.ClinicPatients
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == patientId);
+        }
     }
 }

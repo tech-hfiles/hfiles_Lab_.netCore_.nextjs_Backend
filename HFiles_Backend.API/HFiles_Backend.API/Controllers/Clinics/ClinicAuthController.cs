@@ -91,7 +91,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await _emailService.SendEmailAsync("hfilessocial@gmail.com", "New Clinic Signup", adminEmailBody);
 
                 _logger.LogInformation("Signup successful for Email: {Email}", dto.Email);
-                return Ok(ApiResponseFactory.Success(new { user.IsSuperAdmin }, "Clinic registered successfully."));
+                return Ok(ApiResponseFactory.Success(new { user.IsSuperAdmin }, "Registration successful."));
             }
             finally
             {
@@ -190,7 +190,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await transaction.CommitAsync();
 
                 _logger.LogInformation("OTP login successful for identifier {Identifier}.", dto.Email ?? dto.PhoneNumber);
-                return Ok(ApiResponseFactory.Success(responseData, "Clinic login successful, proceed to ClinicAdmin login."));
+                return Ok(ApiResponseFactory.Success(responseData, "Login Successful."));
             }
             finally
             {
@@ -256,7 +256,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await transaction.CommitAsync();
 
                 _logger.LogInformation("Password login successful for Email {Email}.", dto.Email);
-                return Ok(ApiResponseFactory.Success(responseData, "Clinic login successful, proceed to ClinicAdmin login."));
+                return Ok(ApiResponseFactory.Success(responseData, "Login Successful."));
             }
             finally
             {

@@ -381,7 +381,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 };
 
                 _logger.LogInformation("Successfully deleted clinic member ID: {MemberId} by {DeletedByName} ({Role})", member.Id, deletedByName, deletedByRole);
-                return Ok(ApiResponseFactory.Success(response, $"{member.Role} deleted successfully."));
+                return Ok(ApiResponseFactory.Success(response, $"{memberName} deleted successfully."));
             }
             finally
             {
@@ -530,7 +530,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 };
 
                 _logger.LogInformation("Reverted clinic user ID {UserId} with new role {NewRole} by {RevertedBy}", user.Id, user.Role, revertedByName);
-                return Ok(ApiResponseFactory.Success(response, "User reverted successfully."));
+                return Ok(ApiResponseFactory.Success(response, $"{reinstatedUserName} reverted successfully."));
             }
             finally
             {
@@ -613,7 +613,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 _logger.LogInformation("User ID {UserId} permanently deleted from Clinic ID {ClinicId} by {DeletedBy} ({Role})",
                     response.UserId, response.ClinicId, response.DeletedBy, response.DeletedByRole);
 
-                return Ok(ApiResponseFactory.Success(response, "User permanently deleted successfully."));
+                return Ok(ApiResponseFactory.Success(response, $"{deletedUserName} permanently deleted."));
             }
             finally
             {

@@ -225,7 +225,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 committed = true;
 
                 _logger.LogInformation("Uploaded {Count} files for Clinic ID {ClinicId}, Patient ID {PatientId}", s3Urls.Count, request.ClinicId, request.PatientId);
-                return Ok(ApiResponseFactory.Success("Files uploaded and record saved successfully."));
+                return Ok(ApiResponseFactory.Success("Files saved successfully."));
             }
             catch (Exception ex)
             {

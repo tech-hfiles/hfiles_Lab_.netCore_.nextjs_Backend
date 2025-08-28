@@ -363,7 +363,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 committed = true;
 
                 _logger.LogInformation("Successfully returning all clinics and branches.");
-                return Ok(ApiResponseFactory.Success(response, "Clinic branches fetched successfully."));
+                return Ok(ApiResponseFactory.Success(response, "Branches fetched successfully."));
             }
             catch (Exception ex)
             {

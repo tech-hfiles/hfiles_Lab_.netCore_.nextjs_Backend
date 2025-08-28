@@ -98,7 +98,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 ConsentFormTitle = request.ConsentFormTitle,
                 S3Url = s3Url
-            }, "Consent form uploaded and URL saved successfully."));
+            }, "Consent form uploaded successfully."));
         }
 
 
@@ -131,7 +131,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 ConsentFormTitle = consentFormTitle,
                 IsVerified = true
-            }, "Consent form marked as verified."));
+            }, "Consent form marked verified successfully."));
         }
 
 

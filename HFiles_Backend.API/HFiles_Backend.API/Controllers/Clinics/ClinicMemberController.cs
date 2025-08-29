@@ -147,7 +147,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     UserId = userDetails.Id,
                     ClinicId = clinicEntry.Id,
                     PasswordHash = _passwordHasher.HashPassword(null!, dto.Password),
-                    CreatedBy = createdBy
+                    CreatedBy = createdBy,
+                    DeletedBy = 0
                 };
 
                 await _clinicMemberRepository.AddAsync(newMember);

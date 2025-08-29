@@ -210,6 +210,7 @@ try
         mysqlOptions =>
         {
             mysqlOptions.MigrationsAssembly("HFiles_Backend.Infrastructure");
+            mysqlOptions.CommandTimeout(300);
         }
     )
 );
@@ -281,17 +282,17 @@ try
     app.UseHangfireDashboard();
 
     // Register recurring jobs after app startup
-    app.Lifetime.ApplicationStarted.Register(() =>
-    {
-        using var scope = app.Services.CreateScope();
-        var recurringJobs = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
+    //app.Lifetime.ApplicationStarted.Register(() =>
+    //{
+    //    using var scope = app.Services.CreateScope();
+    //    var recurringJobs = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
 
-        recurringJobs.AddOrUpdate<AppointmentStatusService>(
-            "sweep-absent-appointments",
-            service => service.SweepAbsentAppointmentsAsync(),
-            "*/1 * * * *"
-        );
-    });
+    //    recurringJobs.AddOrUpdate<AppointmentStatusService>(
+    //        "sweep-absent-appointments",
+    //        service => service.SweepAbsentAppointmentsAsync(),
+    //        "*/1 * * * *"
+    //    );
+    //});
 
 
     // Middleware

@@ -3,6 +3,7 @@ using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.Appointment;
 using HFiles_Backend.Application.DTOs.Clinics.Treatment;
 using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
@@ -21,7 +22,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
     IUserRepository userRepository,
     IClinicRepository clinicRepository,
     ILogger<AppointmentsController> logger,
-    IClinicVisitRepository clinicVisitRepository
+    IClinicVisitRepository clinicVisitRepository,
+    IClinicPatientRecordRepository clinicPatientRecordRepository
     ) : ControllerBase
     {
         private readonly IAppointmentRepository _appointmentRepository = appointmentRepository;
@@ -30,6 +32,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IClinicRepository _clinicRepository = clinicRepository;
         private readonly ILogger<AppointmentsController> _logger = logger;
         private readonly IClinicVisitRepository _clinicVisitRepository = clinicVisitRepository;
+        private readonly IClinicPatientRecordRepository _clinicPatientRecordRepository = clinicPatientRecordRepository;
 
 
 
@@ -128,9 +131,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpGet("clinic/{clinicId:int}")]
         [Authorize]
         public async Task<IActionResult> GetAppointmentsByClinicId(
-         [FromRoute] int clinicId,
-         [FromQuery] string? startDate,
-         [FromQuery] string? endDate)
+    [FromRoute] int clinicId,
+    [FromQuery] string? startDate,
+    [FromQuery] string? endDate)
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
@@ -142,6 +145,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             var appointments = await _appointmentRepository.GetAppointmentsByClinicIdAsync(clinicId);
             var visits = await _clinicVisitRepository.GetVisitsByClinicIdAsync(clinicId);
+            var records = await _clinicPatientRecordRepository.GetTreatmentRecordsByClinicIdAsync(clinicId); // ✅ Fetch all treatment records
 
             if (appointments == null || !appointments.Any())
             {
@@ -209,7 +213,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 userMap[hfid] = user?.ProfilePhoto ?? "Not a registered user";
             }
 
-            // Build filtered response
+            // Build response
             var response = filteredAppointments.Select(a =>
             {
                 var hfid = visitHfidLookup[new
@@ -223,6 +227,42 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     ? photo
                     : "Not a registered user";
 
+                // ✅ Try to find matching treatment record
+                var matchingRecord = records.FirstOrDefault(r =>
+                    r.ClinicId == a.ClinicId &&
+                    r.ClinicVisitId == visits.FirstOrDefault(v =>
+                        v.ClinicId == a.ClinicId &&
+                        v.AppointmentDate.Date == a.AppointmentDate.Date &&
+                        v.AppointmentTime == a.AppointmentTime)?.Id &&
+                    r.Type == RecordType.Treatment);
+
+                string treatmentName = a.Treatment ?? "-";
+
+                if (matchingRecord != null)
+                {
+                    try
+                    {
+                        var json = JsonConvert.DeserializeObject<dynamic>(matchingRecord.JsonData);
+                        var treatments = json?.treatments;
+                        if (treatments != null)
+                        {
+                            var names = new List<string>();
+                            foreach (var t in treatments)
+                            {
+                                if (t.name != null)
+                                    names.Add((string)t.name);
+                            }
+
+                            if (names.Any())
+                                treatmentName = string.Join(", ", names);
+                        }
+                    }
+                    catch
+                    {
+                        _logger.LogWarning("Failed to parse treatment JSON for record ID {RecordId}", matchingRecord.Id);
+                    }
+                }
+
                 return new
                 {
                     a.Id,
@@ -231,7 +271,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     a.VisitorPhoneNumber,
                     AppointmentDate = a.AppointmentDate.ToString("dd-MM-yyyy"),
                     AppointmentTime = a.AppointmentTime.ToString(@"hh\:mm"),
-                    a.Treatment,
+                    Treatment = treatmentName,
                     a.Status,
                     HFID = hfid ?? "Not a registered user",
                     ProfilePhoto = profilePhoto
@@ -262,6 +302,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 DailyCounts = dailyCounts
             }, "Appointments fetched successfully."));
         }
+
 
 
 
@@ -359,13 +400,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
         // Delete Appointment based on appointment Id
-        [HttpDelete("appointments/{appointmentId:int}")]
+        [HttpDelete("{appointmentId:int}")]
         [Authorize]
         public async Task<IActionResult> DeleteAppointmentById([FromRoute] int appointmentId)
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
-            var transaction = await _clinicRepository.BeginTransactionAsync();
+            var transaction = await _clinicRepository.BeginTransactionAsync(); 
             var committed = false;
 
             try
@@ -384,8 +425,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return Unauthorized(ApiResponseFactory.Fail("You are not authorized to delete appointments for this clinic."));
                 }
 
-                transaction = await _clinicRepository.BeginTransactionAsync();
-
                 await _appointmentRepository.DeleteAsync(appointment);
                 await _clinicRepository.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -393,7 +432,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 _logger.LogInformation("Deleted appointment ID {AppointmentId} from Clinic ID {ClinicId}", appointmentId, appointment.ClinicId);
                 return Ok(ApiResponseFactory.Success("Appointment deleted successfully."));
-            }
+            }              
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error while deleting appointment ID {AppointmentId}", appointmentId);
@@ -673,18 +712,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             try
             {
-                DateTime start;
-                DateTime end;
+                DateTime? start = null;
+                DateTime? end = null;
 
                 if (!string.IsNullOrEmpty(startDate))
                 {
                     if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
                         return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
                     start = parsed;
-                }
-                else
-                {
-                    start = DateTime.Today;
                 }
 
                 if (!string.IsNullOrEmpty(endDate))
@@ -693,10 +728,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
                     end = parsed;
                 }
-                else
-                {
-                    end = DateTime.Today;
-                }
+
 
                 var patients = await clinicRepository.GetClinicPatientsWithVisitsAsync(clinicId);
 
@@ -721,8 +753,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     var lastVisit = patient.Visits.OrderByDescending(v => v.AppointmentDate).FirstOrDefault();
                     if (lastVisit == null) continue;
 
-                    if (lastVisit.AppointmentDate.Date < start.Date || lastVisit.AppointmentDate.Date > end.Date)
+                    if ((start.HasValue && lastVisit.AppointmentDate.Date < start.Value.Date) ||
+                         (end.HasValue && lastVisit.AppointmentDate.Date > end.Value.Date))
                         continue;
+
 
                     var treatmentRecords = await recordRepository.GetTreatmentRecordsAsync(clinicId, patient.Id, lastVisit.Id);
 

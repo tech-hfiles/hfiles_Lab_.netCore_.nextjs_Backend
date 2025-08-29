@@ -12,5 +12,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task UpdateAsync(ClinicPatientRecord record);
         Task<ClinicPatientRecord?> GetByCompositeKeyAsync(int clinicId, int patientId, int visitId, RecordType type);
         Task<ClinicPatient?> GetByIdAsync(int patientId);
+        Task<List<ClinicPatientRecord>> GetTreatmentRecordsByClinicIdAsync(int clinicId);
     }
 }

@@ -217,22 +217,24 @@ try
 
     // Hangfire setup
     builder.Services.AddHangfire(config =>
-    config.UseStorage(
-        new MySqlStorage(
-            builder.Configuration.GetConnectionString("DefaultConnection"),
-            new MySqlStorageOptions
-            {
-                TransactionIsolationLevel = System.Transactions.IsolationLevel.ReadCommitted,
-                QueuePollInterval = TimeSpan.FromSeconds(15),
-                JobExpirationCheckInterval = TimeSpan.FromHours(1),
-                CountersAggregateInterval = TimeSpan.FromMinutes(5),
-                PrepareSchemaIfNecessary = true, 
-                DashboardJobListLimit = 50000,
-                TransactionTimeout = TimeSpan.FromMinutes(1),
-            }
-          )
-        )
-    );
+     config.UseStorage(
+         new MySqlStorage(
+             builder.Configuration.GetConnectionString("DefaultConnection"),
+             new MySqlStorageOptions
+             {
+                 TransactionIsolationLevel = System.Transactions.IsolationLevel.ReadCommitted,
+                 QueuePollInterval = TimeSpan.FromSeconds(15),
+                 JobExpirationCheckInterval = TimeSpan.FromHours(6),
+                 CountersAggregateInterval = TimeSpan.FromMinutes(15),
+                 PrepareSchemaIfNecessary = true,
+                 DashboardJobListLimit = 50000,
+                 TransactionTimeout = TimeSpan.FromMinutes(5)
+             }
+         )
+     )
+ );
+
+
 
     builder.Services.AddHangfireServer();
 
@@ -279,16 +281,17 @@ try
     app.UseHangfireDashboard();
 
     // Register recurring jobs after app startup
-    using (var scope = app.Services.CreateScope())
+    app.Lifetime.ApplicationStarted.Register(() =>
     {
+        using var scope = app.Services.CreateScope();
         var recurringJobs = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
 
         recurringJobs.AddOrUpdate<AppointmentStatusService>(
             "sweep-absent-appointments",
             service => service.SweepAbsentAppointmentsAsync(),
-           "*/1 * * * *"
+            "*/1 * * * *"
         );
-    }
+    });
 
 
     // Middleware

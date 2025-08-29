@@ -69,14 +69,21 @@ namespace HFiles_Backend.Infrastructure.Repositories
         public async Task<int> MarkOverdueAppointmentsAsAbsentAsync()
         {
             var now = DateTime.UtcNow;
+            var today = now.Date;
 
-            var overdueAppointments = await _context.ClinicAppointments
+            // Only pick appointments scheduled for today
+            var candidates = await _context.ClinicAppointments
                 .Where(a => a.Status == "Scheduled")
-                .Where(a =>
-                    a.AppointmentDate
-                        .Add(a.AppointmentTime) <= now.Subtract(TimeSpan.FromMinutes(15))
-                )
+                .Where(a => a.AppointmentDate.Date == today)
+                .OrderBy(a => a.AppointmentDate) // helps index usage
+                .Take(500)                       // batch size
                 .ToListAsync();
+
+            var cutoff = now.Subtract(TimeSpan.FromMinutes(15));
+
+            var overdueAppointments = candidates
+                .Where(a => a.AppointmentDate.Date.Add(a.AppointmentTime) <= cutoff)
+                .ToList();
 
             foreach (var appointment in overdueAppointments)
             {

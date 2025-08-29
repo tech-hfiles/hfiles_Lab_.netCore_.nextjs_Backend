@@ -331,6 +331,16 @@ namespace HFiles_Backend.Infrastructure.Data
             .Property(a => a.Treatment)
             .HasMaxLength(1000)
             .IsRequired(false);
+
+            // Index: Status + AppointmentDate
+            modelBuilder.Entity<ClinicAppointment>()
+                .HasIndex(a => new { a.Status, a.AppointmentDate })
+                .HasDatabaseName("idx_clinicappointments_status_date");
+
+            // Index: AppointmentDate + AppointmentTime
+            modelBuilder.Entity<ClinicAppointment>()
+                .HasIndex(a => new { a.AppointmentDate, a.AppointmentTime })
+                .HasDatabaseName("idx_clinicappointments_date_time");
         }
 
         //public DbSet<UserReports> UserReports { get; set; }

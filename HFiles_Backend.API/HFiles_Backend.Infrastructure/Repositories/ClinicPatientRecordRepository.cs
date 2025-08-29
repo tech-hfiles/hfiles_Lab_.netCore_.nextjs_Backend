@@ -181,5 +181,12 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Id == patientId);
         }
+
+        public async Task<List<ClinicPatientRecord>> GetTreatmentRecordsByClinicIdAsync(int clinicId)
+        {
+            return await _context.ClinicPatientRecords
+                .Where(r => r.ClinicId == clinicId && r.Type == RecordType.Treatment)
+                .ToListAsync();
+        }
     }
 }

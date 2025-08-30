@@ -16,7 +16,11 @@ namespace HFiles_Backend.Infrastructure.Data
                                    $"Password={Environment.GetEnvironmentVariable("DB_PASSWORD")};";
 
             var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-            optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
+            optionsBuilder.UseMySql(
+            connectionString,
+            ServerVersion.AutoDetect(connectionString),
+            mysqlOptions => mysqlOptions.CommandTimeout(300)
+        );
 
             Console.WriteLine("✅ Using connection string in migrations: " + connectionString);
 

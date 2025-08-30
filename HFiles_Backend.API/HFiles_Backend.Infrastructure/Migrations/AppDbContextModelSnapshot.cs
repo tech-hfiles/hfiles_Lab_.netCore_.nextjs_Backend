@@ -105,7 +105,7 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)");
 
-                    b.Property<int>("PromotedBy")
+                    b.Property<int?>("PromotedBy")
                         .HasColumnType("int");
 
                     b.Property<string>("Role")
@@ -1279,8 +1279,7 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.HasOne("HFiles_Backend.Domain.Entities.Users.User", "PromotedByUser")
                         .WithMany()
                         .HasForeignKey("PromotedBy")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("HFiles_Backend.Domain.Entities.Users.User", "User")
                         .WithMany()

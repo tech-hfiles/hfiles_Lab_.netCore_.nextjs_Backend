@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250829061146_RemovedForeignKeyInDeletedByInClinicMember")]
-    partial class RemovedForeignKeyInDeletedByInClinicMember
+    [Migration("20250829121641_AddedNullableInPromotedByInClinicMembers")]
+    partial class AddedNullableInPromotedByInClinicMembers
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -108,7 +108,7 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)");
 
-                    b.Property<int>("PromotedBy")
+                    b.Property<int?>("PromotedBy")
                         .HasColumnType("int");
 
                     b.Property<string>("Role")
@@ -1282,8 +1282,7 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.HasOne("HFiles_Backend.Domain.Entities.Users.User", "PromotedByUser")
                         .WithMany()
                         .HasForeignKey("PromotedBy")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("HFiles_Backend.Domain.Entities.Users.User", "User")
                         .WithMany()

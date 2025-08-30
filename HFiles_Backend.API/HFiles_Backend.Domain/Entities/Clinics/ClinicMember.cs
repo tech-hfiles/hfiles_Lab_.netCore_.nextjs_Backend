@@ -41,7 +41,7 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         public User CreatedByUser { get; set; } = null!;
 
         [Range(0, int.MaxValue, ErrorMessage = "PromotedBy must be a valid user ID or zero.")]
-        public int PromotedBy { get; set; } = 0;
+        public int? PromotedBy { get; set; }
 
         [ForeignKey(nameof(PromotedBy))]
         public User? PromotedByUser { get; set; }
@@ -49,8 +49,8 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Range(0, int.MaxValue, ErrorMessage = "DeletedBy must be a valid user ID or zero.")]
         public int DeletedBy { get; set; } = 0;
 
-        [ForeignKey(nameof(DeletedBy))]
-        public User? DeletedByUser { get; set; }
+        //[ForeignKey(nameof(DeletedBy))]
+        //public User? DeletedByUser { get; set; }
 
         [Required(ErrorMessage = "EpochTime is required.")]
         [Range(1, long.MaxValue, ErrorMessage = "EpochTime must be a valid timestamp.")]

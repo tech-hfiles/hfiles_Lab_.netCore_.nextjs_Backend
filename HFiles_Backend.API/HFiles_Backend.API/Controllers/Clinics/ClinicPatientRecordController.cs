@@ -298,6 +298,40 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                         existingRecord.SendToPatient = doc.SendToPatient;
                         await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
+
+                        // Parse image URLs from JsonData
+                        if (!string.IsNullOrWhiteSpace(existingRecord.JsonData))
+                        {
+                            try
+                            {
+                                var imageUrls = JsonSerializer.Deserialize<List<string>>(existingRecord.JsonData);
+                                if (imageUrls != null)
+                                {
+                                    foreach (var imageUrl in imageUrls)
+                                    {
+                                        var report = new UserReport
+                                        {
+                                            UserId = user.Id,
+                                            ReportName = "Images",
+                                            ReportCategory = (int)ReportType.LabReport,
+                                            ReportUrl = imageUrl,
+                                            EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                                            FileSize = 0, // Optional: You can’t get size from URL unless stored separately
+                                            UploadedBy = "Clinic",
+                                            UserType = user.UserReference == 0 ? "Independent" : "Dependent",
+                                            DeletedBy = 0
+                                        };
+
+                                        await _userRepository.SaveAsync(report);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Failed to parse image URLs from JsonData for Patient ID {PatientId}", request.PatientId);
+                            }
+                        }
+
                         continue;
                     }
 
@@ -312,7 +346,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         using (var stream = new FileStream(tempPath, FileMode.Create))
                             await doc.PdfFile.CopyToAsync(stream);
 
-                        s3Url = await _s3StorageService.UploadFileToS3(tempPath, $"clinic-records/{fileName}");
+                        s3Url = await _s3StorageService.UploadFileToS3(tempPath, $"clinic/{fileName}");
                         System.IO.File.Delete(tempPath);
 
                         if (s3Url == null)

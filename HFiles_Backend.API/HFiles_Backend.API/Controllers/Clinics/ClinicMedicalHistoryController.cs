@@ -10,7 +10,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
     [Route("api/")]
     [ApiController]
     public class ClinicMedicalHistoryController(
-    ILogger<ClinicMedicalHistoryController> logger,    
+    ILogger<ClinicMedicalHistoryController> logger,
     IClinicAuthorizationService clinicAuthorizationService
     ) : ControllerBase
     {

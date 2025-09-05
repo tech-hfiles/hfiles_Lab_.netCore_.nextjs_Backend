@@ -43,7 +43,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             if (extension != ".pdf")
                 return BadRequest(ApiResponseFactory.Fail("Only PDF files are allowed."));
 
-            const long maxSizeInBytes = 10 * 1024 * 1024;
+            const long maxSizeInBytes = 100 * 1024 * 1024;
             if (request.PdfFile.Length > maxSizeInBytes)
                 return BadRequest(ApiResponseFactory.Fail("File size exceeds 10MB limit."));
 

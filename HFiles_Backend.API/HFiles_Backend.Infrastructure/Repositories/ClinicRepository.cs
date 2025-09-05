@@ -1,4 +1,5 @@
 ﻿using HFiles_Backend.Application.DTOs.Clinics.HFID;
+using HFiles_Backend.Application.DTOs.Clinics.Profile;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Entities.Users;
 using HFiles_Backend.Domain.Interfaces;
@@ -294,6 +295,33 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .Include(cf => cf.ConsentForm)
                 .Where(cf => cf.ClinicVisitId == visitId)
                 .ToListAsync();
+
+        public async Task<List<ClinicNotificationDto>> GetClinicNotificationsAsync(
+        int clinicId, long epochStart, long epochEnd)
+        {
+            long currentEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+            return await _context.LabAuditLogs
+                .AsNoTracking()
+                .Where(n => n.LabId == clinicId &&
+                            n.Timestamp >= epochStart &&
+                            n.Timestamp <= epochEnd &&
+                            n.Notifications != "No notification message found.")
+                .OrderByDescending(n => n.Timestamp)
+                .Select(n => new ClinicNotificationDto
+                {
+                    Id = n.Id,
+                    ClinicId = n.LabId,
+                    UserRole = n.UserRole,
+                    EntityName = n.EntityName,
+                    Category = n.Category,
+                    Timestamp = n.Timestamp,
+                    Notifications = n.Notifications,
+                    ElapsedMinutes = (currentEpoch - n.Timestamp) / 60
+                })
+                .ToListAsync();
+        }
+
         public async Task SaveChangesAsync()
         {
             await _context.SaveChangesAsync();

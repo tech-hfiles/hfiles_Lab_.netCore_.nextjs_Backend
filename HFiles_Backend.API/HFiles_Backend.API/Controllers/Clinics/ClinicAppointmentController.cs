@@ -95,6 +95,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await transaction.CommitAsync();
                 committed = true;
 
+                // Response + Notification
                 var response = new
                 {
                     appointment.Id,
@@ -102,8 +103,19 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     appointment.VisitorUsername,
                     appointment.VisitorPhoneNumber,
                     AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
-                    AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
-                    appointment.Status
+                    AppointmentTime = appointment.AppointmentTime.ToString(@"hh\\:mm"),
+                    appointment.Status,
+
+                    NotificationContext = new
+                    {
+                        AppointmentId = appointment.Id,
+                        PatientName = appointment.VisitorUsername,
+                        PhoneNumber = appointment.VisitorPhoneNumber,
+                        AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
+                        AppointmentTime = appointment.AppointmentTime.ToString(@"hh\\:mm"),
+                        Status = appointment.Status
+                    },
+                    NotificationMessage = $"Appointment booked for {appointment.VisitorUsername} on {appointment.AppointmentDate:dd-MM-yyyy} at {appointment.AppointmentTime:hh\\:mm}."
                 };
 
                 _logger.LogInformation("Appointment created for Clinic ID {ClinicId} on {Date} at {Time}", dto.ClinicId, date, time);
@@ -131,9 +143,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpGet("clinic/{clinicId:int}")]
         [Authorize]
         public async Task<IActionResult> GetAppointmentsByClinicId(
-    [FromRoute] int clinicId,
-    [FromQuery] string? startDate,
-    [FromQuery] string? endDate)
+        [FromRoute] int clinicId,
+        [FromQuery] string? startDate,
+        [FromQuery] string? endDate)
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
@@ -145,7 +157,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             var appointments = await _appointmentRepository.GetAppointmentsByClinicIdAsync(clinicId);
             var visits = await _clinicVisitRepository.GetVisitsByClinicIdAsync(clinicId);
-            var records = await _clinicPatientRecordRepository.GetTreatmentRecordsByClinicIdAsync(clinicId); // ✅ Fetch all treatment records
+            var records = await _clinicPatientRecordRepository.GetTreatmentRecordsByClinicIdAsync(clinicId);
 
             if (appointments == null || !appointments.Any())
             {
@@ -227,7 +239,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     ? photo
                     : "Not a registered user";
 
-                // ✅ Try to find matching treatment record
+                // Try to find matching treatment record
                 var matchingRecord = records.FirstOrDefault(r =>
                     r.ClinicId == a.ClinicId &&
                     r.ClinicVisitId == visits.FirstOrDefault(v =>
@@ -377,8 +389,21 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
                     AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
                     appointment.Status,
-                    appointment.Treatment
+                    appointment.Treatment,
+                    NotificationContext = new
+                    {
+                        PatientName = appointment.VisitorUsername,
+                        PhoneNumber = appointment.VisitorPhoneNumber,
+                        Date = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
+                        Time = appointment.AppointmentTime.ToString(@"hh\:mm"),
+                        ClinicId = appointment.ClinicId,
+                        NewStatus = appointment.Status,
+                        TreatmentDetails = appointment.Treatment
+                    },
+                    NotificationMessage = $"Appointment for {appointment.VisitorUsername} on {appointment.AppointmentDate:dd-MM-yyyy} at {appointment.AppointmentTime:hh\\:mm} has been updated to '{appointment.Status}'" +
+                            $"{(appointment.Status == "Completed" && !string.IsNullOrWhiteSpace(appointment.Treatment) ? $" with treatment noted as: {appointment.Treatment}." : ".")}"
                 };
+
 
                 _logger.LogInformation("Appointment ID {AppointmentId} status updated to {Status}", appointmentId, dto.Status);
                 return Ok(ApiResponseFactory.Success(response, "Appointment status updated successfully."));
@@ -429,6 +454,30 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await _clinicRepository.SaveChangesAsync();
                 await transaction.CommitAsync();
                 committed = true;
+
+                // Response + Notification
+                var response = new
+                {
+                    appointment.Id,
+                    appointment.ClinicId,
+                    appointment.VisitorUsername,
+                    appointment.VisitorPhoneNumber,
+                    AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
+                    AppointmentTime = appointment.AppointmentTime.ToString(@"hh\\:mm"),
+                    appointment.Status,
+
+                    // Notification section
+                    NotificationContext = new
+                    {
+                        AppointmentId = appointment.Id,
+                        PatientName = appointment.VisitorUsername,
+                        PhoneNumber = appointment.VisitorPhoneNumber,
+                        AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
+                        AppointmentTime = appointment.AppointmentTime.ToString(@"hh\\:mm"),
+                        Status = "Deleted"
+                    },
+                    NotificationMessage = $"Appointment for {appointment.VisitorUsername} on {appointment.AppointmentDate:dd-MM-yyyy} at {appointment.AppointmentTime:hh\\:mm} has been deleted."
+                };
 
                 _logger.LogInformation("Deleted appointment ID {AppointmentId} from Clinic ID {ClinicId}", appointmentId, appointment.ClinicId);
                 return Ok(ApiResponseFactory.Success("Appointment deleted successfully."));
@@ -547,16 +596,30 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await transaction.CommitAsync();
                 committed = true;
 
+                // Response + Notification
                 var response = new
                 {
                     PatientName = patient.PatientName,
                     HFID = patient.HFID,
                     AppointmentDate = date.ToString("dd-MM-yyyy"),
-                    AppointmentTime = time.ToString(@"hh\:mm"),
+                    AppointmentTime = time.ToString(@"hh\\:mm"),
                     ConsentFormsSent = consentForms.Select(f => f.Title).ToList(),
                     Treatment = appointment.Treatment,
                     AppointmentStatus = appointment.Status,
-                    ClinicId = clinicId
+                    ClinicId = clinicId,
+
+                    // Notification section
+                    NotificationContext = new
+                    {
+                        AppointmentId = appointment.Id,
+                        PatientName = patient.PatientName,
+                        HFID = patient.HFID,
+                        PhoneNumber = phone,
+                        AppointmentDate = date.ToString("dd-MM-yyyy"),
+                        AppointmentTime = time.ToString(@"hh\\:mm"),
+                        Status = "Scheduled"
+                    },
+                    NotificationMessage = $"Follow-up appointment booked for {patient.PatientName} on {date:dd-MM-yyyy} at {time:hh\\:mm}."
                 };
 
                 _logger.LogInformation("Follow-up appointment created for HFID {HFID} and ClinicId {ClinicId}", dto.HFID, clinicId);
@@ -667,14 +730,28 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 };
                 await _appointmentRepository.SaveAppointmentAsync(appointment);
 
+                // Response + Notification
                 var response = new
                 {
                     HFID = dto.HFID,
                     PatientName = fullName,
                     AppointmentDate = date.ToString("dd-MM-yyyy"),
-                    AppointmentTime = time.ToString(@"hh\:mm"),
+                    AppointmentTime = time.ToString(@"hh\\:mm"),
                     AppointmentStatus = appointment.Status,
-                    ClinicId = clinicId
+                    ClinicId = clinicId,
+
+                    // Notification
+                    NotificationContext = new
+                    {
+                        AppointmentId = appointment.Id,
+                        PatientName = fullName,
+                        HFID = dto.HFID,
+                        PhoneNumber = phone,
+                        AppointmentDate = date.ToString("dd-MM-yyyy"),
+                        AppointmentTime = time.ToString(@"hh\\:mm"),
+                        Status = "Scheduled"
+                    },
+                    NotificationMessage = $"Follow-up appointment booked for {fullName} on {date:dd-MM-yyyy} at {time:hh\\:mm}."
                 };
 
                 _logger.LogInformation("Follow-up appointment booked for existing patient HFID {HFID} in Clinic ID {ClinicId}", dto.HFID, clinicId);

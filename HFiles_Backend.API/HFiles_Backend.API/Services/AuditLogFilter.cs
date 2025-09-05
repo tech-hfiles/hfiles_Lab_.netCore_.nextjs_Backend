@@ -35,9 +35,21 @@ namespace HFiles_Backend.API.Services
                         ? JsonSerializer.Serialize(objectResult.Value, jsonOptions)
                         : "No response content";
 
-                    var user = httpContext.User;
+                    var user = httpContext!.User;
                     int? labId = user.FindFirst("UserId")?.Value is string labStr && int.TryParse(labStr, out var parsedLabId) ? parsedLabId : null;
-                    int? userId = user.FindFirst("LabAdminId")?.Value is string userStr && int.TryParse(userStr, out var parsedUserId) ? parsedUserId : null;
+                    int? userId = null;
+
+                    // Try LabAdminId first
+                    if (user.FindFirst("LabAdminId")?.Value is string labString && int.TryParse(labString, out var labAdminId))
+                    {
+                        userId = labAdminId;
+                    }
+                    // If not found, try ClinicAdminId
+                    else if (user.FindFirst("ClinicAdminId")?.Value is string clinicStr && int.TryParse(clinicStr, out var clinicAdminId))
+                    {
+                        userId = clinicAdminId;
+                    }
+
                     string? userRole = user.FindFirst(ClaimTypes.Role)?.Value;
                     string? sessionId = user.FindFirst("SessionId")?.Value;
 

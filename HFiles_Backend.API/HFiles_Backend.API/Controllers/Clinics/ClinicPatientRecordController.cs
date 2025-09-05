@@ -399,7 +399,38 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await transaction.CommitAsync();
                 committed = true;
 
-                _logger.LogInformation("Uploaded documents for Clinic ID {ClinicId}, Patient ID {PatientId}", request.ClinicId, request.PatientId);
+                var patientName = clinicPatient?.PatientName ?? $"{user?.FirstName} {user?.LastName}" ?? "N/A";
+                var appointmentDate = visit?.AppointmentDate.ToString("dd-MM-yyyy") ?? "N/A";
+                var appointmentTime = visit?.AppointmentTime.ToString(@"hh\\:mm") ?? "N/A";
+
+                var uploadedDocs = request.Documents.Select(d => d.Type.ToString()).ToList();
+
+                // Response + Notification
+                var response = new
+                {
+                    PatientName = patientName,
+                    AppointmentDate = appointmentDate,
+                    AppointmentTime = appointmentTime,
+                    UploadedDocuments = uploadedDocs,
+
+                    NotificationContext = new
+                    {
+                        ClinicId = request.ClinicId,
+                        PatientId = request.PatientId,
+                        ClinicVisitId = request.ClinicVisitId,
+                        HFID = clinicPatient?.HFID,
+                        PatientName = patientName,
+                        AppointmentDate = appointmentDate,
+                        AppointmentTime = appointmentTime,
+                        UploadedDocuments = uploadedDocs
+                    },
+                    NotificationMessage = $"Documents ({string.Join(", ", uploadedDocs)}) uploaded for patient {patientName} on HF account {clinicPatient?.HFID} for {appointmentDate} at {appointmentTime}."
+            };
+
+                _logger.LogInformation(
+                    "Uploaded documents ({Documents}) for Clinic ID {ClinicId}, Patient ID {PatientId}, Appointment on {AppointmentDate} {AppointmentTime}",
+                    string.Join(", ", uploadedDocs), request.ClinicId, request.PatientId, appointmentDate, appointmentTime
+                );
                 return Ok(ApiResponseFactory.Success("Documents uploaded successfully."));
             }
             catch (Exception ex)

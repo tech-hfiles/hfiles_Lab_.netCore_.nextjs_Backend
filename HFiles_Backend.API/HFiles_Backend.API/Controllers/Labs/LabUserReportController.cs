@@ -962,7 +962,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-        // Fetch Daily/Weekly/Monthly/Custom Dates Notifications
+        // Fetch Daily/Weekly/Monthly/Custom Dates Notifications (NOT IN USE)
         [HttpGet("labs/{labId}/notifications")]
         public async Task<IActionResult> GetLabNotifications(
         [FromRoute] int labId,

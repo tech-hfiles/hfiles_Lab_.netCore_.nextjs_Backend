@@ -1,11 +1,14 @@
-﻿using HFiles_Backend.Application.Common;
+﻿using HFiles_Backend.API.Interfaces;
+using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.Profile;
 using HFiles_Backend.Application.DTOs.Users;
 using HFiles_Backend.Domain.Interfaces;
+using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -16,6 +19,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         IClinicRepository clinicRepository,
         IClinicSuperAdminRepository clinicSuperAdminRepository,
         IClinicMemberRepository clinicMemberRepository,
+        IClinicAuthorizationService clinicAuthorizationService,
         IUserRepository userRepository,
         IWebHostEnvironment env,
         S3StorageService s3Service
@@ -28,6 +32,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IUserRepository _userRepository = userRepository;
         private readonly IWebHostEnvironment _env = env;
         private readonly S3StorageService _s3Service = s3Service;
+        private readonly IClinicAuthorizationService _clinicAuthorizationService = clinicAuthorizationService;
 
 
 
@@ -115,14 +120,25 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await _clinicRepository.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                _logger.LogInformation("Profile update completed successfully for ClinicId: {ClinicId}", dto.ClinicId);
-
-                return Ok(ApiResponseFactory.Success(new
+                var response = new
                 {
                     ClinicId = clinic.Id,
                     UpdatedAddress = clinic.Address,
-                    UpdatedProfilePhoto = clinic.ProfilePhoto
-                }, "Profile updated successfully."));
+                    UpdatedProfilePhoto = clinic.ProfilePhoto,
+                    NotificationContext = new
+                    {
+                        Address = clinic.Address,
+                        ProfilePhotoUrl = clinic.ProfilePhoto,
+                        UpdatedAt = DateTime.UtcNow.ToString("dd-MM-yyyy HH:mm:ss")
+                    },
+                    NotificationMessage = $"Clinic profile updated" +
+                          $"{(string.IsNullOrWhiteSpace(clinic.Address) ? "" : $" with new address: {clinic.Address}")}" +
+                          $"{(string.IsNullOrWhiteSpace(clinic.ProfilePhoto) ? "." : $" and new profile photo uploaded.")}"
+                };
+
+                _logger.LogInformation("Profile update completed successfully for ClinicId: {ClinicId}", dto.ClinicId);
+                return Ok(ApiResponseFactory.Success(response, "Profile updated successfully."));
+
             }
             finally
             {
@@ -168,6 +184,74 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             _logger.LogInformation("Fetched patient details for HFID {HfId}", hfId);
             return Ok(ApiResponseFactory.Success(response, "Patient Details fetched successfully."));
+        }
+
+
+
+
+
+        // Clinic Notifications
+        [HttpGet("clinics/{clinicId}/notification")]
+        [Authorize(Policy = "SuperAdminOrAdminPolicy")]
+        public async Task<IActionResult> GetClinicNotification(
+            [FromRoute][Range(1, int.MaxValue)] int clinicId,
+            [FromQuery] int? timeframe,
+            [FromQuery] string? startDate,
+            [FromQuery] string? endDate,
+            [FromServices] ClinicRepository clinicRepository)
+        {
+            HttpContext.Items["Log-Category"] = "Notification Management";
+            _logger.LogInformation("Fetching notifications for Clinic ID: {ClinicId}, Timeframe: {Timeframe}, StartDate: {StartDate}, EndDate: {EndDate}",
+                clinicId, timeframe, startDate, endDate);
+
+            try
+            {
+                // Authorization check for Clinic
+                if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User).ConfigureAwait(false))
+                {
+                    _logger.LogWarning("Unauthorized access attempt to Clinic ID: {ClinicId}", clinicId);
+                    return Unauthorized(ApiResponseFactory.Fail("Unauthorized access."));
+                }
+
+                long currentEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                long epochStart, epochEnd;
+
+                // If custom date range provided
+                if (!string.IsNullOrEmpty(startDate) && !string.IsNullOrEmpty(endDate))
+                {
+                    if (!DateTimeOffset.TryParseExact(startDate, "dd/MM/yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var startDateParsed) ||
+                        !DateTimeOffset.TryParseExact(endDate, "dd/MM/yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var endDateParsed))
+                    {
+                        _logger.LogWarning("Invalid date format received: StartDate={StartDate}, EndDate={EndDate}", startDate, endDate);
+                        return BadRequest(ApiResponseFactory.Fail("Invalid date format. Please use DD/MM/YYYY."));
+                    }
+
+                    epochStart = startDateParsed.ToUnixTimeSeconds();
+                    epochEnd = endDateParsed.AddHours(23).AddMinutes(59).AddSeconds(59).ToUnixTimeSeconds();
+                }
+                else
+                {
+                    // Handle timeframe filter
+                    epochStart = timeframe switch
+                    {
+                        1 => currentEpoch - 86400,    // last 24h
+                        2 => currentEpoch - 604800,   // last 7d
+                        3 => currentEpoch - 2592000,  // last 30d
+                        _ => 0                        // all
+                    };
+                    epochEnd = currentEpoch;
+                }
+
+                // Fetch via repository
+                var notifications = await clinicRepository.GetClinicNotificationsAsync(clinicId, epochStart, epochEnd);
+
+                return Ok(ApiResponseFactory.Success(notifications, "Clinic notifications fetched successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to retrieve notifications for Clinic ID: {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while fetching clinic notifications."));
+            }
         }
     }
 }

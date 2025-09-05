@@ -14,12 +14,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
     public class ClinicConsentFormController(
     IClinicVisitRepository clinicVisitRepository,
     IClinicRepository clinicRepository,
-    S3StorageService s3StorageService
+    S3StorageService s3StorageService,
+    ILogger<ClinicConsentFormController> logger
     ) : ControllerBase
     {
         private readonly IClinicVisitRepository _clinicVisitRepository = clinicVisitRepository;
         private readonly IClinicRepository _clinicRepository = clinicRepository;
         private readonly S3StorageService _s3StorageService = s3StorageService;
+        private readonly ILogger<ClinicConsentFormController> _logger = logger;
 
 
 
@@ -109,8 +111,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpPut("consent/{visitConsentFormId}/verify")]
         [Authorize]
         public async Task<IActionResult> VerifyConsentForm(
-        [FromRoute] int visitConsentFormId,
-        [FromQuery] string consentFormTitle)
+          [FromRoute] int visitConsentFormId,
+          [FromQuery] string consentFormTitle)
         {
             HttpContext.Items["Log-Category"] = "Consent Form Verification";
 
@@ -127,12 +129,36 @@ namespace HFiles_Backend.API.Controllers.Clinics
             visitConsent.IsVerified = true;
             await _clinicRepository.SaveChangesAsync();
 
-            return Ok(ApiResponseFactory.Success(new
+            // Extract related details
+            var patientName = visitConsent?.Visit?.Patient?.PatientName ?? "Unknown Patient";
+            var appointmentDate = visitConsent?.Visit?.AppointmentDate.ToString("dd-MM-yyyy") ?? "N/A";
+            var appointmentTime = visitConsent?.Visit?.AppointmentTime.ToString(@"hh\\:mm") ?? "N/A";
+
+
+            // Response + Notification
+            var response = new
             {
                 ConsentFormTitle = consentFormTitle,
-                IsVerified = true
-            }, "Consent form marked verified successfully."));
+                IsVerified = true,
+
+                // Notification
+                NotificationContext = new
+                {
+                    VisitConsentFormId = visitConsent?.Id,
+                    ConsentFormTitle = consentFormTitle,
+                    PatientName = patientName,
+                    AppointmentDate = appointmentDate,
+                    AppointmentTime = appointmentTime,
+                    Status = "Verified"
+                },
+                NotificationMessage = $"Consent form '{consentFormTitle}' for {patientName} on {appointmentDate} at {appointmentTime} has been verified."
+            };
+
+            _logger.LogInformation("Consent form '{ConsentFormTitle}' verified for Patient: {PatientName}", consentFormTitle, patientName);
+
+            return Ok(ApiResponseFactory.Success(response, "Consent form marked verified successfully."));
         }
+
 
 
 

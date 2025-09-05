@@ -405,8 +405,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     : "N/A";
 
                 string appointmentTime = visit != null
-                     ? visit.AppointmentTime.ToString(@"hh\\:mm")
-                     : "N/A";
+                   ? visit.AppointmentTime.ToString(@"hh\:mm")
+                   : "N/A";
 
                 var uploadedDocs = request.Documents.Select(d => d.Type.ToString()).ToList();
 
@@ -429,8 +429,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         AppointmentTime = appointmentTime,
                         UploadedDocuments = uploadedDocs
                     },
-                    NotificationMessage = $"Documents ({string.Join(", ", uploadedDocs)}) uploaded for patient {patientName} on HF account {clinicPatient?.HFID} for {appointmentDate} at {appointmentTime}."
-            };
+                    NotificationMessage =
+                     $"Documents ({string.Join(", ", uploadedDocs)}) uploaded for patient {patientName} on HF account {clinicPatient?.HFID} for {appointmentDate} at {appointmentTime}."
+
+                };
 
                 _logger.LogInformation(
                     "Uploaded documents ({Documents}) for Clinic ID {ClinicId}, Patient ID {PatientId}, Appointment on {AppointmentDate} {AppointmentTime}",

@@ -400,8 +400,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 committed = true;
 
                 var patientName = clinicPatient?.PatientName ?? $"{user?.FirstName} {user?.LastName}" ?? "N/A";
-                var appointmentDate = visit?.AppointmentDate.ToString("dd-MM-yyyy") ?? "N/A";
-                var appointmentTime = visit?.AppointmentTime.ToString(@"hh\\:mm") ?? "N/A";
+                string appointmentDate = visit?.AppointmentDate != null
+                    ? visit.AppointmentDate.ToString("dd-MM-yyyy")
+                    : "N/A";
+
+                string appointmentTime = visit != null
+                     ? visit.AppointmentTime.ToString(@"hh\\:mm")
+                     : "N/A";
 
                 var uploadedDocs = request.Documents.Select(d => d.Type.ToString()).ToList();
 

@@ -2,8 +2,18 @@
 
 # This stage is used when running from VS in fast mode (Default for Debug configuration)
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
-USER $APP_UID
 WORKDIR /app
+
+# Create wwwroot and temp-reports folder, set permissions
+RUN mkdir -p /app/wwwroot/temp-reports
+
+# Copy ownership to the app user
+# $APP_UID is passed by VS when building the container
+RUN chown -R $APP_UID:$APP_UID /app
+
+# Switch to non-root user AFTER permissions are fixed
+USER $APP_UID
+
 EXPOSE 8080
 EXPOSE 8081
 

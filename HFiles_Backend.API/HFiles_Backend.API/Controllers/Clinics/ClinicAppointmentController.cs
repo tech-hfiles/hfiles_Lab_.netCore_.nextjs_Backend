@@ -103,7 +103,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     appointment.VisitorUsername,
                     appointment.VisitorPhoneNumber,
                     AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
-                    AppointmentTime = appointment.AppointmentTime.ToString(@"hh\\:mm"),
+                    AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
                     appointment.Status,
 
                     NotificationContext = new
@@ -112,7 +112,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         PatientName = appointment.VisitorUsername,
                         PhoneNumber = appointment.VisitorPhoneNumber,
                         AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
-                        AppointmentTime = appointment.AppointmentTime.ToString(@"hh\\:mm"),
+                        AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
                         Status = appointment.Status
                     },
                     NotificationMessage = $"Appointment booked for {appointment.VisitorUsername} on {appointment.AppointmentDate:dd-MM-yyyy} at {appointment.AppointmentTime:hh\\:mm}."
@@ -463,7 +463,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     appointment.VisitorUsername,
                     appointment.VisitorPhoneNumber,
                     AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
-                    AppointmentTime = appointment.AppointmentTime.ToString(@"hh\\:mm"),
+                    AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
                     appointment.Status,
 
                     // Notification section
@@ -473,7 +473,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         PatientName = appointment.VisitorUsername,
                         PhoneNumber = appointment.VisitorPhoneNumber,
                         AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
-                        AppointmentTime = appointment.AppointmentTime.ToString(@"hh\\:mm"),
+                        AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
                         Status = "Deleted"
                     },
                     NotificationMessage = $"Appointment for {appointment.VisitorUsername} on {appointment.AppointmentDate:dd-MM-yyyy} at {appointment.AppointmentTime:hh\\:mm} has been deleted."
@@ -602,7 +602,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     PatientName = patient.PatientName,
                     HFID = patient.HFID,
                     AppointmentDate = date.ToString("dd-MM-yyyy"),
-                    AppointmentTime = time.ToString(@"hh\\:mm"),
+                    AppointmentTime = time.ToString(@"hh\:mm"),
                     ConsentFormsSent = consentForms.Select(f => f.Title).ToList(),
                     Treatment = appointment.Treatment,
                     AppointmentStatus = appointment.Status,
@@ -616,7 +616,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         HFID = patient.HFID,
                         PhoneNumber = phone,
                         AppointmentDate = date.ToString("dd-MM-yyyy"),
-                        AppointmentTime = time.ToString(@"hh\\:mm"),
+                        AppointmentTime = time.ToString(@"hh\:mm"),
                         Status = "Scheduled"
                     },
                     NotificationMessage = $"Follow-up appointment booked for {patient.PatientName} on {date:dd-MM-yyyy} at {time:hh\\:mm}."
@@ -736,7 +736,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     HFID = dto.HFID,
                     PatientName = fullName,
                     AppointmentDate = date.ToString("dd-MM-yyyy"),
-                    AppointmentTime = time.ToString(@"hh\\:mm"),
+                    AppointmentTime = time.ToString(@"hh\:mm"),
                     AppointmentStatus = appointment.Status,
                     ClinicId = clinicId,
 
@@ -748,7 +748,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         HFID = dto.HFID,
                         PhoneNumber = phone,
                         AppointmentDate = date.ToString("dd-MM-yyyy"),
-                        AppointmentTime = time.ToString(@"hh\\:mm"),
+                        AppointmentTime = time.ToString(@"hh\:mm"),
                         Status = "Scheduled"
                     },
                     NotificationMessage = $"Follow-up appointment booked for {fullName} on {date:dd-MM-yyyy} at {time:hh\\:mm}."

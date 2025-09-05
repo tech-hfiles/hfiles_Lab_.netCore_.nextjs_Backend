@@ -438,7 +438,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     "Uploaded documents ({Documents}) for Clinic ID {ClinicId}, Patient ID {PatientId}, Appointment on {AppointmentDate} {AppointmentTime}",
                     string.Join(", ", uploadedDocs), request.ClinicId, request.PatientId, appointmentDate, appointmentTime
                 );
-                return Ok(ApiResponseFactory.Success("Documents uploaded successfully."));
+                return Ok(ApiResponseFactory.Success(response, "Documents uploaded successfully."));
             }
             catch (Exception ex)
             {

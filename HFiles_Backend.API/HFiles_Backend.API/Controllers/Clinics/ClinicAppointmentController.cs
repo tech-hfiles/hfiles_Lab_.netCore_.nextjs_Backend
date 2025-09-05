@@ -480,7 +480,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 };
 
                 _logger.LogInformation("Deleted appointment ID {AppointmentId} from Clinic ID {ClinicId}", appointmentId, appointment.ClinicId);
-                return Ok(ApiResponseFactory.Success("Appointment deleted successfully."));
+                return Ok(ApiResponseFactory.Success(response, "Appointment deleted successfully."));
             }              
             catch (Exception ex)
             {

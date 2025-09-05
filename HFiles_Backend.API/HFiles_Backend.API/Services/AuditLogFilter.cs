@@ -138,46 +138,48 @@ namespace HFiles_Backend.API.Services
                             await dbContext.SaveChangesAsync();
                         }
 
-                        if (dataElement.TryGetProperty("notificationMessage", out var notifArray) &&
-                            dataElement.TryGetProperty("labBranchId", out var branchArray) &&
-                            notifArray.ValueKind == JsonValueKind.Array &&
-                            branchArray.ValueKind == JsonValueKind.Array)
+                        if (dataElement.ValueKind == JsonValueKind.Object)
                         {
-                            int count = Math.Min(notifArray.GetArrayLength(), branchArray.GetArrayLength());
-
-                            for (int i = 0; i < count; i++)
+                            if (dataElement.TryGetProperty("notificationMessage", out var notifArray) &&
+                                dataElement.TryGetProperty("labBranchId", out var branchArray) &&
+                                notifArray.ValueKind == JsonValueKind.Array &&
+                                branchArray.ValueKind == JsonValueKind.Array)
                             {
-                                string? notification = notifArray[i].TryGetProperty("notificationMessage", out var noteProp) && noteProp.ValueKind == JsonValueKind.String
-                                    ? noteProp.GetString()
-                                    : "No notification message found.";
+                                int count = Math.Min(notifArray.GetArrayLength(), branchArray.GetArrayLength());
 
-                                int? branchId = branchArray[i].TryGetProperty("branchLabId", out var bidProp) &&
-                                                bidProp.ValueKind == JsonValueKind.Number &&
-                                                bidProp.TryGetInt32(out var bid)
-                                    ? bid
-                                    : null;
-
-                                var resendLog = new LabAuditLog
+                                for (int i = 0; i < count; i++)
                                 {
-                                    LabId = labId,
-                                    UserId = userId,
-                                    UserRole = userRole,
-                                    BranchId = branchId != labId ? branchId : null,
-                                    EntityName = context.ActionDescriptor.RouteValues["controller"],
-                                    Category = httpContext.Items["Log-Category"]?.ToString(),
-                                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                                    IpAddress = httpContext.Connection.RemoteIpAddress?.ToString(),
-                                    SessionId = sessionId,
-                                    Url = httpContext.Request.Path,
-                                    HttpMethod = httpContext.Request.Method,
-                                    Details = $"Resend Notification {i + 1}",
-                                    Notifications = notification
-                                };
+                                    string? notification = notifArray[i].ValueKind == JsonValueKind.String
+                                        ? notifArray[i].GetString()
+                                        : "No notification message found.";
 
-                                dbContext.LabAuditLogs.Add(resendLog);
+                                    int? branchId = branchArray[i].ValueKind == JsonValueKind.Number &&
+                                                    branchArray[i].TryGetInt32(out var bid)
+                                        ? bid
+                                        : null;
+
+                                    var resendLog = new LabAuditLog
+                                    {
+                                        LabId = labId,
+                                        UserId = userId,
+                                        UserRole = userRole,
+                                        BranchId = branchId != labId ? branchId : null,
+                                        EntityName = context.ActionDescriptor.RouteValues["controller"],
+                                        Category = httpContext.Items["Log-Category"]?.ToString(),
+                                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                                        IpAddress = httpContext.Connection.RemoteIpAddress?.ToString(),
+                                        SessionId = sessionId,
+                                        Url = httpContext.Request.Path,
+                                        HttpMethod = httpContext.Request.Method,
+                                        Details = $"Resend Notification {i + 1}",
+                                        Notifications = notification
+                                    };
+
+                                    dbContext.LabAuditLogs.Add(resendLog);
+                                }
+
+                                await dbContext.SaveChangesAsync();
                             }
-
-                            await dbContext.SaveChangesAsync();
                         }
                     }
                 }

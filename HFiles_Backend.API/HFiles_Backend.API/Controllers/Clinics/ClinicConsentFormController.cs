@@ -45,7 +45,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             const long maxSizeInBytes = 100 * 1024 * 1024;
             if (request.PdfFile.Length > maxSizeInBytes)
-                return BadRequest(ApiResponseFactory.Fail("File size exceeds 10MB limit."));
+                return BadRequest(ApiResponseFactory.Fail("File size exceeds 100MB limit."));
 
             var visitConsent = await _clinicVisitRepository.GetVisitConsentFormAsync(visitConsentFormId);
 
@@ -132,7 +132,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             // Extract related details
             var patientName = visitConsent?.Visit?.Patient?.PatientName ?? "Unknown Patient";
             var appointmentDate = visitConsent?.Visit?.AppointmentDate.ToString("dd-MM-yyyy") ?? "N/A";
-            var appointmentTime = visitConsent?.Visit?.AppointmentTime.ToString(@"hh\\:mm") ?? "N/A";
+            var appointmentTime = visitConsent?.Visit?.AppointmentTime.ToString(@"hh\:mm") ?? "N/A";
 
 
             // Response + Notification

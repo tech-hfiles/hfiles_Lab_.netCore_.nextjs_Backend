@@ -14,9 +14,10 @@ namespace HFiles_Backend.Application.DTOs.Clinics.PatientRecord
     {
         public DateTime AppointmentDate { get; set; }
         public bool IsVerified { get; set; }
-        public List<string> ConsentForms { get; set; } = new();
-        public List<PatientRecordItem> Records { get; set; } = new();
-        public List<ConsentFormInfo> ConsentFormsDetails { get; set; } = new List<ConsentFormInfo>();
+        public List<string> ConsentForms { get; set; } = new List<string>(); // Keep for backward compatibility
+        public List<ConsentFormSimple> ConsentFormsWithNames { get; set; } = new List<ConsentFormSimple>(); // New field with names and URLs
+        public List<ConsentFormInfo> ConsentFormsDetails { get; set; } = new List<ConsentFormInfo>(); // Detailed info for internal use
+        public List<PatientRecordItem> Records { get; set; } = new List<PatientRecordItem>();
     }
 
     public class PatientRecordItem

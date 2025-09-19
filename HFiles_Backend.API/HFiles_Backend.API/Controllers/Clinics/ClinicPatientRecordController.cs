@@ -465,7 +465,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                int patientId,
                [FromQuery] string? startDate,
                [FromQuery] string? endDate,
-               [FromQuery] string? categories, // Comma-separated list of categories
+               [FromQuery] string? categories,
                [FromServices] ClinicPatientRecordRepository clinicPatientRecordRepository)
         {
             HttpContext.Items["Log-Category"] = "Patient History Fetch";

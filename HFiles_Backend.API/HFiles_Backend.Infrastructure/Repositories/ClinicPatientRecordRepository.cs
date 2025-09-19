@@ -190,12 +190,13 @@ namespace HFiles_Backend.Infrastructure.Repositories
         }
 
 
+
         public async Task<PatientHistoryResponse?> GetPatientHistoryWithFiltersAsync(
-            int clinicId,
-            int patientId,
-            DateTime? startDate,
-            DateTime? endDate,
-            List<string> categoryFilters)
+             int clinicId,
+             int patientId,
+             DateTime? startDate,
+             DateTime? endDate,
+             List<string> categoryFilters)
         {
             IQueryable<ClinicVisit> visitQuery = _context.ClinicVisits
                 .Where(v => v.ClinicId == clinicId && v.ClinicPatientId == patientId);
@@ -247,13 +248,17 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     if (categoryFilters.Any() && !categoryFilters.Contains(consentFormName))
                         continue;
 
-                    consentForms.Add(new ConsentFormInfo
+                    // Only include consent forms with actual URLs (not empty or null)
+                    if (!string.IsNullOrWhiteSpace(consentFormSent.ConsentFormUrl))
                     {
-                        Name = consentFormSent.ConsentForm.Title,
-                        Url = consentFormSent.ConsentFormUrl ?? string.Empty,
-                        IsVerified = consentFormSent.IsVerified,
-                        Category = "consent_form"
-                    });
+                        consentForms.Add(new ConsentFormInfo
+                        {
+                            Name = consentFormSent.ConsentForm.Title,
+                            Url = consentFormSent.ConsentFormUrl,
+                            IsVerified = consentFormSent.IsVerified,
+                            Category = "consent_form"
+                        });
+                    }
                 }
 
                 // Process patient records (prescription, treatment, invoice, receipt)
@@ -274,13 +279,18 @@ namespace HFiles_Backend.Infrastructure.Repositories
                             root.TryGetProperty("url", out var urlElement) &&
                             urlElement.ValueKind == JsonValueKind.String)
                         {
-                            recordItems.Add(new PatientRecordItem
+                            var urlValue = urlElement.GetString();
+                            // Only include records with actual URLs (not empty or null)
+                            if (!string.IsNullOrWhiteSpace(urlValue))
                             {
-                                Type = r.Type,
-                                Url = urlElement.GetString() ?? string.Empty,
-                                SendToPatient = r.SendToPatient,
-                                Category = recordCategory
-                            });
+                                recordItems.Add(new PatientRecordItem
+                                {
+                                    Type = r.Type,
+                                    Url = urlValue,
+                                    SendToPatient = r.SendToPatient,
+                                    Category = recordCategory
+                                });
+                            }
                         }
                         else if (root.ValueKind == JsonValueKind.Array && r.Type == RecordType.Images)
                         {
@@ -288,38 +298,31 @@ namespace HFiles_Backend.Infrastructure.Repositories
                             {
                                 if (element.ValueKind == JsonValueKind.String)
                                 {
-                                    recordItems.Add(new PatientRecordItem
+                                    var urlValue = element.GetString();
+                                    // Only include images with actual URLs (not empty or null)
+                                    if (!string.IsNullOrWhiteSpace(urlValue))
                                     {
-                                        Type = r.Type,
-                                        Url = element.GetString() ?? string.Empty,
-                                        SendToPatient = r.SendToPatient,
-                                        Category = recordCategory
-                                    });
+                                        recordItems.Add(new PatientRecordItem
+                                        {
+                                            Type = r.Type,
+                                            Url = urlValue,
+                                            SendToPatient = r.SendToPatient,
+                                            Category = recordCategory
+                                        });
+                                    }
                                 }
                             }
                         }
                         else
                         {
-                            // fallback: record exists but no valid URL
-                            recordItems.Add(new PatientRecordItem
-                            {
-                                Type = r.Type,
-                                Url = string.Empty,
-                                SendToPatient = r.SendToPatient,
-                                Category = recordCategory
-                            });
+                            // Don't include fallback records with empty URLs
+                            // This eliminates records that exist but have no valid URL
                         }
                     }
                     catch (JsonException ex)
                     {
                         _logger.LogWarning(ex, "Malformed JSON in ClinicPatientRecord ID {RecordId}", r.Id);
-                        recordItems.Add(new PatientRecordItem
-                        {
-                            Type = r.Type,
-                            Url = string.Empty,
-                            SendToPatient = r.SendToPatient,
-                            Category = recordCategory
-                        });
+                        // Don't include records with malformed JSON and no valid URL
                     }
                 }
 
@@ -330,7 +333,13 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     {
                         AppointmentDate = visit.AppointmentDate,
                         IsVerified = visit.ConsentFormsSent.Any(f => f.IsVerified),
-                        ConsentForms = consentForms.Select(cf => cf.Url).ToList(),
+                        ConsentForms = consentForms.Select(cf => cf.Url).ToList(), // Keep for backward compatibility
+                        ConsentFormsWithNames = consentForms.Select(cf => new ConsentFormSimple
+                        {
+                            Name = cf.Name,
+                            Url = cf.Url,
+                            IsVerified = cf.IsVerified
+                        }).ToList(),
                         ConsentFormsDetails = consentForms,
                         Records = recordItems
                     };
@@ -341,6 +350,8 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
             return response;
         }
+
+
 
         private string GetRecordCategory(RecordType recordType)
         {

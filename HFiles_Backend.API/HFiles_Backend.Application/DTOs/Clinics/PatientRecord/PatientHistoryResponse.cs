@@ -16,6 +16,7 @@ namespace HFiles_Backend.Application.DTOs.Clinics.PatientRecord
         public bool IsVerified { get; set; }
         public List<string> ConsentForms { get; set; } = new();
         public List<PatientRecordItem> Records { get; set; } = new();
+        public List<ConsentFormInfo> ConsentFormsDetails { get; set; } = new List<ConsentFormInfo>();
     }
 
     public class PatientRecordItem
@@ -23,5 +24,6 @@ namespace HFiles_Backend.Application.DTOs.Clinics.PatientRecord
         public RecordType Type { get; set; }
         public string Url { get; set; } = string.Empty;
         public bool SendToPatient { get; set; }
+        public string Category { get; set; } = string.Empty;
     }
 }

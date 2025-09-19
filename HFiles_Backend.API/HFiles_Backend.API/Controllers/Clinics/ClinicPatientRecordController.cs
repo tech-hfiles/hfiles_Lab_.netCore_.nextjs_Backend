@@ -10,6 +10,7 @@ using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
+using System.Globalization;
 using System.Text.Json;
 
 namespace HFiles_Backend.API.Controllers.Clinics
@@ -460,9 +461,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpGet("clinic/{clinicId}/patient/{patientId}/history")]
         [Authorize]
         public async Task<IActionResult> GetPatientHistory(
-        int clinicId,
-        int patientId,
-        [FromServices] ClinicPatientRecordRepository clinicPatientRecordRepository)
+               int clinicId,
+               int patientId,
+               [FromQuery] string? startDate,
+               [FromQuery] string? endDate,
+               [FromQuery] string? categories, // Comma-separated list of categories
+               [FromServices] ClinicPatientRecordRepository clinicPatientRecordRepository)
         {
             HttpContext.Items["Log-Category"] = "Patient History Fetch";
 
@@ -479,12 +483,62 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view this patient's history."));
             }
 
+            // Parse date filters
+            DateTime? start = null;
+            DateTime? end = null;
+
+            if (!string.IsNullOrEmpty(startDate))
+            {
+                if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedStart))
+                {
+                    _logger.LogWarning("Invalid startDate format: {StartDate}", startDate);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
+                }
+                start = parsedStart;
+            }
+
+            if (!string.IsNullOrEmpty(endDate))
+            {
+                if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedEnd))
+                {
+                    _logger.LogWarning("Invalid endDate format: {EndDate}", endDate);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
+                }
+                end = parsedEnd;
+            }
+
+            // Parse category filters
+            var categoryFilters = new List<string>();
+            if (!string.IsNullOrEmpty(categories))
+            {
+                categoryFilters = categories.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(c => c.Trim().ToLowerInvariant())
+                    .ToList();
+
+                // Validate categories
+                var validCategories = new List<string>
+                {
+                    "dtr consent", "tmd/tmjp consent", "photo consent",
+                    "arthrose functional screening consent", "prescription",
+                    "treatment", "invoice", "receipt"
+                };
+
+                var invalidCategories = categoryFilters.Except(validCategories).ToList();
+                if (invalidCategories.Any())
+                {
+                    _logger.LogWarning("Invalid categories provided: {InvalidCategories}", string.Join(", ", invalidCategories));
+                    return BadRequest(ApiResponseFactory.Fail($"Invalid categories: {string.Join(", ", invalidCategories)}. Valid categories are: {string.Join(", ", validCategories)}"));
+                }
+            }
+
             await using var transaction = await _clinicRepository.BeginTransactionAsync();
             bool committed = false;
 
             try
             {
-                var history = await clinicPatientRecordRepository.GetPatientHistoryAsync(clinicId, patientId);
+                var history = await clinicPatientRecordRepository.GetPatientHistoryWithFiltersAsync(
+                    clinicId, patientId, start, end, categoryFilters);
+
                 if (history == null)
                 {
                     _logger.LogInformation("No history found for Clinic ID {ClinicId}, Patient ID {PatientId}", clinicId, patientId);
@@ -494,8 +548,28 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await transaction.CommitAsync();
                 committed = true;
 
-                _logger.LogInformation("Fetched history for Clinic ID {ClinicId}, Patient ID {PatientId}", clinicId, patientId);
-                return Ok(ApiResponseFactory.Success(history, "Patient history fetched successfully."));
+                var response = new
+                {
+                    history.PatientName,
+                    history.HfId,
+                    history.Email,
+                    TotalVisits = history.Visits.Count,
+                    DateRange = new
+                    {
+                        StartDate = start?.ToString("dd-MM-yyyy"),
+                        EndDate = end?.ToString("dd-MM-yyyy")
+                    },
+                    AppliedFilters = new
+                    {
+                        Categories = categoryFilters.Any() ? categoryFilters : new List<string> { "all" }
+                    },
+                    history.Visits
+                };
+
+                _logger.LogInformation("Fetched filtered history for Clinic ID {ClinicId}, Patient ID {PatientId}. Visits: {VisitCount}, Filters: {Filters}",
+                    clinicId, patientId, history.Visits.Count, string.Join(",", categoryFilters));
+
+                return Ok(ApiResponseFactory.Success(response, "Patient history fetched successfully."));
             }
             catch (Exception ex)
             {

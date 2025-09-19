@@ -1,11 +1,16 @@
 ﻿using HFiles_Backend.API.DTOs.Clinics;
+using HFiles_Backend.API.Interfaces;
+using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.ConsentForm;
 using HFiles_Backend.Application.DTOs.Clinics.ConsentForm.HFiles_Backend.API.DTOs.Clinics;
+using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
+using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
+using System.Web;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -15,13 +20,43 @@ namespace HFiles_Backend.API.Controllers.Clinics
     IClinicVisitRepository clinicVisitRepository,
     IClinicRepository clinicRepository,
     S3StorageService s3StorageService,
-    ILogger<ClinicConsentFormController> logger
+    ILogger<ClinicConsentFormController> logger,
+    IConfiguration configuration,
+    IEmailTemplateService emailTemplateService,
+    IUserRepository userRepository,
+    EmailService emailService
     ) : ControllerBase
     {
         private readonly IClinicVisitRepository _clinicVisitRepository = clinicVisitRepository;
         private readonly IClinicRepository _clinicRepository = clinicRepository;
         private readonly S3StorageService _s3StorageService = s3StorageService;
         private readonly ILogger<ClinicConsentFormController> _logger = logger;
+        private readonly IConfiguration _configuration = configuration;
+        private readonly IEmailTemplateService _emailTemplateService = emailTemplateService;
+        private readonly IUserRepository _userRepository = userRepository;
+        private readonly EmailService _emailService = emailService;
+
+
+
+        private string GetBaseUrl()
+        {
+            var environment = _configuration["Environment"] ?? "Development";
+            return environment.Equals("Production", StringComparison.OrdinalIgnoreCase)
+                ? "https://hfiles.in"
+                : "http://localhost:3000";
+        }
+
+
+
+        private static string UrlEncodeForConsentForm(string consentFormName)
+        {
+            // Custom URL encoding to match the required format:
+            // Spaces should be %20 (not +)
+            // Forward slash should be %2F (uppercase F)
+            return consentFormName
+                .Replace(" ", "%20")
+                .Replace("/", "%2F");
+        }
 
 
 
@@ -205,6 +240,202 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 Console.WriteLine($"Error during consent form retrieval: {ex.Message}");
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while retrieving consent forms."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
+
+
+
+
+
+        // Send multiple consent forms to patient
+        [HttpPost("clinics/{clinicId}/patients/{patientId}/consent-forms/send")]
+        [Authorize]
+        public async Task<IActionResult> SendConsentFormsToPatient(
+            [FromRoute] int clinicId,
+            [FromRoute] int patientId,
+            [FromBody] SendConsentFormsRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Send Consent Form";
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+
+                _logger.LogWarning("Validation failed for sending consent forms. Errors: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            if (request.ConsentForms == null || !request.ConsentForms.Any())
+            {
+                _logger.LogWarning("No consent forms provided in request");
+                return BadRequest(ApiResponseFactory.Fail("At least one consent form must be provided."));
+            }
+
+            // Check clinic authorization
+            bool isAuthorized = await _clinicRepository.IsClinicAuthorizedAsync(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized consent form send attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("Only authorized clinics can send consent forms."));
+            }
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+            var committed = false;
+
+            try
+            {
+                // Validate clinic exists
+                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
+                if (clinic == null)
+                {
+                    _logger.LogWarning("Clinic ID {ClinicId} not found", clinicId);
+                    return NotFound(ApiResponseFactory.Fail("Clinic not found."));
+                }
+
+                // Get patient by ID and extract HFID
+                var patient = await _clinicRepository.GetPatientByHFIDAsync("");
+                var allPatients = await _clinicVisitRepository.GetVisitsByClinicIdAsync(clinicId);
+                var targetPatient = allPatients.Select(v => v.Patient).FirstOrDefault(p => p.Id == patientId);
+
+                if (targetPatient == null)
+                {
+                    _logger.LogWarning("Patient ID {PatientId} not found in Clinic ID {ClinicId}", patientId, clinicId);
+                    return NotFound(ApiResponseFactory.Fail("Patient not found in this clinic."));
+                }
+
+                // Get user details by HFID for email
+                var user = await _userRepository.GetUserByHFIDAsync(targetPatient.HFID);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found for HFID {HFID}", targetPatient.HFID);
+                    return NotFound(ApiResponseFactory.Fail("User not found for this patient."));
+                }
+                if (user.FirstName == null)
+                {
+                    _logger.LogWarning("FirstName not found for HFID {HFID}", targetPatient.HFID);
+                    return NotFound(ApiResponseFactory.Fail("FirstName not found for this patient."));
+                }
+
+                // Validate visit exists for this patient and clinic
+                var visit = await _clinicRepository.GetVisitAsync(clinicId, patientId, DateTime.Today);
+                if (visit == null)
+                {
+                    // If no visit today, get the most recent visit
+                    var visits = await _clinicVisitRepository.GetVisitsByClinicIdAsync(clinicId);
+                    visit = visits.Where(v => v.Patient.Id == patientId)
+                                  .OrderByDescending(v => v.AppointmentDate)
+                                  .FirstOrDefault();
+
+                    if (visit == null)
+                    {
+                        _logger.LogWarning("No visit found for Patient ID {PatientId} in Clinic ID {ClinicId}", patientId, clinicId);
+                        return NotFound(ApiResponseFactory.Fail("No visit found for this patient."));
+                    }
+                }
+
+                // Create consent form entries for all forms
+                var consentFormEntries = new List<ClinicVisitConsentForm>();
+                var consentFormLinks = new List<ConsentFormLinkInfo>();
+
+                foreach (var consentForm in request.ConsentForms)
+                {
+                    var visitConsentForm = new ClinicVisitConsentForm
+                    {
+                        ClinicVisitId = visit.Id,
+                        ConsentFormId = consentForm.ConsentFormId,
+                        IsVerified = false
+                    };
+
+                    visit.ConsentFormsSent.Add(visitConsentForm);
+                    consentFormEntries.Add(visitConsentForm);
+                }
+
+                // Save all consent form entries
+                await _clinicRepository.SaveChangesAsync();
+
+                // Generate consent form links for all forms
+                var baseUrl = GetBaseUrl();
+                for (int i = 0; i < consentFormEntries.Count; i++)
+                {
+                    var entry = consentFormEntries[i];
+                    var formRequest = request.ConsentForms[i];
+                    var encodedConsentName = UrlEncodeForConsentForm(formRequest.ConsentFormName);
+                    var consentFormLink = $"{baseUrl}/PublicTMDConsentForm?ConsentId={entry.Id}&ConsentName={encodedConsentName}&hfid={targetPatient.HFID}";
+
+                    consentFormLinks.Add(new ConsentFormLinkInfo
+                    {
+                        ConsentFormId = entry.Id,
+                        ConsentFormName = formRequest.ConsentFormName,
+                        ConsentFormLink = consentFormLink
+                    });
+                }
+
+                // Send email to patient with all consent forms
+                var emailTemplate = _emailTemplateService.GenerateMultipleConsentFormsEmailTemplate(
+                    user.FirstName,
+                    consentFormLinks,
+                    clinic.ClinicName
+                );
+
+                var consentFormNames = string.Join(", ", request.ConsentForms.Select(f => f.ConsentFormName));
+                await _emailService.SendEmailAsync(
+                    user.Email,
+                    $"Consent Forms Required - {clinic.ClinicName}",
+                    emailTemplate
+                );
+
+                await transaction.CommitAsync();
+                committed = true;
+
+                // Response with notification
+                var response = new
+                {
+                    TotalConsentFormsSent = consentFormEntries.Count,
+                    ConsentForms = consentFormLinks.Select(link => new
+                    {
+                        ConsentFormId = link.ConsentFormId,
+                        ConsentFormName = link.ConsentFormName,
+                        ConsentFormLink = link.ConsentFormLink
+                    }).ToList(),
+                    PatientName = targetPatient.PatientName,
+                    PatientHFID = targetPatient.HFID,
+                    ClinicName = clinic.ClinicName,
+                    EmailSent = true,
+                    SentToEmail = user.Email,
+
+                    // Notification context
+                    NotificationContext = new
+                    {
+                        PatientName = targetPatient.PatientName,
+                        PatientHFID = targetPatient.HFID,
+                        ClinicId = clinicId,
+                        ClinicName = clinic.ClinicName,
+                        ConsentFormsCount = consentFormEntries.Count,
+                        ConsentFormNames = consentFormNames,
+                        Status = "Sent"
+                    },
+                    NotificationMessage = $"{consentFormEntries.Count} consent form(s) have been sent to {targetPatient.PatientName} on their HF Account (HFID: {targetPatient.HFID}). Forms: {consentFormNames}"
+                };
+
+                _logger.LogInformation(
+                    "{Count} consent form(s) sent to Patient {PatientName} (HFID: {HFID}) for Clinic {ClinicId}. Forms: {Forms}",
+                    consentFormEntries.Count, targetPatient.PatientName, targetPatient.HFID, clinicId, consentFormNames
+                );
+
+                return Ok(ApiResponseFactory.Success(response, "Consent forms sent successfully to patient."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while sending consent forms to Patient ID {PatientId} in Clinic ID {ClinicId}", patientId, clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while sending the consent forms."));
             }
             finally
             {

@@ -1,4 +1,6 @@
-﻿namespace HFiles_Backend.API.Interfaces
+﻿using HFiles_Backend.Application.DTOs.Clinics.ConsentForm;
+
+namespace HFiles_Backend.API.Interfaces
 {
      public interface IEmailTemplateService
     {
@@ -8,5 +10,6 @@
         string GenerateClinicLoginOtpTemplate(string otp, int validityMinutes);
         string GenerateClinicPasswordResetTemplate(string labName, string otp, int validityMinutes, string resetLink);
         string GenerateClinicUserPasswordResetTemplate(string firstName, string clinicName, string otp, int validityMinutes, string resetLink);
+        string GenerateMultipleConsentFormsEmailTemplate(string patientFirstName, List<ConsentFormLinkInfo> consentFormLinks, string clinicName);
     }
 }

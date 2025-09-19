@@ -1,6 +1,8 @@
 ﻿using HFiles_Backend.API.Interfaces;
+using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.Appointment;
+using HFiles_Backend.Application.DTOs.Clinics.ConsentForm;
 using HFiles_Backend.Application.DTOs.Clinics.Treatment;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Enums;
@@ -23,7 +25,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
     IClinicRepository clinicRepository,
     ILogger<AppointmentsController> logger,
     IClinicVisitRepository clinicVisitRepository,
-    IClinicPatientRecordRepository clinicPatientRecordRepository
+    IClinicPatientRecordRepository clinicPatientRecordRepository,
+     IConfiguration configuration,
+     IEmailTemplateService emailTemplateService,
+     EmailService emailService
     ) : ControllerBase
     {
         private readonly IAppointmentRepository _appointmentRepository = appointmentRepository;
@@ -33,6 +38,31 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly ILogger<AppointmentsController> _logger = logger;
         private readonly IClinicVisitRepository _clinicVisitRepository = clinicVisitRepository;
         private readonly IClinicPatientRecordRepository _clinicPatientRecordRepository = clinicPatientRecordRepository;
+        private readonly IConfiguration _configuration = configuration;
+        private readonly IEmailTemplateService _emailTemplateService = emailTemplateService;
+        private readonly EmailService _emailService = emailService;
+
+
+
+        private string GetBaseUrl()
+        {
+            var environment = _configuration["Environment"] ?? "Development";
+            return environment.Equals("Production", StringComparison.OrdinalIgnoreCase)
+                ? "https://hfiles.in"
+                : "http://localhost:3000";
+        }
+
+
+
+        private string UrlEncodeForConsentForm(string consentFormName)
+        {
+            // Custom URL encoding to match the required format:
+            // Spaces should be %20 (not +)
+            // Forward slash should be %2F (uppercase F)
+            return consentFormName
+                .Replace(" ", "%20")
+                .Replace("/", "%2F");
+        }
 
 
 
@@ -505,8 +535,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpPost("clinics/{clinicId}/follow-up")]
         [Authorize]
         public async Task<IActionResult> CreateFollowUpAppointment(
-        [FromBody] FollowUpAppointmentDto dto,
-        [FromRoute] int clinicId)
+         [FromBody] FollowUpAppointmentDto dto,
+         [FromRoute] int clinicId)
         {
             HttpContext.Items["Log-Category"] = "Follow-up Appointment";
 
@@ -557,6 +587,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return NotFound(ApiResponseFactory.Fail("No user found for provided HFID."));
                 }
 
+                if (user.FirstName == null)
+                {
+                    _logger.LogWarning("No FirstName found for HFID {HFID}", dto.HFID);
+                    return NotFound(ApiResponseFactory.Fail("No FirstName found for provided HFID."));
+                }
+
                 var fullName = $"{user.FirstName} {user.LastName}";
                 var phone = user.PhoneNumber ?? "N/A";
 
@@ -596,6 +632,48 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await transaction.CommitAsync();
                 committed = true;
 
+                // Generate consent form links and send email
+                var consentFormLinks = new List<ConsentFormLinkInfo>();
+                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
+
+                if (visit.ConsentFormsSent.Any())
+                {
+                    var baseUrl = GetBaseUrl();
+
+                    for (int i = 0; i < visit.ConsentFormsSent.Count; i++)
+                    {
+                        var consentFormEntry = visit.ConsentFormsSent.ElementAt(i);
+                        var consentFormTitle = dto.ConsentFormTitles[i];
+                        var encodedConsentName = UrlEncodeForConsentForm(consentFormTitle);
+                        var consentFormLink = $"{baseUrl}/PublicTMDConsentForm?ConsentId={consentFormEntry.Id}&ConsentName={encodedConsentName}&hfid={patient.HFID}";
+
+                        consentFormLinks.Add(new ConsentFormLinkInfo
+                        {
+                            ConsentFormId = consentFormEntry.Id,
+                            ConsentFormName = consentFormTitle,
+                            ConsentFormLink = consentFormLink
+                        });
+                    }
+
+                    // Send email with consent form links
+                    if (consentFormLinks.Any())
+                    {
+                        var emailTemplate = _emailTemplateService.GenerateFollowUpAppointmentEmailTemplate(
+                            user.FirstName,
+                            consentFormLinks,
+                            clinic?.ClinicName ?? "Clinic",
+                            date.ToString("dd-MM-yyyy"),
+                            time.ToString(@"hh\:mm")
+                        );
+
+                        await _emailService.SendEmailAsync(
+                            user.Email,
+                            $"Appointment Confirmation & Consent Forms - {clinic?.ClinicName}",
+                            emailTemplate
+                        );
+                    }
+                }
+
                 // Response + Notification
                 var response = new
                 {
@@ -604,9 +682,16 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     AppointmentDate = date.ToString("dd-MM-yyyy"),
                     AppointmentTime = time.ToString(@"hh\:mm"),
                     ConsentFormsSent = consentForms.Select(f => f.Title).ToList(),
+                    ConsentFormLinks = consentFormLinks.Select(link => new
+                    {
+                        ConsentFormName = link.ConsentFormName,
+                        ConsentFormLink = link.ConsentFormLink
+                    }).ToList(),
                     Treatment = appointment.Treatment,
                     AppointmentStatus = appointment.Status,
                     ClinicId = clinicId,
+                    EmailSent = consentFormLinks.Any(),
+                    SentToEmail = user.Email,
 
                     // Notification section
                     NotificationContext = new
@@ -617,12 +702,16 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         PhoneNumber = phone,
                         AppointmentDate = date.ToString("dd-MM-yyyy"),
                         AppointmentTime = time.ToString(@"hh\:mm"),
-                        Status = "Scheduled"
+                        Status = "Scheduled",
+                        ConsentFormsCount = consentFormLinks.Count
                     },
-                    NotificationMessage = $"Follow-up appointment booked for {patient.PatientName} on {date:dd-MM-yyyy} at {time:hh\\:mm}."
+                    NotificationMessage = $"Follow-up appointment booked for {patient.PatientName} on {date:dd-MM-yyyy} at {time:hh\\:mm}." +
+                                        (consentFormLinks.Any() ? $" {consentFormLinks.Count} consent form(s) sent via email." : "")
                 };
 
-                _logger.LogInformation("Follow-up appointment created for HFID {HFID} and ClinicId {ClinicId}", dto.HFID, clinicId);
+                _logger.LogInformation("Follow-up appointment created for HFID {HFID} and ClinicId {ClinicId}. Consent forms sent: {ConsentFormsCount}",
+                    dto.HFID, clinicId, consentFormLinks.Count);
+
                 return Ok(ApiResponseFactory.Success(response, "Appointment saved successfully."));
             }
             catch (Exception ex)

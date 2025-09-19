@@ -11,5 +11,6 @@ namespace HFiles_Backend.API.Interfaces
         string GenerateClinicPasswordResetTemplate(string labName, string otp, int validityMinutes, string resetLink);
         string GenerateClinicUserPasswordResetTemplate(string firstName, string clinicName, string otp, int validityMinutes, string resetLink);
         string GenerateMultipleConsentFormsEmailTemplate(string patientFirstName, List<ConsentFormLinkInfo> consentFormLinks, string clinicName);
+        string GenerateFollowUpAppointmentEmailTemplate(string patientFirstName, List<ConsentFormLinkInfo> consentFormLinks, string clinicName, string appointmentDate, string appointmentTime);
     }
 }

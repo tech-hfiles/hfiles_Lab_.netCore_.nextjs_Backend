@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -231,17 +232,70 @@ namespace HFiles_Backend.API.Controllers.Clinics
         // Get Clinic Users
         [HttpGet("clinics/{clinicId}/users")]
         public async Task<IActionResult> GetAllClinicUsers(
-         [FromRoute][Range(1, int.MaxValue, ErrorMessage = "Clinic ID must be greater than zero.")] int clinicId,
-         [FromServices] ClinicSuperAdminRepository clinicSuperAdminRepository,
-         [FromServices] ClinicMemberRepository clinicMemberRepository)
+   [FromRoute][Range(1, int.MaxValue, ErrorMessage = "Clinic ID must be greater than zero.")] int clinicId,
+   [FromServices] ClinicSuperAdminRepository clinicSuperAdminRepository,
+   [FromServices] ClinicMemberRepository clinicMemberRepository)
         {
             HttpContext.Items["Log-Category"] = "User Retrieval";
             _logger.LogInformation("Received request to fetch all users for Clinic ID: {ClinicId}", clinicId);
+
+            // Extract claims from JWT token
+            var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
+            var clinicAdminIdClaim = User.FindFirst("ClinicAdminId")?.Value;
+            var userClinicIdClaim = User.FindFirst("UserId")?.Value;
+
+            if (string.IsNullOrEmpty(roleClaim) || string.IsNullOrEmpty(clinicAdminIdClaim) || string.IsNullOrEmpty(userClinicIdClaim))
+            {
+                _logger.LogWarning("Missing required claims in JWT token");
+                return Unauthorized(ApiResponseFactory.Fail("Invalid or missing authentication claims."));
+            }
+
+            if (!int.TryParse(clinicAdminIdClaim, out int clinicAdminId) || !int.TryParse(userClinicIdClaim, out int userClinicId))
+            {
+                _logger.LogWarning("Invalid format for ClinicAdminId or UserId claims");
+                return Unauthorized(ApiResponseFactory.Fail("Invalid authentication claims format."));
+            }
 
             var transaction = await _clinicRepository.BeginTransactionAsync();
 
             try
             {
+                // Validate role against database
+                bool roleValidated = false;
+
+                if (roleClaim == "Super Admin")
+                {
+                    var superAdmin = await _clinicSuperAdminRepository.GetByIdAsync(clinicAdminId);
+                    if (superAdmin != null && superAdmin.IsMain == 1)
+                    {
+                        // Check if this super admin belongs to the correct clinic
+                        var clinicEntrys = await _clinicRepository.GetByIdAsync(userClinicId);
+                        if (clinicEntrys != null)
+                        {
+                            int mainClinicIds = clinicEntrys.ClinicReference == 0 ? userClinicId : clinicEntrys.ClinicReference;
+                            if (superAdmin.ClinicId == mainClinicIds)
+                            {
+                                roleValidated = true;
+                            }
+                        }
+                    }
+                }
+                else if (roleClaim == "Admin" || roleClaim == "Member")
+                {
+                    var member = await _clinicMemberRepository.GetByIdInBranchesAsync(clinicAdminId, new List<int> { userClinicId });
+                    if (member != null && member.Role == roleClaim && member.DeletedBy == 0)
+                    {
+                        roleValidated = true;
+                    }
+                }
+
+                if (!roleValidated)
+                {
+                    _logger.LogWarning("Role validation failed for user. Claimed role: {Role}, ClinicAdminId: {ClinicAdminId}", roleClaim, clinicAdminId);
+                    return Unauthorized(ApiResponseFactory.Fail("Role validation failed. Your current role does not match the token claims."));
+                }
+
+                // Proceed with original logic after role validation
                 var clinicEntry = await _clinicRepository.GetByIdAsync(clinicId);
                 if (clinicEntry == null)
                 {
@@ -250,6 +304,36 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
 
                 int mainClinicId = clinicEntry.ClinicReference == 0 ? clinicId : clinicEntry.ClinicReference;
+
+                // Additional authorization check - ensure user can access this clinic
+                if (roleClaim == "Super Admin")
+                {
+                    // Super admin should be able to access main clinic and its branches
+                    var userClinicEntry = await _clinicRepository.GetByIdAsync(userClinicId);
+                    if (userClinicEntry != null)
+                    {
+                        int userMainClinicId = userClinicEntry.ClinicReference == 0 ? userClinicId : userClinicEntry.ClinicReference;
+                        if (userMainClinicId != mainClinicId)
+                        {
+                            _logger.LogWarning("Super Admin trying to access unauthorized clinic. User Clinic: {UserClinicId}, Requested Clinic: {ClinicId}", userClinicId, clinicId);
+                            return Unauthorized(ApiResponseFactory.Fail("You are not authorized to access this clinic's users."));
+                        }
+                    }
+                }
+                else if (roleClaim == "Admin" || roleClaim == "Member")
+                {
+                    // Admin/Member should only access their own clinic or branches within the same main clinic
+                    var userClinicEntry = await _clinicRepository.GetByIdAsync(userClinicId);
+                    if (userClinicEntry != null)
+                    {
+                        int userMainClinicId = userClinicEntry.ClinicReference == 0 ? userClinicId : userClinicEntry.ClinicReference;
+                        if (userMainClinicId != mainClinicId)
+                        {
+                            _logger.LogWarning("{Role} trying to access unauthorized clinic. User Clinic: {UserClinicId}, Requested Clinic: {ClinicId}", roleClaim, userClinicId, clinicId);
+                            return Unauthorized(ApiResponseFactory.Fail("You are not authorized to access this clinic's users."));
+                        }
+                    }
+                }
 
                 var superAdminDto = await clinicSuperAdminRepository.GetMainSuperAdminDtoAsync(mainClinicId);
                 var memberDtos = await clinicMemberRepository.GetMemberDtosByClinicIdAsync(clinicId);
@@ -268,13 +352,18 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 {
                     ClinicId = clinicId,
                     MainClinicId = mainClinicId,
-                    UserCounts = memberDtos.Count + 1,
+                    UserCounts = memberDtos.Count + (superAdminDto != null ? 1 : 0),
                     SuperAdmin = superAdminDto,
                     Members = memberDtos
                 };
 
                 _logger.LogInformation("Successfully fetched users for Clinic ID {ClinicId}.", clinicId);
                 return Ok(ApiResponseFactory.Success(response, "Users fetched successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error occurred while fetching users for Clinic ID {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching users."));
             }
             finally
             {

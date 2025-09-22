@@ -76,10 +76,10 @@ namespace HFiles_Backend.API.Services
             <html>
             <body style='font-family:Arial,sans-serif;'>
                 <p>Hello <strong>{clinicName}</strong>,</p>
-                <p>Your OTP for Lab Reset Password is:</p>
+                <p>Your OTP for Clinic Reset Password is:</p>
                 <h2 style='color: #333;'>{otp}</h2>
                 <p>This OTP is valid for <strong>{validityMinutes} minutes</strong>.</p>
-                <p>You have requested to reset your password for your lab account. Click the button below to proceed:</p>
+                <p>You have requested to reset your password for your clinic account. Click the button below to proceed:</p>
                 <p>
                     <a href='{resetLink}' 
                        style='background-color:#0331B5;color:white;padding:10px 20px;text-decoration:none;font-weight:bold;'>

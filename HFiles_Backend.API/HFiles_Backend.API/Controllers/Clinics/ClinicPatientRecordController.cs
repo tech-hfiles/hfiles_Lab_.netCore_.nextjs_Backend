@@ -181,6 +181,25 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return BadRequest(ApiResponseFactory.Fail(errors));
             }
 
+            // File type validation
+            var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg", ".zip" };
+            foreach (var file in request.Files)
+            {
+                var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+                var fileSize = file.Length;
+
+                if (fileSize > 50 * 1024 * 1024)
+                    return BadRequest(ApiResponseFactory.Fail("File size exceeds the 50MB limit."));
+
+                if (!allowedExtensions.Contains(extension) ||
+                    (!file.ContentType.StartsWith("application/") && !file.ContentType.StartsWith("image/")))
+                {
+                    _logger.LogWarning("Invalid file type attempted: {FileName} with ContentType: {ContentType}",
+                        file.FileName, file.ContentType);
+                    return BadRequest(ApiResponseFactory.Fail("Unsupported file type. Only PDF, JPG, JPEG, PNG, and ZIP files are allowed."));
+                }
+            }
+
             bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
             if (!isAuthorized)
             {

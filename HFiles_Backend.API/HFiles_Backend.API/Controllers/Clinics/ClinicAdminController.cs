@@ -329,7 +329,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (member == null)
                     return NotFound(ApiResponseFactory.Fail("No clinic member found or not eligible for promotion."));
 
-                member.DeletedBy = clinicAdminId;
+                member.DeletedBy = 1;
                 _clinicMemberRepository.Update(member);
 
                 var currentSuperAdmin = await _clinicSuperAdminRepository.GetMainSuperAdminAsync(mainClinicId);

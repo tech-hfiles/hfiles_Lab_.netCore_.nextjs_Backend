@@ -10,6 +10,7 @@ using HFiles_Backend.Domain.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -23,7 +24,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         IEmailTemplateService emailTemplateService,
         IUserRepository userRepository,
         IClinicSuperAdminRepository clinicSuperAdminRepository,
-        IClinicMemberRepository clinicMemberRepository
+        IClinicMemberRepository clinicMemberRepository,
+         IWebHostEnvironment environment
         ) : ControllerBase
     {
         private readonly ILogger<ClinicOtpController> _logger = logger;
@@ -35,6 +37,51 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IClinicSuperAdminRepository _clinicSuperAdminRepository = clinicSuperAdminRepository;
         private readonly IClinicMemberRepository _clinicMemberRepository = clinicMemberRepository;
         private const int OtpValidityMinutes = 5;
+        private readonly IWebHostEnvironment _environment = environment;
+
+
+        private static bool IsValidEmail(string email)
+        {
+            try
+            {
+                var addr = new System.Net.Mail.MailAddress(email);
+                return addr.Address == email;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsValidPhoneNumber(string phoneNumber)
+        {
+            // Use the same regex as in your WhatsApp service
+            var match = Regex.Match(phoneNumber, @"^(\+?\d{1,4})?(\d{10})$");
+            return match.Success;
+        }
+
+        private string GetWhatsAppErrorMessage(Exception whatsappException)
+        {
+            var errorMessage = whatsappException.Message;
+
+            if (errorMessage.Contains("Invalid mobile number format"))
+            {
+                return "Invalid mobile number format. Please provide a valid 10-digit mobile number.";
+            }
+            else if (errorMessage.Contains("Failed to send WhatsApp message"))
+            {
+                return "Failed to send OTP via WhatsApp. Please verify your phone number and try again.";
+            }
+            else if (errorMessage.Contains("Failed to send OTP. Please check API connectivity"))
+            {
+                return "WhatsApp service is temporarily unavailable. Please try again later.";
+            }
+            else
+            {
+                return "Failed to send OTP via WhatsApp. Please check your phone number and try again.";
+            }
+        }
+
 
 
 
@@ -54,15 +101,39 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return BadRequest(ApiResponseFactory.Fail(errors));
             }
 
+            if (await _clinicRepository.EmailExistsAsync(dto.Email))
+            {
+                _logger.LogWarning("Signup failed: Email already registered - {Email}", dto.Email);
+                return BadRequest(ApiResponseFactory.Fail("Email already registered."));
+            }
+
             _logger.LogInformation("Clinic OTP requested for Email: {Email}, Phone: {Phone}", dto.Email, dto.PhoneNumber);
 
             var otp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
             var now = DateTime.UtcNow;
-
             var transaction = await _clinicRepository.BeginTransactionAsync();
+            var committed = false;
 
             try
             {
+                // First validate both email and WhatsApp before proceeding
+                _logger.LogInformation("Validating email and WhatsApp services before generating OTP");
+
+                // Validate email format and service availability
+                if (string.IsNullOrWhiteSpace(dto.Email) || !IsValidEmail(dto.Email))
+                {
+                    _logger.LogWarning("Invalid email format provided: {Email}", dto.Email);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid email format provided."));
+                }
+
+                // Validate phone number format
+                if (string.IsNullOrWhiteSpace(dto.PhoneNumber) || !IsValidPhoneNumber(dto.PhoneNumber))
+                {
+                    _logger.LogWarning("Invalid phone number format provided: {PhoneNumber}", dto.PhoneNumber);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid phone number format provided."));
+                }
+
+                // Create OTP entry
                 var otpEntry = new ClinicOtpEntry
                 {
                     Email = dto.Email,
@@ -73,30 +144,73 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 await _clinicRepository.AddOtpAsync(otpEntry);
                 await _clinicRepository.SaveChangesAsync();
-                await transaction.CommitAsync();
 
                 _logger.LogInformation("Clinic OTP {Otp} generated for Email {Email} at {Time}", otp, dto.Email, now);
 
+                // Prepare email content
                 var subject = "Complete Your Hfiles Clinic Registration";
                 var body = _emailTemplateService.GenerateClinicOtpTemplate(dto.ClinicName, otp);
 
-                await _emailService.SendEmailAsync(dto.Email, subject, body).ConfigureAwait(false);
-                await _whatsappService.SendOtpAsync(otp, dto.PhoneNumber).ConfigureAwait(false);
+                // Send both email and WhatsApp - if either fails, rollback
+                var emailTask = _emailService.SendEmailAsync(dto.Email, subject, body);
+                var whatsappTask = _whatsappService.SendOtpAsync(otp, dto.PhoneNumber);
 
-                _logger.LogInformation("Clinic OTP sent to {Email} and {Phone}", dto.Email, dto.PhoneNumber);
-
-                return Ok(ApiResponseFactory.Success(new
+                try
                 {
-                    dto.Email,
-                    dto.PhoneNumber,
-                    ExpiresInMinutes = 5
-                }, "OTP has been sent to your email and phone number."));
+                    // Wait for both to complete
+                    await Task.WhenAll(emailTask, whatsappTask);
+
+                    await transaction.CommitAsync();
+                    committed = true;
+
+                    _logger.LogInformation("Clinic OTP successfully sent to both {Email} and {Phone}", dto.Email, dto.PhoneNumber);
+
+                    return Ok(ApiResponseFactory.Success(new
+                    {
+                        dto.Email,
+                        dto.PhoneNumber,
+                        ExpiresInMinutes = 5
+                    }, "OTP has been sent to your email and phone number."));
+                }
+                catch (Exception serviceEx)
+                {
+                    _logger.LogError(serviceEx, "Failed to send OTP via email or WhatsApp for {Email}, {Phone}", dto.Email, dto.PhoneNumber);
+
+                    // Determine which service failed and return appropriate error
+                    var emailException = emailTask.IsFaulted ? emailTask.Exception?.GetBaseException() : null;
+                    var whatsappException = whatsappTask.IsFaulted ? whatsappTask.Exception?.GetBaseException() : null;
+
+                    if (emailException != null && whatsappException != null)
+                    {
+                        return StatusCode(500, ApiResponseFactory.Fail("Failed to send OTP via both email and WhatsApp. Please try again later."));
+                    }
+                    else if (emailException != null)
+                    {
+                        return StatusCode(500, ApiResponseFactory.Fail("Failed to send OTP via email. Please check your email address and try again."));
+                    }
+                    else if (whatsappException != null)
+                    {
+                        // Handle specific WhatsApp exceptions
+                        var whatsappError = GetWhatsAppErrorMessage(whatsappException);
+                        return BadRequest(ApiResponseFactory.Fail(whatsappError));
+                    }
+                    else
+                    {
+                        return StatusCode(500, ApiResponseFactory.Fail("An unexpected error occurred while sending OTP."));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error during clinic OTP generation for {Email}", dto.Email);
+                return StatusCode(500, ApiResponseFactory.Fail("An unexpected error occurred while generating OTP. Please try again."));
             }
             finally
             {
-                if (transaction.GetDbTransaction().Connection != null)
+                if (!committed && transaction.GetDbTransaction().Connection != null)
                 {
                     await transaction.RollbackAsync();
+                    _logger.LogWarning("Transaction rolled back for clinic OTP generation");
                 }
             }
         }
@@ -255,7 +369,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await _clinicRepository.SaveChangesAsync();
 
                 string recipientEmail = mainClinic.Email;
-                string resetLink = "https://hfiles.co.in/forgot-password";
+                // Set reset link based on environment
+                string resetLink = _environment.IsDevelopment()
+                    ? "http://localhost:3000/forgotPassword"
+                  : "https://clinicdemo.hfiles.co.in/forgotPassword";
+                //: "https://hfiles.co.in/forgotPassword";
                 string emailBody = _emailTemplateService.GenerateClinicPasswordResetTemplate(
                     clinicUser.ClinicName, otp, OtpValidityMinutes, resetLink);
 
@@ -362,7 +480,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 _clinicRepository.AddOtpEntry(otpEntry);
                 await _clinicRepository.SaveChangesAsync();
 
-                string resetLink = "https://hfiles.co.in/forgot-password";
+                // Set reset link based on environment
+                string resetLink = _environment.IsDevelopment()
+                    ? "http://localhost:3000/forgotPassword"
+                    : "https://clinicdemo.hfiles.co.in/forgotPassword";
+                    //: "https://hfiles.co.in/forgotPassword";
                 string emailBody = _emailTemplateService.GenerateClinicUserPasswordResetTemplate(
                     userDetails.FirstName, clinic.ClinicName, otp, OtpValidityMinutes, resetLink);
 

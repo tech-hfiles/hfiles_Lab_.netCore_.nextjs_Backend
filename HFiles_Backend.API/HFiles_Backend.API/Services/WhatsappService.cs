@@ -1,6 +1,7 @@
-﻿using System.Text;
+﻿using Newtonsoft.Json;
+using System.Net;
+using System.Text;
 using System.Text.RegularExpressions;
-using Newtonsoft.Json;
 
 namespace HFiles_Backend.API.Services
 {
@@ -30,19 +31,17 @@ namespace HFiles_Backend.API.Services
             string pureMobileNumber = "";
 
             Match match = Regex.Match(mobileNo, @"^(\+?\d{1,4})?(\d{10})$");
-
             if (match.Success)
             {
                 countryCodeDigit = match.Groups[1].Value;
                 pureMobileNumber = match.Groups[2].Value;
-
                 if (string.IsNullOrEmpty(countryCodeDigit))
                     countryCodeDigit = "+91";
             }
             else
             {
                 _logger.LogWarning("OTP sending failed: Invalid mobile number format ({MobileNo}).", mobileNo);
-                throw new ArgumentException("Invalid mobile number format.");
+                throw new ArgumentException("Invalid mobile number format");
             }
 
             var requestBody = new
@@ -81,20 +80,58 @@ namespace HFiles_Backend.API.Services
                     var error = await response.Content.ReadAsStringAsync();
                     _logger.LogError("Failed to send WhatsApp OTP to {MobileNo}. API Response: {StatusCode}, Error: {Error}",
                         mobileNo, response.StatusCode, error);
-                    throw new Exception($"Failed to send WhatsApp message. {_apiUrl} responded with {response.StatusCode}: {error}");
+
+                    // Throw specific exception based on status code
+                    var statusCode = response.StatusCode;
+                    if (statusCode == HttpStatusCode.BadRequest)
+                    {
+                        throw new ArgumentException($"Failed to send WhatsApp message. Invalid request parameters: {error}");
+                    }
+                    else if (statusCode == HttpStatusCode.Unauthorized)
+                    {
+                        throw new UnauthorizedAccessException("WhatsApp API authentication failed. Please check API credentials.");
+                    }
+                    else if (statusCode == HttpStatusCode.TooManyRequests)
+                    {
+                        throw new InvalidOperationException("Too many WhatsApp API requests. Please try again later.");
+                    }
+                    else
+                    {
+                        throw new HttpRequestException($"Failed to send WhatsApp message. API responded with {response.StatusCode}: {error}");
+                    }
                 }
 
                 _logger.LogInformation("WhatsApp OTP successfully sent to {MobileNo}.", mobileNo);
             }
+            catch (ArgumentException)
+            {
+                // Re-throw argument exceptions (mobile number format, bad request)
+                throw;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Re-throw auth exceptions
+                throw;
+            }
+            catch (InvalidOperationException)
+            {
+                // Re-throw rate limit exceptions
+                throw;
+            }
             catch (HttpRequestException httpEx)
             {
                 _logger.LogError(httpEx, "Failed to send OTP to {MobileNo}. HTTP Request issue.", mobileNo);
-                throw new Exception("Failed to send OTP. Please check API connectivity.", httpEx);
+                throw new HttpRequestException("Failed to send OTP. Please check API connectivity.", httpEx);
+            }
+            catch (TaskCanceledException tcEx)
+            {
+                _logger.LogError(tcEx, "WhatsApp API request timed out for {MobileNo}.", mobileNo);
+                throw new TimeoutException("WhatsApp API request timed out. Please try again.", tcEx);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error while sending OTP to {MobileNo}.", mobileNo);
-                throw new Exception("An unexpected error occurred while sending OTP.", ex);
+                throw new InvalidOperationException("An unexpected error occurred while sending OTP.", ex);
             }
         }
     }

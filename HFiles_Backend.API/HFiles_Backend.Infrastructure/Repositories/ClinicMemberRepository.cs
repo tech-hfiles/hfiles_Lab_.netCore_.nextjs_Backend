@@ -90,6 +90,16 @@ namespace HFiles_Backend.Infrastructure.Repositories
             var query = from m in _context.ClinicMembers
                         where m.ClinicId == clinicId && m.DeletedBy != 0
                         join ud in _context.Users on m.UserId equals ud.Id
+                        // Left join to check if the same user exists in ClinicSuperAdmin table
+                        join memberSuperAdmin in _context.ClinicSuperAdmins
+                            on new { UserId = m.UserId, ClinicId = m.ClinicId }
+                            equals new { UserId = memberSuperAdmin.UserId, ClinicId = memberSuperAdmin.ClinicId }
+                            into superAdminGroup
+                        from sa in superAdminGroup.DefaultIfEmpty()
+                            // Include only if: 
+                            // 1. User doesn't exist in super admin table (sa == null), OR
+                            // 2. User exists in super admin table but is not main super admin (sa.IsMain == 0)
+                        where sa == null || sa.IsMain == 0
                         select new DeletedClinicMemberDto
                         {
                             Id = m.Id,
@@ -101,9 +111,9 @@ namespace HFiles_Backend.Infrastructure.Repositories
                             ClinicId = m.ClinicId,
                             Role = m.Role,
                             DeletedByUser = (
-                                from sa in _context.ClinicSuperAdmins
-                                join sUser in _context.Users on sa.UserId equals sUser.Id
-                                where sa.Id == m.DeletedBy && branchIds.Contains(m.ClinicId)
+                                from superAdmin in _context.ClinicSuperAdmins
+                                join sUser in _context.Users on superAdmin.UserId equals sUser.Id
+                                where superAdmin.Id == m.DeletedBy && branchIds.Contains(m.ClinicId)
                                 select $"{sUser.FirstName} {sUser.LastName}"
                             ).FirstOrDefault() ?? (
                                 from cm in _context.ClinicMembers
@@ -111,10 +121,9 @@ namespace HFiles_Backend.Infrastructure.Repositories
                                 where cm.Id == m.DeletedBy && branchIds.Contains(m.ClinicId)
                                 select $"{cUser.FirstName} {cUser.LastName}"
                             ).FirstOrDefault() ?? "Name Not Found",
-
                             DeletedByUserRole = (
-                                from sa in _context.ClinicSuperAdmins
-                                where sa.Id == m.DeletedBy && branchIds.Contains(m.ClinicId)
+                                from superAdmin in _context.ClinicSuperAdmins
+                                where superAdmin.Id == m.DeletedBy && branchIds.Contains(m.ClinicId)
                                 select "Super Admin"
                             ).FirstOrDefault() ?? (
                                 from cm in _context.ClinicMembers

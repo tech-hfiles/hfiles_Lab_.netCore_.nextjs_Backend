@@ -592,11 +592,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await transaction.CommitAsync();
                 committed = true;
 
-                if (!deletedBranches.Any())
-                {
-                    _logger.LogWarning("No deleted branches found for Clinic ID {ClinicId}", clinic.Id);
-                    return NotFound(ApiResponseFactory.Fail("No deleted branches found."));
-                }
+                //if (!deletedBranches.Any())
+                //{
+                //    _logger.LogWarning("No deleted branches found for Clinic ID {ClinicId}", clinic.Id);
+                //    return NotFound(ApiResponseFactory.Fail("No deleted branches found."));
+                //}
 
                 _logger.LogInformation("Returning {Count} deleted branches for Clinic ID {ClinicId}", deletedBranches.Count, clinic.Id);
                 return Ok(ApiResponseFactory.Success(deletedBranches, "Deleted branches fetched successfully."));

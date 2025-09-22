@@ -40,7 +40,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
             var members = await _context.ClinicMembers
                 .Include(m => m.User)
                 .Include(m => m.CreatedByUser)
-                //.Include(m => m.PromotedByUser)
+                .Include(m => m.PromotedByUser)
                 .Where(m => m.ClinicId == clinicId && m.DeletedBy == 0)
                 .ToListAsync();
 

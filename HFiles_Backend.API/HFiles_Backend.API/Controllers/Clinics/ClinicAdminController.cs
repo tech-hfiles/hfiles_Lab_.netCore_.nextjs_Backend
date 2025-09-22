@@ -373,7 +373,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     existedMember.ClinicId = loggedInClinic.Id;
                     existedMember.Role = "Admin";
                     existedMember.DeletedBy = 0;
-                    existedMember.PromotedBy = newSuperAdmin.Id;
+                    existedMember.PromotedBy = newSuperAdmin.UserId;
                     existedMember.PasswordHash = currentSuperAdmin.PasswordHash;
                     existedMember.EpochTime = epoch;
                     _clinicMemberRepository.Update(existedMember);

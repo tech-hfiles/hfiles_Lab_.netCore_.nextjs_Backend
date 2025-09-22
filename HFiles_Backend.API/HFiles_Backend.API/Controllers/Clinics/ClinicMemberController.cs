@@ -505,7 +505,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 user.DeletedBy = 0;
                 user.Role = dto.Role ?? "Member";
-                user.PromotedBy = int.TryParse(clinicAdminIdClaim, out int adminId) ? adminId : 0;
+                user.PromotedBy = clinicSuperAdmin?.Id;
 
                 _clinicRepository.UpdateClinicMember(user);
                 await _clinicRepository.SaveChangesAsync();

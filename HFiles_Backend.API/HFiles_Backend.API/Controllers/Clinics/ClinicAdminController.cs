@@ -232,168 +232,41 @@ namespace HFiles_Backend.API.Controllers.Clinics
         // Get Clinic Users
         [HttpGet("clinics/{clinicId}/users")]
         public async Task<IActionResult> GetAllClinicUsers(
-           [FromRoute][Range(1, int.MaxValue, ErrorMessage = "Clinic ID must be greater than zero.")] int clinicId,
-           [FromServices] ClinicSuperAdminRepository clinicSuperAdminRepository,
-           [FromServices] ClinicMemberRepository clinicMemberRepository)
+    [FromRoute][Range(1, int.MaxValue, ErrorMessage = "Clinic ID must be greater than zero.")] int clinicId,
+    [FromServices] ClinicSuperAdminRepository clinicSuperAdminRepository,
+    [FromServices] ClinicMemberRepository clinicMemberRepository)
         {
             HttpContext.Items["Log-Category"] = "User Retrieval";
             _logger.LogInformation("Received request to fetch all users for Clinic ID: {ClinicId}", clinicId);
-
-            // Extract claims from JWT token
-            var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
-            var clinicAdminIdClaim = User.FindFirst("ClinicAdminId")?.Value;
-            var userClinicIdClaim = User.FindFirst("UserId")?.Value;
-            var tokenIssuedAtClaim = User.FindFirst("iat")?.Value; // Token issued at time
-            var sessionIdClaim = User.FindFirst("SessionId")?.Value; // Session ID from token
-
-            if (string.IsNullOrEmpty(roleClaim) || string.IsNullOrEmpty(clinicAdminIdClaim) || string.IsNullOrEmpty(userClinicIdClaim))
-            {
-                _logger.LogWarning("Missing required claims in JWT token");
-                return Unauthorized(ApiResponseFactory.Fail("Invalid or missing authentication claims."));
-            }
-
-            if (!int.TryParse(clinicAdminIdClaim, out int clinicAdminId) || !int.TryParse(userClinicIdClaim, out int userClinicId))
-            {
-                _logger.LogWarning("Invalid format for ClinicAdminId or UserId claims");
-                return Unauthorized(ApiResponseFactory.Fail("Invalid authentication claims format."));
-            }
-
             var transaction = await _clinicRepository.BeginTransactionAsync();
-
             try
             {
-                // Special validation for Super Admin tokens - they should only work immediately after promotion
-                if (roleClaim == "Super Admin")
-                {
-                    // Check if token was issued recently (within last 10 seconds of promotion)
-                    if (long.TryParse(tokenIssuedAtClaim, out long tokenIssuedAt))
-                    {
-                        var tokenIssueTime = DateTimeOffset.FromUnixTimeSeconds(tokenIssuedAt);
-                        var currentTime = DateTimeOffset.UtcNow;
-                        var timeDifference = currentTime - tokenIssueTime;
-
-                        // Only allow Super Admin tokens that were issued in the last 10 seconds
-                        // This means the token is only valid immediately after promotion
-                        if (timeDifference.TotalSeconds > 10)
-                        {
-                            _logger.LogWarning("Super Admin token expired. Token issued at: {TokenIssueTime}, Current time: {CurrentTime}, Difference: {TimeDifference} seconds",
-                                tokenIssueTime, currentTime, timeDifference.TotalSeconds);
-                            return Unauthorized(ApiResponseFactory.Fail("Super Admin token has expired. Please login again with your new role."));
-                        }
-
-                        _logger.LogInformation("Super Admin token is valid. Token issued {TimeDifference} seconds ago", timeDifference.TotalSeconds);
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Invalid or missing token issue time for Super Admin");
-                        return Unauthorized(ApiResponseFactory.Fail("Invalid Super Admin token. Please login again."));
-                    }
-
-                    // Validate the super admin exists and is main
-                    var superAdmin = await _clinicSuperAdminRepository.GetByIdAsync(clinicAdminId);
-                    if (superAdmin == null || superAdmin.IsMain != 1)
-                    {
-                        _logger.LogWarning("Super Admin not found or not main admin. ClinicAdminId: {ClinicAdminId}", clinicAdminId);
-                        return Unauthorized(ApiResponseFactory.Fail("Super Admin validation failed. Please login again."));
-                    }
-
-                    // Check if this super admin belongs to the correct clinic
-                    var clinicEntrys = await _clinicRepository.GetByIdAsync(userClinicId);
-                    if (clinicEntrys != null)
-                    {
-                        int mainClinicIds = clinicEntrys.ClinicReference == 0 ? userClinicId : clinicEntrys.ClinicReference;
-                        if (superAdmin.ClinicId != mainClinicIds)
-                        {
-                            _logger.LogWarning("Super Admin clinic mismatch. Expected: {ExpectedClinicId}, Actual: {ActualClinicId}", mainClinicIds, superAdmin.ClinicId);
-                            return Unauthorized(ApiResponseFactory.Fail("Super Admin clinic validation failed."));
-                        }
-                    }
-                }
-                else if (roleClaim == "Admin" || roleClaim == "Member")
-                {
-                    // Regular validation for Admin/Member
-                    var member = await _clinicMemberRepository.GetByIdInBranchesAsync(clinicAdminId, new List<int> { userClinicId });
-                    if (member == null || member.Role != roleClaim || member.DeletedBy != 0)
-                    {
-                        _logger.LogWarning("Role validation failed for {Role}. ClinicAdminId: {ClinicAdminId}", roleClaim, clinicAdminId);
-                        return Unauthorized(ApiResponseFactory.Fail("Role validation failed. Your current role does not match the token claims."));
-                    }
-                }
-                else
-                {
-                    _logger.LogWarning("Invalid role claim: {Role}", roleClaim);
-                    return Unauthorized(ApiResponseFactory.Fail("Invalid role specified."));
-                }
-
-                // Proceed with original logic after role validation
                 var clinicEntry = await _clinicRepository.GetByIdAsync(clinicId);
                 if (clinicEntry == null)
                 {
                     _logger.LogWarning("Clinic with ID {ClinicId} not found.", clinicId);
                     return NotFound(ApiResponseFactory.Fail($"Clinic with ID {clinicId} not found."));
                 }
-
                 int mainClinicId = clinicEntry.ClinicReference == 0 ? clinicId : clinicEntry.ClinicReference;
-
-                // Additional authorization check - ensure user can access this clinic
-                if (roleClaim == "Super Admin")
-                {
-                    // Super admin should be able to access main clinic and its branches
-                    var userClinicEntry = await _clinicRepository.GetByIdAsync(userClinicId);
-                    if (userClinicEntry != null)
-                    {
-                        int userMainClinicId = userClinicEntry.ClinicReference == 0 ? userClinicId : userClinicEntry.ClinicReference;
-                        if (userMainClinicId != mainClinicId)
-                        {
-                            _logger.LogWarning("Super Admin trying to access unauthorized clinic. User Clinic: {UserClinicId}, Requested Clinic: {ClinicId}", userClinicId, clinicId);
-                            return Unauthorized(ApiResponseFactory.Fail("You are not authorized to access this clinic's users."));
-                        }
-                    }
-                }
-                else if (roleClaim == "Admin" || roleClaim == "Member")
-                {
-                    // Admin/Member should only access their own clinic or branches within the same main clinic
-                    var userClinicEntry = await _clinicRepository.GetByIdAsync(userClinicId);
-                    if (userClinicEntry != null)
-                    {
-                        int userMainClinicId = userClinicEntry.ClinicReference == 0 ? userClinicId : userClinicEntry.ClinicReference;
-                        if (userMainClinicId != mainClinicId)
-                        {
-                            _logger.LogWarning("{Role} trying to access unauthorized clinic. User Clinic: {UserClinicId}, Requested Clinic: {ClinicId}", roleClaim, userClinicId, clinicId);
-                            return Unauthorized(ApiResponseFactory.Fail("You are not authorized to access this clinic's users."));
-                        }
-                    }
-                }
-
                 var superAdminDto = await clinicSuperAdminRepository.GetMainSuperAdminDtoAsync(mainClinicId);
                 var memberDtos = await clinicMemberRepository.GetMemberDtosByClinicIdAsync(clinicId);
-
                 _logger.LogInformation("Total Members found: {MemberCount}", memberDtos.Count);
-
                 if (superAdminDto == null && memberDtos.Count == 0)
                 {
                     _logger.LogWarning("No active admins or members found for Clinic ID {ClinicId}.", clinicId);
                     return NotFound(ApiResponseFactory.Fail($"No active admins or members found for Clinic ID {clinicId}."));
                 }
-
                 await transaction.CommitAsync();
-
                 var response = new
                 {
                     ClinicId = clinicId,
                     MainClinicId = mainClinicId,
-                    UserCounts = memberDtos.Count + (superAdminDto != null ? 1 : 0),
+                    UserCounts = memberDtos.Count + 1,
                     SuperAdmin = superAdminDto,
                     Members = memberDtos
                 };
-
                 _logger.LogInformation("Successfully fetched users for Clinic ID {ClinicId}.", clinicId);
                 return Ok(ApiResponseFactory.Success(response, "Users fetched successfully."));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error occurred while fetching users for Clinic ID {ClinicId}", clinicId);
-                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching users."));
             }
             finally
             {

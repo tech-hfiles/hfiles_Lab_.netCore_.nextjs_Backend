@@ -232,9 +232,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         // Get Clinic Users
         [HttpGet("clinics/{clinicId}/users")]
         public async Task<IActionResult> GetAllClinicUsers(
-   [FromRoute][Range(1, int.MaxValue, ErrorMessage = "Clinic ID must be greater than zero.")] int clinicId,
-   [FromServices] ClinicSuperAdminRepository clinicSuperAdminRepository,
-   [FromServices] ClinicMemberRepository clinicMemberRepository)
+           [FromRoute][Range(1, int.MaxValue, ErrorMessage = "Clinic ID must be greater than zero.")] int clinicId,
+           [FromServices] ClinicSuperAdminRepository clinicSuperAdminRepository,
+           [FromServices] ClinicMemberRepository clinicMemberRepository)
         {
             HttpContext.Items["Log-Category"] = "User Retrieval";
             _logger.LogInformation("Received request to fetch all users for Clinic ID: {ClinicId}", clinicId);
@@ -243,6 +243,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
             var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
             var clinicAdminIdClaim = User.FindFirst("ClinicAdminId")?.Value;
             var userClinicIdClaim = User.FindFirst("UserId")?.Value;
+            var tokenIssuedAtClaim = User.FindFirst("iat")?.Value; // Token issued at time
+            var sessionIdClaim = User.FindFirst("SessionId")?.Value; // Session ID from token
 
             if (string.IsNullOrEmpty(roleClaim) || string.IsNullOrEmpty(clinicAdminIdClaim) || string.IsNullOrEmpty(userClinicIdClaim))
             {
@@ -260,39 +262,67 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             try
             {
-                // Validate role against database
-                bool roleValidated = false;
-
+                // Special validation for Super Admin tokens - they should only work immediately after promotion
                 if (roleClaim == "Super Admin")
                 {
-                    var superAdmin = await _clinicSuperAdminRepository.GetByIdAsync(clinicAdminId);
-                    if (superAdmin != null && superAdmin.IsMain == 1)
+                    // Check if token was issued recently (within last 10 seconds of promotion)
+                    if (long.TryParse(tokenIssuedAtClaim, out long tokenIssuedAt))
                     {
-                        // Check if this super admin belongs to the correct clinic
-                        var clinicEntrys = await _clinicRepository.GetByIdAsync(userClinicId);
-                        if (clinicEntrys != null)
+                        var tokenIssueTime = DateTimeOffset.FromUnixTimeSeconds(tokenIssuedAt);
+                        var currentTime = DateTimeOffset.UtcNow;
+                        var timeDifference = currentTime - tokenIssueTime;
+
+                        // Only allow Super Admin tokens that were issued in the last 10 seconds
+                        // This means the token is only valid immediately after promotion
+                        if (timeDifference.TotalSeconds > 10)
                         {
-                            int mainClinicIds = clinicEntrys.ClinicReference == 0 ? userClinicId : clinicEntrys.ClinicReference;
-                            if (superAdmin.ClinicId == mainClinicIds)
-                            {
-                                roleValidated = true;
-                            }
+                            _logger.LogWarning("Super Admin token expired. Token issued at: {TokenIssueTime}, Current time: {CurrentTime}, Difference: {TimeDifference} seconds",
+                                tokenIssueTime, currentTime, timeDifference.TotalSeconds);
+                            return Unauthorized(ApiResponseFactory.Fail("Super Admin token has expired. Please login again with your new role."));
+                        }
+
+                        _logger.LogInformation("Super Admin token is valid. Token issued {TimeDifference} seconds ago", timeDifference.TotalSeconds);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Invalid or missing token issue time for Super Admin");
+                        return Unauthorized(ApiResponseFactory.Fail("Invalid Super Admin token. Please login again."));
+                    }
+
+                    // Validate the super admin exists and is main
+                    var superAdmin = await _clinicSuperAdminRepository.GetByIdAsync(clinicAdminId);
+                    if (superAdmin == null || superAdmin.IsMain != 1)
+                    {
+                        _logger.LogWarning("Super Admin not found or not main admin. ClinicAdminId: {ClinicAdminId}", clinicAdminId);
+                        return Unauthorized(ApiResponseFactory.Fail("Super Admin validation failed. Please login again."));
+                    }
+
+                    // Check if this super admin belongs to the correct clinic
+                    var clinicEntrys = await _clinicRepository.GetByIdAsync(userClinicId);
+                    if (clinicEntrys != null)
+                    {
+                        int mainClinicIds = clinicEntrys.ClinicReference == 0 ? userClinicId : clinicEntrys.ClinicReference;
+                        if (superAdmin.ClinicId != mainClinicIds)
+                        {
+                            _logger.LogWarning("Super Admin clinic mismatch. Expected: {ExpectedClinicId}, Actual: {ActualClinicId}", mainClinicIds, superAdmin.ClinicId);
+                            return Unauthorized(ApiResponseFactory.Fail("Super Admin clinic validation failed."));
                         }
                     }
                 }
                 else if (roleClaim == "Admin" || roleClaim == "Member")
                 {
+                    // Regular validation for Admin/Member
                     var member = await _clinicMemberRepository.GetByIdInBranchesAsync(clinicAdminId, new List<int> { userClinicId });
-                    if (member != null && member.Role == roleClaim && member.DeletedBy == 0)
+                    if (member == null || member.Role != roleClaim || member.DeletedBy != 0)
                     {
-                        roleValidated = true;
+                        _logger.LogWarning("Role validation failed for {Role}. ClinicAdminId: {ClinicAdminId}", roleClaim, clinicAdminId);
+                        return Unauthorized(ApiResponseFactory.Fail("Role validation failed. Your current role does not match the token claims."));
                     }
                 }
-
-                if (!roleValidated)
+                else
                 {
-                    _logger.LogWarning("Role validation failed for user. Claimed role: {Role}, ClinicAdminId: {ClinicAdminId}", roleClaim, clinicAdminId);
-                    return Unauthorized(ApiResponseFactory.Fail("Role validation failed. Your current role does not match the token claims."));
+                    _logger.LogWarning("Invalid role claim: {Role}", roleClaim);
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid role specified."));
                 }
 
                 // Proceed with original logic after role validation
@@ -378,6 +408,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
+        // Promote admin to super admin
         // Promote admin to super admin
         [HttpPost("clinics/admin/promote")]
         [Authorize(Policy = "SuperAdminPolicy")]
@@ -493,6 +524,29 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 string newSuperAdminName = $"{newSuperAdminUser?.FirstName} {newSuperAdminUser?.LastName}".Trim();
                 string oldSuperAdminName = $"{oldSuperAdminUser?.FirstName} {oldSuperAdminUser?.LastName}".Trim();
 
+                // Generate temporary tokens for both users with current timestamp
+                var newSuperAdminEmail = newSuperAdminUser?.Email ?? "";
+                var oldSuperAdminEmail = oldSuperAdminUser?.Email ?? "";
+
+                // Generate temporary tokens for both users (replace the previous token generation calls)
+                var newSuperAdminTokenData = _jwtTokenService.GenerateTemporaryToken(
+                    mainClinicId,
+                    newSuperAdminEmail,
+                    0,
+                    "Super Admin",
+                    newSuperAdmin.Id,
+                    10 // 10 seconds expiry
+                );
+
+                var demotedAdminTokenData = _jwtTokenService.GenerateTemporaryToken(
+                    loggedInClinic.Id,
+                    oldSuperAdminEmail,
+                    0,
+                    "Admin",
+                    newClinicMember.Id,
+                    10 // 10 seconds expiry
+                );
+
                 var response = new
                 {
                     NewSuperAdminId = newSuperAdmin.Id,
@@ -503,6 +557,21 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     NewSuperAdminUsername = newSuperAdminName,
                     OldSuperAdminUsername = oldSuperAdminName,
                     BranchClinicId = member.ClinicId != mainClinicId ? member.ClinicId : 0,
+                    // Add temporary tokens to response
+                    NewSuperAdminToken = new
+                    {
+                        Token = newSuperAdminTokenData.Token,
+                        SessionId = newSuperAdminTokenData.SessionId,
+                        ExpiresIn = 10, // seconds
+                        Message = "Temporary token for immediate access. Please login again for full access."
+                    },
+                    DemotedAdminToken = new
+                    {
+                        Token = demotedAdminTokenData.Token,
+                        SessionId = demotedAdminTokenData.SessionId,
+                        ExpiresIn = 10, // seconds
+                        Message = "Temporary token for immediate access. Please login again for full access."
+                    },
                     NotificationContext = new
                     {
                         PromotedTo = "Super Admin",

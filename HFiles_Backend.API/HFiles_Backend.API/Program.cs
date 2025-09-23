@@ -1,5 +1,6 @@
 ﻿using Hangfire;
 using Hangfire.MySql;
+using HFiles_Backend.API.Extensions;
 using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.API.Middleware;
 using HFiles_Backend.API.Services;
@@ -200,6 +201,8 @@ try
     builder.Services.AddScoped<IClinicPatientRecordRepository, ClinicPatientRecordRepository>();
     builder.Services.AddScoped<ClinicPatientRecordRepository, ClinicPatientRecordRepository>();
     builder.Services.AddScoped<ClinicMedicalHistoryRepository, ClinicMedicalHistoryRepository>();
+    builder.Services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
+    builder.Services.AddHostedService<TokenCleanupBackgroundService>();
 
 
     // DbContext
@@ -306,10 +309,12 @@ try
     app.UseStaticFiles();
 
     app.UseMiddleware<GlobalExceptionMiddleware>();
+
     app.UseRouting();
     app.UseSession();
     app.UseCors("AllowFrontend");
     app.UseAuthentication();
+    app.UseJwtBlacklistMiddleware();
     app.UseAuthorization();
 
     app.MapControllers();

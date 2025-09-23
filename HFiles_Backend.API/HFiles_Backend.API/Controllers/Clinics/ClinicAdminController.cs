@@ -1,4 +1,5 @@
-﻿using HFiles_Backend.API.Services;
+﻿using HFiles_Backend.API.Interfaces;
+using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.SuperAdmin;
 using HFiles_Backend.Application.DTOs.Labs;
@@ -23,7 +24,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
          JwtTokenService jwtTokenService,
          IPasswordHasher<ClinicSuperAdmin> passwordHasher,
          IClinicMemberRepository clinicMemberRepository,
-         IUserRepository userRepository
+         IUserRepository userRepository,
+          ITokenBlacklistService tokenBlacklistService
         ) : ControllerBase
     {
         private readonly ILogger<ClinicAdminController> _logger = logger;
@@ -33,6 +35,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IPasswordHasher<ClinicSuperAdmin> _passwordHasher = passwordHasher;
         private readonly IClinicMemberRepository _clinicMemberRepository = clinicMemberRepository;
         private readonly IUserRepository _userRepository = userRepository;
+        private readonly ITokenBlacklistService _tokenBlacklistService = tokenBlacklistService;
 
 
 
@@ -176,6 +179,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         return Unauthorized(ApiResponseFactory.Fail("Invalid password."));
                     }
 
+                    // ✅ Clear any existing blacklist entries for this user after successful authentication
+                    await _tokenBlacklistService.RemoveUserBlacklistAsync(userDetails.Id);
+
                     var (Token, SessionId) = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, 0, dto.Role, admin.Id);
                     _logger.LogInformation("Super Admin login success: {Username} | Session ID: {SessionId}", username, SessionId);
 
@@ -201,6 +207,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         _logger.LogWarning("Login failed: Invalid password for {Role} {Username}", dto.Role, username);
                         return Unauthorized(ApiResponseFactory.Fail("Invalid password."));
                     }
+
+                    // ✅ Clear any existing blacklist entries for this user after successful authentication
+                    await _tokenBlacklistService.RemoveUserBlacklistAsync(userDetails.Id);
 
                     var tokenData = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, 0, dto.Role, member.Id);
                     _logger.LogInformation("{Role} login success: {Username} | Session ID: {SessionId}", dto.Role, username, tokenData.SessionId);
@@ -281,8 +290,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-        // Promote admin to super admin
-        // Promote admin to super admin
+        // Promote admin to super admin with forced logout
         [HttpPost("clinics/admin/promote")]
         [Authorize(Policy = "SuperAdminPolicy")]
         public async Task<IActionResult> PromoteClinicMemberToSuperAdmin([FromBody] PromoteAdmin dto)
@@ -299,6 +307,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             var clinicAdminIdClaim = User.FindFirst("ClinicAdminId")?.Value;
             var clinicIdClaim = User.FindFirst("UserId")?.Value;
+            var currentSessionId = User.FindFirst("SessionId")?.Value;
 
             if (!int.TryParse(clinicAdminIdClaim, out int clinicAdminId))
                 return Unauthorized(ApiResponseFactory.Fail("Invalid or missing Super Admin Id in token."));
@@ -389,6 +398,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
 
                 await _clinicRepository.SaveChangesAsync();
+
+                // BLACKLIST ALL EXISTING TOKENS FOR BOTH USERS
+                await _tokenBlacklistService.BlacklistAllUserTokensAsync(currentSuperAdmin.UserId, "super_admin_promotion");
+                await _tokenBlacklistService.BlacklistAllUserTokensAsync(member.UserId, "promoted_to_super_admin");
+
                 await transaction.CommitAsync();
 
                 var oldSuperAdminUser = await _userRepository.GetByIdAsync(currentSuperAdmin.UserId);
@@ -396,29 +410,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 string newSuperAdminName = $"{newSuperAdminUser?.FirstName} {newSuperAdminUser?.LastName}".Trim();
                 string oldSuperAdminName = $"{oldSuperAdminUser?.FirstName} {oldSuperAdminUser?.LastName}".Trim();
-
-                // Generate temporary tokens for both users with current timestamp
-                var newSuperAdminEmail = newSuperAdminUser?.Email ?? "";
-                var oldSuperAdminEmail = oldSuperAdminUser?.Email ?? "";
-
-                // Generate temporary tokens for both users (replace the previous token generation calls)
-                var newSuperAdminTokenData = _jwtTokenService.GenerateTemporaryToken(
-                    mainClinicId,
-                    newSuperAdminEmail,
-                    0,
-                    "Super Admin",
-                    newSuperAdmin.Id,
-                    10 // 10 seconds expiry
-                );
-
-                var demotedAdminTokenData = _jwtTokenService.GenerateTemporaryToken(
-                    loggedInClinic.Id,
-                    oldSuperAdminEmail,
-                    0,
-                    "Admin",
-                    newClinicMember.Id,
-                    10 // 10 seconds expiry
-                );
 
                 var response = new
                 {
@@ -430,20 +421,23 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     NewSuperAdminUsername = newSuperAdminName,
                     OldSuperAdminUsername = oldSuperAdminName,
                     BranchClinicId = member.ClinicId != mainClinicId ? member.ClinicId : 0,
-                    // Add temporary tokens to response
-                    NewSuperAdminToken = new
+                    // Force logout flags for frontend
+                    ForceLogout = new
                     {
-                        Token = newSuperAdminTokenData.Token,
-                        SessionId = newSuperAdminTokenData.SessionId,
-                        ExpiresIn = 10, // seconds
-                        Message = "Temporary token for immediate access. Please login again for full access."
-                    },
-                    DemotedAdminToken = new
-                    {
-                        Token = demotedAdminTokenData.Token,
-                        SessionId = demotedAdminTokenData.SessionId,
-                        ExpiresIn = 10, // seconds
-                        Message = "Temporary token for immediate access. Please login again for full access."
+                        CurrentSuperAdmin = new
+                        {
+                            UserId = currentSuperAdmin.UserId,
+                            Username = oldSuperAdminName,
+                            Reason = "demoted_from_super_admin",
+                            Message = "You have been demoted from Super Admin. Please login again with your new Admin credentials."
+                        },
+                        PromotedUser = new
+                        {
+                            UserId = member.UserId,
+                            Username = newSuperAdminName,
+                            Reason = "promoted_to_super_admin",
+                            Message = "Congratulations! You have been promoted to Super Admin. Please login again with your new credentials."
+                        }
                     },
                     NotificationContext = new
                     {
@@ -451,11 +445,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         NewSuperAdminName = newSuperAdminName,
                         OldSuperAdminName = oldSuperAdminName
                     },
-                    NotificationMessage = $"{newSuperAdminName} has been promoted to Super Admin, replacing {oldSuperAdminName}."
+                    NotificationMessage = $"{newSuperAdminName} has been promoted to Super Admin, replacing {oldSuperAdminName}. Both users must login again."
                 };
 
-                _logger.LogInformation("Promotion successful. New SuperAdmin: {NewSuperAdminId}, Old SuperAdmin: {OldSuperAdminId}", newSuperAdmin.Id, currentSuperAdmin.Id);
-                return Ok(ApiResponseFactory.Success(response, $"{member.Role} promoted to Super Admin successfully."));
+                _logger.LogInformation("Promotion successful. New SuperAdmin: {NewSuperAdminId}, Old SuperAdmin: {OldSuperAdminId}. Tokens blacklisted for both users.", newSuperAdmin.Id, currentSuperAdmin.Id);
+                return Ok(ApiResponseFactory.Success(response, $"{member.Role} promoted to Super Admin successfully. Both users must login again."));
             }
             finally
             {

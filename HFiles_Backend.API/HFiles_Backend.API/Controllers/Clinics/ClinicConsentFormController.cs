@@ -368,7 +368,34 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     var entry = consentFormEntries[i];
                     var formRequest = request.ConsentForms[i];
                     var encodedConsentName = UrlEncodeForConsentForm(formRequest.ConsentFormName);
-                    var consentFormLink = $"{baseUrl}/PublicTMDConsentForm?ConsentId={entry.Id}&ConsentName={encodedConsentName}&hfid={targetPatient.HFID}";
+
+                    // Determine the correct form URL based on consent form name
+                    string formUrl;
+                    var consentFormName = formRequest.ConsentFormName.ToLower();
+
+                    if (consentFormName.Contains("dtr"))
+                    {
+                        formUrl = "PublicDTRConsentForm";
+                    }
+                    else if (consentFormName.Contains("tmd") || consentFormName.Contains("tmjp"))
+                    {
+                        formUrl = "PublicTMDConsentForm";
+                    }
+                    else if (consentFormName.Contains("photo"))
+                    {
+                        formUrl = "publicPhotographyReleaseForm";
+                    }
+                    else if (consentFormName.Contains("arthrose") && consentFormName.Contains("functional") && consentFormName.Contains("screening"))
+                    {
+                        formUrl = "publicFunctionalScreeningForm";
+                    }
+                    else
+                    {
+                        // Default fallback
+                        formUrl = "PublicTMDConsentForm";
+                    }
+
+                    var consentFormLink = $"{baseUrl}/{formUrl}?ConsentId={entry.Id}&ConsentName={encodedConsentName}&hfid={targetPatient.HFID}";
 
                     consentFormLinks.Add(new ConsentFormLinkInfo
                     {

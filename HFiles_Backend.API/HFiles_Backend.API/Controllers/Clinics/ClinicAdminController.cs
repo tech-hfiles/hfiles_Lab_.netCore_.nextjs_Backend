@@ -179,8 +179,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         return Unauthorized(ApiResponseFactory.Fail("Invalid password."));
                     }
 
-                    // ✅ Clear any existing blacklist entries for this user after successful authentication
-                    await _tokenBlacklistService.RemoveUserBlacklistAsync(userDetails.Id);
+                    // Clear blacklisted tokens for this user and clinic
+                    await _tokenBlacklistService.RemoveUserBlacklistAsync(dto.UserId);
 
                     var (Token, SessionId) = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, 0, dto.Role, admin.Id);
                     _logger.LogInformation("Super Admin login success: {Username} | Session ID: {SessionId}", username, SessionId);
@@ -208,8 +208,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         return Unauthorized(ApiResponseFactory.Fail("Invalid password."));
                     }
 
-                    // ✅ Clear any existing blacklist entries for this user after successful authentication
-                    await _tokenBlacklistService.RemoveUserBlacklistAsync(userDetails.Id);
+                    // Clear blacklisted tokens for this user and clinic
+                    await _tokenBlacklistService.RemoveUserBlacklistAsync(dto.UserId);
 
                     var tokenData = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, 0, dto.Role, member.Id);
                     _logger.LogInformation("{Role} login success: {Username} | Session ID: {SessionId}", dto.Role, username, tokenData.SessionId);
@@ -400,8 +400,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await _clinicRepository.SaveChangesAsync();
 
                 // BLACKLIST ALL EXISTING TOKENS FOR BOTH USERS
-                await _tokenBlacklistService.BlacklistAllUserTokensAsync(currentSuperAdmin.UserId, "super_admin_promotion");
-                await _tokenBlacklistService.BlacklistAllUserTokensAsync(member.UserId, "promoted_to_super_admin");
+                await _tokenBlacklistService.BlacklistAllUserTokensAsync(currentSuperAdmin.UserId, clinicId, "super_admin_promotion");
+                await _tokenBlacklistService.BlacklistAllUserTokensAsync(member.UserId, clinicId, "promoted_to_super_admin");
 
                 await transaction.CommitAsync();
 

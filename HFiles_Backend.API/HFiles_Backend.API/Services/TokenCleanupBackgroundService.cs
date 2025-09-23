@@ -16,8 +16,7 @@ namespace HFiles_Backend.API.Services
                     using var scope = _serviceProvider.CreateScope();
                     var tokenBlacklistService = scope.ServiceProvider.GetRequiredService<ITokenBlacklistService>();
                     await tokenBlacklistService.CleanupExpiredTokensAsync();
-
-                    // Run cleanup every 15 minutes instead of 1 hour for more responsive cleanup
+                    _logger.LogInformation("Successfully cleaned up expired tokens.");
                     await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);
                 }
                 catch (Exception ex)

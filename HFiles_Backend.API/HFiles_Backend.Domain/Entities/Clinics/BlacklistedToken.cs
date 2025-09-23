@@ -17,7 +17,12 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Required]
         [ForeignKey(nameof(User))]
         public int UserId { get; set; }
-        public User? User { get; set; }
+        public User User { get; set; } = null!;
+
+        [Required]
+        [ForeignKey(nameof(Clinic))]
+        public int ClinicId { get; set; }
+        public ClinicSignup Clinic { get; set; } = null!;
 
         [Required]
         [MaxLength(100)]

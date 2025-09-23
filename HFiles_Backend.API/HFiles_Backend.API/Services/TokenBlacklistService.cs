@@ -1,6 +1,7 @@
 ﻿using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Infrastructure.Data;
+using iText.Commons.Actions.Contexts;
 using Microsoft.EntityFrameworkCore;
 
 namespace HFiles_Backend.API.Services
@@ -44,7 +45,7 @@ namespace HFiles_Backend.API.Services
             }
         }
 
-        public async Task BlacklistAllUserTokensAsync(int userId, string reason)
+        public async Task BlacklistAllUserTokensAsync(int userId, int clinicId, string reason)
         {
             try
             {
@@ -56,6 +57,7 @@ namespace HFiles_Backend.API.Services
                 {
                     SessionId = $"USER_{userId}_ALL_TOKENS", // Special pattern for all user tokens
                     UserId = userId,
+                    ClinicId = clinicId,
                     Reason = reason,
                     BlacklistedAt = DateTime.UtcNow,
                     ExpiresAt = DateTime.UtcNow.AddMinutes(30) // Much shorter expiry - user can login again after 30 minutes if needed
@@ -110,9 +112,9 @@ namespace HFiles_Backend.API.Services
         {
             try
             {
-                var expiredTokens = await _context.Set<BlacklistedToken>()
-                    .Where(bt => bt.ExpiresAt <= DateTime.UtcNow)
-                    .ToListAsync();
+                var expiredTokens = _context.BlacklistedTokens
+                     .Where(t => t.ExpiresAt <= DateTime.UtcNow)
+                     .ToList();
 
                 if (expiredTokens.Any())
                 {
@@ -152,16 +154,21 @@ namespace HFiles_Backend.API.Services
         }
 
         // New method to remove blacklist entries after successful logout
-        public async Task RemoveUserBlacklistAsync(int userId)
+        public async Task RemoveUserBlacklistAsync(int clinicId)
         {
             try
             {
-                await CleanupUserTokensAsync(userId);
-                _logger.LogInformation("Removed blacklist entries for user {UserId} after successful logout", userId);
+                var tokens = _context.BlacklistedTokens
+                         .Where(t => t.ClinicId == clinicId)
+                         .ToList();
+
+                _logger.LogInformation("Removed blacklist entries for user after successful logout");
+                _context.BlacklistedTokens.RemoveRange(tokens);
+                await _context.SaveChangesAsync();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to remove blacklist for user {UserId}", userId);
+                _logger.LogError(ex, "Failed to remove blacklist for user.");
             }
         }
     }

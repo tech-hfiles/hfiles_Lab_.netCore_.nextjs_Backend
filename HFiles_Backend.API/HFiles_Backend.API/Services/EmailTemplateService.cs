@@ -182,6 +182,79 @@ namespace HFiles_Backend.API.Services
 
 
 
+        public string GenerateAppointmentConfirmationWithConsentFormsEmailTemplate(
+        string patientFirstName,
+        List<ConsentFormLinkInfo> consentFormLinks,
+        string clinicName,
+        string appointmentDate,
+        string appointmentTime)
+        {
+            var consentFormsList = string.Join("", consentFormLinks.Select(link =>
+                $@"<li style='margin: 10px 0;'>
+                  <a href='{link.ConsentFormLink}' 
+                     style='color: #0331B5; text-decoration: none; font-weight: bold;'>
+                     {link.ConsentFormName}
+                  </a>
+               </li>"));
+
+            return $"""
+        <html>
+        <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
+            <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
+                <h2 style='color: #0331B5; text-align: center;'>HFiles - Appointment Confirmation & Consent Forms</h2>
+                
+                <p>Dear <strong>{patientFirstName}</strong>,</p>
+                
+                <p>Your appointment has been successfully scheduled with <strong>{clinicName}</strong>.</p>
+                
+                <div style='background-color: #e8f5e8; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745;'>
+                    <h3 style='margin-top: 0; color: #155724;'>Appointment Details:</h3>
+                    <p style='margin: 5px 0;'><strong>Clinic:</strong> {clinicName}</p>
+                    <p style='margin: 5px 0;'><strong>Date:</strong> {appointmentDate}</p>
+                    <p style='margin: 5px 0;'><strong>Time:</strong> {appointmentTime}</p>
+                </div>
+                
+                <div style='background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;'>
+                    <h3 style='margin-top: 0; color: #0331B5;'>Required Consent Forms:</h3>
+                    <p>Before your appointment, please complete the following consent forms:</p>
+                    <ul style='margin: 10px 0; padding-left: 20px;'>
+                        {consentFormsList}
+                    </ul>
+                </div>
+                
+                <div style='background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;'>
+                    <p style='margin: 0;'><strong>Important:</strong> Please complete all consent forms before your appointment to ensure a smooth visit and avoid any delays.</p>
+                </div>
+                
+                <p>If you have any questions or need assistance, please contact the clinic directly.</p>
+                
+                <p>You can also access your consent forms by:</p>
+                <ol>
+                    <li>Logging into your HFiles account</li>
+                    <li>Navigating to the notification section</li>
+                    <li>Completing your pending consent forms</li>
+                </ol>
+                
+                <hr style='margin: 30px 0; border: none; border-top: 1px solid #eee;' />
+                
+                <p style='font-size: 14px; color: #666;'>
+                    Best regards,<br/>
+                    The HFiles Team<br/>
+                    <a href='mailto:contact@hfiles.in' style='color: #0331B5;'>contact@hfiles.in</a>
+                </p>
+                
+                <p style='font-size: 12px; color: #999; text-align: center; margin-top: 20px;'>
+                    This is an automated message. Please do not reply to this email.
+                </p>
+            </div>
+        </body>
+        </html>
+        """;
+        }
+
+
+
+
         public string GenerateFollowUpAppointmentEmailTemplate(string patientFirstName, List<ConsentFormLinkInfo> consentFormLinks, string clinicName, string appointmentDate, string appointmentTime)
         {
             var consentFormsList = string.Join("", consentFormLinks.Select(link =>

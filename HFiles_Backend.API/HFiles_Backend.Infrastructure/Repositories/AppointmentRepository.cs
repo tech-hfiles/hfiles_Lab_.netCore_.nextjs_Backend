@@ -93,5 +93,15 @@ namespace HFiles_Backend.Infrastructure.Repositories
             await _context.SaveChangesAsync();
             return overdueAppointments.Count;
         }
+
+        public async Task AddRangeAsync(IEnumerable<ClinicAppointment> appointments)
+        {
+            await _context.ClinicAppointments.AddRangeAsync(appointments);
+        }
+
+        public async Task<int> SaveChangesAsync()
+        {
+            return await _context.SaveChangesAsync();
+        }
     }
 }

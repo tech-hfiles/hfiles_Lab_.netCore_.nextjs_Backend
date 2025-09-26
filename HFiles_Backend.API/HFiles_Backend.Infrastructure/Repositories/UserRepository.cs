@@ -55,5 +55,11 @@ namespace HFiles_Backend.Infrastructure.Repositories
             _context.UserReports.Add(report);
             await _context.SaveChangesAsync();
         }
+
+        public async Task<User?> GetUserByPatientIdAsync(string patientId)
+        {
+            return await _context.Users
+                .FirstOrDefaultAsync(u => u.PatientId == patientId && u.DeletedBy == 0);
+        }
     }
 }

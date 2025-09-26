@@ -41,6 +41,9 @@ namespace HFiles_Backend.Domain.Entities.Users
         [MaxLength(20)]
         public string? HfId { get; set; }
 
+        [MaxLength(20)]
+        public string? PatientId { get; set; }
+
         [MaxLength(10)]
         public string? Pincode { get; set; }
 

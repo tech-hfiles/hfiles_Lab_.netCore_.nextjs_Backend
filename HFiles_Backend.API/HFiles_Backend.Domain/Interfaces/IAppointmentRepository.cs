@@ -10,5 +10,7 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<ClinicAppointment?> GetByIdAsync(int appointmentId);
         Task DeleteAsync(ClinicAppointment appointment);
         Task<int> MarkOverdueAppointmentsAsAbsentAsync();
+        Task AddRangeAsync(IEnumerable<ClinicAppointment> appointments);
+        Task<int> SaveChangesAsync();
     }
 }

@@ -74,5 +74,13 @@ namespace HFiles_Backend.Infrastructure.Repositories
             _context.ClinicVisits.Update(visit);
             await _context.SaveChangesAsync();
         }
+
+        public async Task<ClinicVisit?> GetExistingVisitAsync(int clinicPatientId, DateTime appointmentDate)
+        {
+            return await _context.ClinicVisits
+                .FirstOrDefaultAsync(v =>
+                    v.ClinicPatientId == clinicPatientId &&
+                    v.AppointmentDate.Date == appointmentDate.Date);
+        }
     }
 }

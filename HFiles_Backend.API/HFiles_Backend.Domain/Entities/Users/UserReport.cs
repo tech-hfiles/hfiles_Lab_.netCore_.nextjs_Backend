@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using HFiles_Backend.Domain.Entities.Clinics;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HFiles_Backend.Domain.Entities.Users
@@ -35,6 +36,10 @@ namespace HFiles_Backend.Domain.Entities.Users
         public string? UploadedBy { get; set; }
 
         public int? LabId { get; set; }
+
+        public int? ClinicId { get; set; }
+        [ForeignKey("ClinicId")]
+        public ClinicSignup? Clinics { get; set; }
 
         public int? LabUserReportId { get; set; }
 

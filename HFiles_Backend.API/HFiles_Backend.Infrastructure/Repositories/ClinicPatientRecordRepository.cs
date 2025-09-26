@@ -189,6 +189,12 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        public async Task<List<ClinicPatientRecord>> GetPrescriptionRecordsByClinicIdAsync(int clinicId)
+        {
+            return await _context.ClinicPatientRecords
+                .Where(r => r.ClinicId == clinicId && r.Type == RecordType.Prescription)
+                .ToListAsync();
+        }
 
 
         public async Task<PatientHistoryResponse?> GetPatientHistoryWithFiltersAsync(
@@ -360,10 +366,21 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 RecordType.Treatment => "treatment",
                 RecordType.Prescription => "prescription",
                 RecordType.Invoice => "invoice",
+                //RecordType.Invoice => "invoice",
                 RecordType.Receipt => "receipt",
                 RecordType.Images => "images",
                 _ => "other"
             };
+        }
+
+        public async Task<bool> PrescriptionExistsForVisitAsync(int clinicId, int patientId, int visitId)
+        {
+            return await _context.ClinicPatientRecords
+                .AnyAsync(r =>
+                    r.ClinicId == clinicId &&
+                    r.PatientId == patientId &&
+                    r.ClinicVisitId == visitId &&
+                    r.Type == RecordType.Prescription);
         }
     }
 }

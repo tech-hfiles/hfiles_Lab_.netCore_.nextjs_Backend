@@ -382,5 +382,14 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     r.ClinicVisitId == visitId &&
                     r.Type == RecordType.Prescription);
         }
+
+        public async Task<List<ClinicPatientRecord>> GetUnsentTreatmentRecordsAsync(int clinicId)
+        {
+            return await _context.ClinicPatientRecords
+                .Where(r => r.ClinicId == clinicId &&
+                            r.Type == RecordType.Treatment &&
+                            !r.SendToPatient)
+                .ToListAsync();
+        }
     }
 }

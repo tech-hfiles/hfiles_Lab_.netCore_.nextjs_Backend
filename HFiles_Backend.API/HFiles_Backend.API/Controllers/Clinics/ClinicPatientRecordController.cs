@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
 using Newtonsoft.Json;
+using OfficeOpenXml;
 using PuppeteerSharp;
 using PuppeteerSharp.Media;
 using System.Globalization;
@@ -38,6 +39,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly S3StorageService _s3StorageService = s3StorageService;
         private readonly IClinicVisitRepository _clinicVisitRepository = clinicVisitRepository;
         private readonly IUserRepository _userRepository = userRepository;
+
+
+        private const int CLINIC_ID = 8;
+        private const string DOCTOR_NAME = "Dr. Varun R Kunte";
+        private readonly TimeSpan APPOINTMENT_TIME = new(10, 0, 0);
 
 
 
@@ -611,93 +617,581 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
         // Generate PDFs for prescriptions
-//        [HttpPost("generate-bulk-pdfs")]
+        //        [HttpPost("generate-bulk-pdfs")]
+        //        //[Authorize]
+        //        public async Task<IActionResult> GenerateBulkPrescriptionPdfs([FromBody] BulkPdfGenerationRequest request)
+        //        {
+        //            HttpContext.Items["Log-Category"] = "Bulk Prescription PDF Generation";
+
+        //            if (!ModelState.IsValid || !request.PrescriptionIds.Any())
+        //            {
+        //                _logger.LogWarning("Invalid request. PrescriptionIds are required.");
+        //                return BadRequest(ApiResponseFactory.Fail("PrescriptionIds are required and must not be empty."));
+        //            }
+
+        //            // Authorization check for clinic
+        //            //bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+        //            //if (!isAuthorized)
+        //            //{
+        //            //    _logger.LogWarning("Unauthorized bulk PDF generation attempt for Clinic ID {ClinicId}", request.ClinicId);
+        //            //    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to generate prescriptions for this clinic."));
+        //            //}
+
+        //            var response = new BulkPdfGenerationResponse();
+        //            var transaction = await _clinicRepository.BeginTransactionAsync();
+        //            var committed = false;
+
+        //            try
+        //            {
+        //                // Download Chromium once for all PDFs
+        //                await new BrowserFetcher().DownloadAsync();
+
+        //                using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
+        //                {
+        //                    Headless = true,
+        //                    Args = new[] { "--no-sandbox", "--disable-setuid-sandbox" }
+        //                });
+
+        //                foreach (int prescriptionId in request.PrescriptionIds)
+        //                {
+        //                    try
+        //                    {
+        //                        response.TotalProcessed++;
+
+        //                        // Get prescription record by ID
+        //                        var prescriptionRecord = await GetPrescriptionRecordById(prescriptionId, request.ClinicId);
+        //                        if (prescriptionRecord == null)
+        //                        {
+        //                            response.Failed++;
+        //                            response.FailedRecords.Add(new FailedRecord
+        //                            {
+        //                                PrescriptionId = prescriptionId,
+        //                                Reason = "Prescription record not found"
+        //                            });
+        //                            continue;
+        //                        }
+
+        //                        // Get related data
+        //                        var visit = await _clinicVisitRepository.GetByIdAsync(prescriptionRecord.ClinicVisitId);
+        //                        var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(prescriptionRecord.PatientId);
+        //                        var user = clinicPatient != null ? await _userRepository.GetUserByHFIDAsync(clinicPatient.HFID) : null;
+
+        //                        if (visit == null || clinicPatient == null || user == null)
+        //                        {
+        //                            response.Failed++;
+        //                            response.FailedRecords.Add(new FailedRecord
+        //                            {
+        //                                PrescriptionId = prescriptionId,
+        //                                Reason = "Missing related data (visit, patient, or user)"
+        //                            });
+        //                            continue;
+        //                        }
+
+        //                        // Parse prescription JSON
+        //                        var prescriptionData = JsonConvert.DeserializeObject<PrescriptionJsonPayload>(prescriptionRecord.JsonData);
+        //                        if (prescriptionData?.Patient == null || prescriptionData.Medications == null)
+        //                        {
+        //                            response.Failed++;
+        //                            response.FailedRecords.Add(new FailedRecord
+        //                            {
+        //                                PrescriptionId = prescriptionId,
+        //                                Reason = "Invalid prescription JSON data"
+        //                            });
+        //                            continue;
+        //                        }
+
+        //                        // Generate PDF for this prescription
+        //                        var success = await ProcessSinglePrescription(
+        //                            prescriptionRecord, visit, clinicPatient, user, prescriptionData, browser, response);
+
+        //                        if (success)
+        //                        {
+        //                            response.Successful++;
+        //                        }
+        //                        else
+        //                        {
+        //                            response.Failed++;
+        //                            response.FailedRecords.Add(new FailedRecord
+        //                            {
+        //                                PrescriptionId = prescriptionId,
+        //                                Reason = "PDF generation or upload failed"
+        //                            });
+        //                        }
+        //                    }
+        //                    catch (Exception ex)
+        //                    {
+        //                        _logger.LogError(ex, "Error processing prescription ID {PrescriptionId}", prescriptionId);
+        //                        response.Failed++;
+        //                        response.FailedRecords.Add(new FailedRecord
+        //                        {
+        //                            PrescriptionId = prescriptionId,
+        //                            Reason = $"Processing error: {ex.Message}"
+        //                        });
+        //                    }
+        //                }
+
+        //                await transaction.CommitAsync();
+        //                committed = true;
+
+        //                response.Message = $"Bulk PDF generation completed: {response.Successful} successful, " +
+        //                                  $"{response.Failed} failed out of {response.TotalProcessed} total prescriptions.";
+
+        //                _logger.LogInformation("Bulk prescription PDF generation completed. Success: {Success}, Failed: {Failed}",
+        //                    response.Successful, response.Failed);
+
+        //                return Ok(ApiResponseFactory.Success(response, response.Message));
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                _logger.LogError(ex, "Error during bulk PDF generation for Clinic ID {ClinicId}", request.ClinicId);
+        //                return StatusCode(500, ApiResponseFactory.Fail("An error occurred during bulk PDF generation."));
+        //            }
+        //            finally
+        //            {
+        //                if (!committed && transaction.GetDbTransaction().Connection != null)
+        //                    await transaction.RollbackAsync();
+        //            }
+        //        }
+
+
+
+
+
+
+
+        //        [HttpPost("generate-all-unsent")]
+        //        [Authorize]
+        //        public async Task<IActionResult> GenerateAllUnsentPrescriptionPdfs([FromBody] GenerateUnsentRequest request)
+        //        {
+        //            HttpContext.Items["Log-Category"] = "Generate All Unsent Prescription PDFs";
+
+        //            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+        //            if (!isAuthorized)
+        //            {
+        //                _logger.LogWarning("Unauthorized unsent PDF generation attempt for Clinic ID {ClinicId}", request.ClinicId);
+        //                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to generate prescriptions for this clinic."));
+        //            }
+
+        //            try
+        //            {
+        //                // Get all unsent prescription records for the clinic
+        //                var unsentPrescriptions = await GetUnsentPrescriptionRecords(request.ClinicId);
+
+        //                if (!unsentPrescriptions.Any())
+        //                {
+        //                    _logger.LogInformation("No unsent prescriptions found for Clinic ID {ClinicId}", request.ClinicId);
+        //                    return Ok(ApiResponseFactory.Success(new BulkPdfGenerationResponse
+        //                    {
+        //                        TotalProcessed = 0,
+        //                        Successful = 0,
+        //                        Failed = 0,
+        //                        Message = "No unsent prescriptions found."
+        //                    }, "No unsent prescriptions found."));
+        //                }
+
+        //                var bulkRequest = new BulkPdfGenerationRequest
+        //                {
+        //                    ClinicId = request.ClinicId,
+        //                    PrescriptionIds = unsentPrescriptions.Select(p => p.Id).ToList()
+        //                };
+
+        //                // Reuse the bulk generation logic
+        //                return await GenerateBulkPrescriptionPdfs(bulkRequest);
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                _logger.LogError(ex, "Error generating all unsent prescriptions for Clinic ID {ClinicId}", request.ClinicId);
+        //                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while generating unsent prescriptions."));
+        //            }
+        //        }
+
+        //        private async Task<ClinicPatientRecord?> GetPrescriptionRecordById(int prescriptionId, int clinicId)
+        //        {
+        //            // This method would need to be added to your repository
+        //            // For now, we'll get all prescription records and filter
+        //            var allRecords = await _clinicPatientRecordRepository.GetPrescriptionRecordsByClinicIdAsync(clinicId);
+        //            return allRecords.FirstOrDefault(r => r.Id == prescriptionId && r.Type == RecordType.Prescription);
+        //        }
+
+        //        private async Task<List<ClinicPatientRecord>> GetUnsentPrescriptionRecords(int clinicId)
+        //        {
+        //            // This method would need to be added to your repository
+        //            // For now, we'll get all prescription records and filter
+        //            var allRecords = await _clinicPatientRecordRepository.GetPrescriptionRecordsByClinicIdAsync(clinicId);
+        //            return allRecords.Where(r => r.Type == RecordType.Prescription && !r.SendToPatient).ToList();
+        //        }
+
+        //        private async Task<bool> ProcessSinglePrescription(
+        //            ClinicPatientRecord prescriptionRecord,
+        //            ClinicVisit visit,
+        //            ClinicPatient clinicPatient,
+        //            Domain.Entities.Users.User user,
+        //            PrescriptionJsonPayload prescriptionData,
+        //            IBrowser browser,
+        //            BulkPdfGenerationResponse response)
+        //        {
+        //            try
+        //            {
+        //                // Generate HTML content
+        //                var htmlContent = GeneratePrescriptionHtml(prescriptionData, visit.AppointmentDate, visit.AppointmentTime);
+
+        //                // Generate PDF
+        //                using var page = await browser.NewPageAsync();
+        //                await page.SetContentAsync(htmlContent);
+
+        //                var pdfOptions = new PdfOptions
+        //                {
+        //                    Format = PaperFormat.A4,
+        //                    PrintBackground = true,
+        //                    MarginOptions = new MarginOptions
+        //                    {
+        //                        Top = "0.5in",
+        //                        Bottom = "0.5in",
+        //                        Left = "0.5in",
+        //                        Right = "0.5in"
+        //                    }
+        //                };
+
+        //                var pdfBytes = await page.PdfDataAsync(pdfOptions);
+        //                if (pdfBytes == null || pdfBytes.Length == 0)
+        //                {
+        //                    return false;
+        //                }
+
+        //                // Save PDF to temporary file
+        //                var tempFileName = $"prescription_{prescriptionRecord.ClinicId}_{prescriptionRecord.PatientId}_{prescriptionRecord.ClinicVisitId}_{DateTime.UtcNow:yyyyMMddHHmmss}.pdf";
+        //                var tempFilePath = Path.Combine(Path.GetTempPath(), tempFileName);
+        //                await System.IO.File.WriteAllBytesAsync(tempFilePath, pdfBytes);
+
+        //                // Upload to S3
+        //                var s3Key = $"clinic/{tempFileName}";
+        //                var s3Url = await _s3StorageService.UploadFileToS3(tempFilePath, s3Key);
+
+        //                if (string.IsNullOrEmpty(s3Url))
+        //                {
+        //                    System.IO.File.Delete(tempFilePath);
+        //                    return false;
+        //                }
+
+        //                // Update prescription record
+        //                prescriptionRecord.SendToPatient = true;
+        //                await _clinicPatientRecordRepository.UpdateAsync(prescriptionRecord);
+
+        //                // Create user report entry
+        //                var reportName = $"Arthrose_Prescription_{prescriptionData.Patient.Name.Replace(" ", "_")}_{visit.AppointmentDate:dd-MM-yy}";
+        //                var epochTime = new DateTimeOffset(visit.AppointmentDate.Date + visit.AppointmentTime).ToUnixTimeSeconds();
+        //                var fileSizeKb = Math.Round((decimal)pdfBytes.Length / 1024, 2);
+
+        //                var userReport = new UserReport
+        //                {
+        //                    UserId = user.Id,
+        //                    ReportName = reportName,
+        //                    ReportCategory = 4, // Prescription category
+        //                    ReportUrl = s3Url,
+        //                    EpochTime = epochTime,
+        //                    FileSize = fileSizeKb,
+        //                    UploadedBy = "Clinic",
+        //                    ClinicId = 8, // Fixed lab ID
+        //                    UserType = "Independent",
+        //                    DeletedBy = 0
+        //                };
+
+        //                await _userRepository.SaveAsync(userReport);
+
+        //                // Clean up temporary file
+        //                System.IO.File.Delete(tempFilePath);
+
+        //                // Add to successful records
+        //                response.SuccessfulRecords.Add(new SuccessfulRecord
+        //                {
+        //                    PrescriptionId = prescriptionRecord.Id,
+        //                    PatientName = prescriptionData.Patient.Name,
+        //                    HFID = clinicPatient.HFID,
+        //                    AppointmentDate = visit.AppointmentDate.ToString("dd-MM-yyyy"),
+        //                    PrescriptionUrl = s3Url,
+        //                    FileSizeKB = fileSizeKb
+        //                });
+
+        //                return true;
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                _logger.LogError(ex, "Error processing single prescription ID {PrescriptionId}", prescriptionRecord.Id);
+        //                return false;
+        //            }
+        //        }
+
+        //        private string GeneratePrescriptionHtml(PrescriptionJsonPayload data, DateTime appointmentDate, TimeSpan appointmentTime)
+        //        {
+        //            var medicationsTableRows = new StringBuilder();
+
+        //            for (int i = 0; i < data.Medications.Count; i++)
+        //            {
+        //                var med = data.Medications[i];
+        //                medicationsTableRows.AppendLine($@"
+        //                    <tr>
+        //                        <td>{i + 1}</td>
+        //                        <td>
+        //                            {med.Name}
+        //                            <div class=""prescription-instruction"">
+        //                                Instruction: {med.Instruction}
+        //                            </div>
+        //                        </td>
+        //                        <td>{med.Dosage}</td>
+        //                        <td>{med.Frequency}</td>
+        //                        <td>{med.Timing}</td>
+        //                    </tr>");
+        //            }
+
+        //            var formattedDob = !string.IsNullOrEmpty(data.Patient.Dob) ? data.Patient.Dob : "Not Provided";
+
+        //            return $@"
+        //<!DOCTYPE html>
+        //<html lang=""en"">
+        //  <head>
+        //    <meta charset=""UTF-8"" />
+        //    <style>
+        //      body {{
+        //        font-family: Arial, Helvetica, sans-serif;
+        //        margin: 40px;
+        //        color: #333;
+        //        background-color: #fff;
+        //      }}
+        //      .header {{
+        //        text-align: center;
+        //        margin-bottom: 20px;
+        //      }}
+        //  .header img{{
+        //max-height: 130px;
+        //        width: auto;
+        //      }}
+        //      .patient-info {{
+        //        border: 1px solid #e5e7eb;
+        //        border-radius: 8px;
+        //        padding: 16px;
+        //        margin-bottom: 24px;
+        //        font-size: 13px;
+        //        background-color: #fafafa;
+        //      }}
+        //      .patient-info table {{
+        //        width: 100%;
+        //        border-collapse: collapse;
+        //      }}
+        //      .patient-info td {{
+        //        padding: 4px 8px;
+        //        vertical-align: top;
+        //      }}
+        //      .section-title {{
+        //        font-weight: bold;
+        //        margin-bottom: 8px;
+        //        font-size: 14px;
+        //        color: #333;
+        //        margin-top: 24px;
+        //      }}
+        //      table.prescription {{
+        //        width: 100%;
+        //        border-collapse: collapse;
+        //        margin-top: 8px;
+        //        font-size: 13px;
+        //        border: 1px solid #000;
+        //      }}
+        //      table.prescription th,
+        //      table.prescription td {{
+        //        border: 1px solid #000;
+        //        padding: 10px;
+        //        text-align: left;
+        //      }}
+        //      table.prescription th {{
+        //        background: #f9f9f9;
+        //        font-weight: 600;
+        //        color: #333;
+        //      }}
+        //      .prescription-instruction {{
+        //        font-style: italic;
+        //        color: #666;
+        //        font-size: 11px;
+        //      }}
+        //      .additional-notes {{
+        //        margin-top: 15px;
+        //        padding: 10px;
+        //        background-color: #f8f9fa;
+        //        border-left: 4px solid #007bff;
+        //        font-size: 12px;
+        //      }}
+        //      .additional-notes strong {{
+        //        color: #333;
+        //      }}
+        //      .signature {{
+        //        margin-top: 40px;
+        //        text-align: right;
+        //        font-size: 14px;
+        //        color: #333;
+        //      }}
+        //      .signature .line {{
+        //        margin-bottom: 2px;
+        //        border-top: 1px solid #333;
+        //        width: 116px;
+        //        margin-left: auto;
+        //      }}
+        //      .signature p {{
+        //        font-family: ""Cedarville Cursive"", cursive;
+        //        font-size: 15px;
+        //        color: #1a3c6e;
+        //        margin: 0;
+        //        padding-right: 0px;
+        //      }}
+        //      footer {{
+        //        margin-top: 40px;
+        //        font-size: 15px;
+        //        display: flex;
+        //        justify-content: space-between;
+        //        color: #000;
+        //      }}
+        //      .logo-placeholder {{
+        //        display: inline-block;
+        //        width: 200px;
+        //        height: 80px;
+        //        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        //        border-radius: 4px;
+        //        position: relative;
+        //        margin: 0 auto;
+        //      }}
+        //      .logo-placeholder::before {{
+        //        content: ""ARTHROSE CRANIOFACIAL PAIN & TMJ CENTRE"";
+        //        position: absolute;
+        //        top: 50%;
+        //        left: 50%;
+        //        transform: translate(-50%, -50%);
+        //        font-size: 15px;
+        //        font-weight: bold;
+        //        color: #1976d2;
+        //        text-align: center;
+        //      }}
+        //    </style>
+        //  </head>
+        //  <body>
+        //    <!-- Header with Logo -->
+        //    <div class=""header"">
+        //      <img src=""https://d7cop3y0lcg80.cloudfront.net/reports/1/0604d10d087f97b877ea0ae85e9494b5df28b6e7_26-09-2025_10-12-19.png"" alt=""ARTHROSE CRANIOFACIAL PAIN & TMJ CENTRE Logo"" />
+        //    </div>
+
+        //    <!-- Patient Info -->
+        //    <div class=""patient-info"">
+        //      <table>
+        //        <tr>
+        //          <td><strong>Patient Name:</strong> {data.Patient.Name}</td>
+        //          <td><strong>HFID:</strong> {data.Patient.Hfid}</td>
+        //        </tr>
+        //        <tr>
+        //          <td><strong>Gender:</strong> {data.Patient.Gender}</td>
+        //          <td><strong>PRFID:</strong> {data.Patient.Prfid}</td>
+        //        </tr>
+        //        <tr>
+        //          <td><strong>DOB:</strong> {formattedDob}</td>
+        //          <td><strong>Mobile:</strong> {data.Patient.Mobile}</td>
+        //        </tr>
+        //        <tr>
+        //          <td><strong>Consultant Coach:</strong> {data.Patient.Doctor}</td>
+        //          <td><strong>City:</strong> {data.Patient.City}</td>
+        //        </tr>
+        //      </table>
+        //    </div>
+
+        //    <!-- Prescription Section -->
+        //    <div class=""section-title"">Prescription</div>
+        //    <table class=""prescription"">
+        //      <thead>
+        //        <tr>
+        //          <th>S.No.</th>
+        //          <th>Medication</th>
+        //          <th>Dosage</th>
+        //          <th>Duration</th>
+        //          <th>Timing</th>
+        //        </tr>
+        //      </thead>
+        //      <tbody>
+        //        {medicationsTableRows}
+        //      </tbody>
+        //    </table>
+
+        //    <!-- Additional Notes -->
+        //    <div class=""additional-notes"">
+        //      <strong>Additional Notes:</strong><br />
+        //      {data.AdditionalNotes}
+        //    </div>
+
+        //    <!-- Signature -->
+        //    <div class=""signature"">
+        //      <p>{data.Patient.Doctor}</p>
+        //      <div class=""line"">{data.Patient.Doctor}</div>
+        //    </div>
+
+        //    <footer>
+        //      <span>www.arthrosetmjindia.com</span>
+        //      <span>www.hfiles.in</span>
+        //    </footer>
+        //  </body>
+        //</html>";
+        //        }
+
+
+
+
+//        // API 1: Import treatments from Excel Arthrose
+//        [HttpPost("import-excel")]
 //        //[Authorize]
-//        public async Task<IActionResult> GenerateBulkPrescriptionPdfs([FromBody] BulkPdfGenerationRequest request)
+//        public async Task<IActionResult> ImportTreatmentsFromExcel([FromForm] TreatmentImportRequest request)
 //        {
-//            HttpContext.Items["Log-Category"] = "Bulk Prescription PDF Generation";
+//            HttpContext.Items["Log-Category"] = "Treatment Import";
 
-//            if (!ModelState.IsValid || !request.PrescriptionIds.Any())
-//            {
-//                _logger.LogWarning("Invalid request. PrescriptionIds are required.");
-//                return BadRequest(ApiResponseFactory.Fail("PrescriptionIds are required and must not be empty."));
-//            }
+//            if (request.ExcelFile == null || request.ExcelFile.Length == 0)
+//                return BadRequest(ApiResponseFactory.Fail("Excel file is required."));
 
-//            // Authorization check for clinic
-//            //bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+//            if (!Path.GetExtension(request.ExcelFile.FileName).Equals(".csv", StringComparison.OrdinalIgnoreCase) &&
+//                !Path.GetExtension(request.ExcelFile.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+//                return BadRequest(ApiResponseFactory.Fail("Only .csv and .xlsx files are supported."));
+
+//            //bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(CLINIC_ID, User);
 //            //if (!isAuthorized)
 //            //{
-//            //    _logger.LogWarning("Unauthorized bulk PDF generation attempt for Clinic ID {ClinicId}", request.ClinicId);
-//            //    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to generate prescriptions for this clinic."));
+//            //    _logger.LogWarning("Unauthorized treatment import attempt for Clinic ID {ClinicId}", CLINIC_ID);
+//            //    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to import treatments for this clinic."));
 //            //}
 
-//            var response = new BulkPdfGenerationResponse();
+//            var response = new TreatmentImportResponse();
 //            var transaction = await _clinicRepository.BeginTransactionAsync();
 //            var committed = false;
 
 //            try
 //            {
-//                // Download Chromium once for all PDFs
-//                await new BrowserFetcher().DownloadAsync();
+//                List<ExcelTreatmentRow> treatmentRows;
 
-//                using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
+//                if (Path.GetExtension(request.ExcelFile.FileName).Equals(".csv", StringComparison.OrdinalIgnoreCase))
 //                {
-//                    Headless = true,
-//                    Args = new[] { "--no-sandbox", "--disable-setuid-sandbox" }
-//                });
+//                    treatmentRows = await ProcessCsvFile(request.ExcelFile);
+//                }
+//                else
+//                {
+//                    treatmentRows = await ProcessExcelFile(request.ExcelFile);
+//                }
 
-//                foreach (int prescriptionId in request.PrescriptionIds)
+//                if (!treatmentRows.Any())
 //                {
+//                    return BadRequest(ApiResponseFactory.Fail("No valid treatment data found in the file."));
+//                }
+
+//                // Group treatments by patient and date
+//                var groupedTreatments = treatmentRows
+//                    .GroupBy(t => new { t.PatientId, t.ParsedDate.Date })
+//                    .ToList();
+
+//                foreach (var group in groupedTreatments)
+//                {
+//                    response.TotalProcessed++;
+
 //                    try
 //                    {
-//                        response.TotalProcessed++;
-
-//                        // Get prescription record by ID
-//                        var prescriptionRecord = await GetPrescriptionRecordById(prescriptionId, request.ClinicId);
-//                        if (prescriptionRecord == null)
-//                        {
-//                            response.Failed++;
-//                            response.FailedRecords.Add(new FailedRecord
-//                            {
-//                                PrescriptionId = prescriptionId,
-//                                Reason = "Prescription record not found"
-//                            });
-//                            continue;
-//                        }
-
-//                        // Get related data
-//                        var visit = await _clinicVisitRepository.GetByIdAsync(prescriptionRecord.ClinicVisitId);
-//                        var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(prescriptionRecord.PatientId);
-//                        var user = clinicPatient != null ? await _userRepository.GetUserByHFIDAsync(clinicPatient.HFID) : null;
-
-//                        if (visit == null || clinicPatient == null || user == null)
-//                        {
-//                            response.Failed++;
-//                            response.FailedRecords.Add(new FailedRecord
-//                            {
-//                                PrescriptionId = prescriptionId,
-//                                Reason = "Missing related data (visit, patient, or user)"
-//                            });
-//                            continue;
-//                        }
-
-//                        // Parse prescription JSON
-//                        var prescriptionData = JsonConvert.DeserializeObject<PrescriptionJsonPayload>(prescriptionRecord.JsonData);
-//                        if (prescriptionData?.Patient == null || prescriptionData.Medications == null)
-//                        {
-//                            response.Failed++;
-//                            response.FailedRecords.Add(new FailedRecord
-//                            {
-//                                PrescriptionId = prescriptionId,
-//                                Reason = "Invalid prescription JSON data"
-//                            });
-//                            continue;
-//                        }
-
-//                        // Generate PDF for this prescription
-//                        var success = await ProcessSinglePrescription(
-//                            prescriptionRecord, visit, clinicPatient, user, prescriptionData, browser, response);
-
+//                        var success = await ProcessTreatmentGroup(group.Key.PatientId, group.Key.Date, group.ToList(), response);
 //                        if (success)
 //                        {
 //                            response.Successful++;
@@ -705,40 +1199,33 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                        else
 //                        {
 //                            response.Failed++;
-//                            response.FailedRecords.Add(new FailedRecord
-//                            {
-//                                PrescriptionId = prescriptionId,
-//                                Reason = "PDF generation or upload failed"
-//                            });
 //                        }
 //                    }
 //                    catch (Exception ex)
 //                    {
-//                        _logger.LogError(ex, "Error processing prescription ID {PrescriptionId}", prescriptionId);
+//                        _logger.LogError(ex, "Error processing treatment group for Patient {PatientId} on {Date}",
+//                            group.Key.PatientId, group.Key.Date);
 //                        response.Failed++;
-//                        response.FailedRecords.Add(new FailedRecord
-//                        {
-//                            PrescriptionId = prescriptionId,
-//                            Reason = $"Processing error: {ex.Message}"
-//                        });
+//                        response.SkippedReasons.Add($"Patient {group.Key.PatientId} on {group.Key.Date:dd-MM-yyyy}: Processing error - {ex.Message}");
 //                    }
 //                }
 
 //                await transaction.CommitAsync();
 //                committed = true;
 
-//                response.Message = $"Bulk PDF generation completed: {response.Successful} successful, " +
-//                                  $"{response.Failed} failed out of {response.TotalProcessed} total prescriptions.";
+//                response.Message = $"Treatment import completed: {response.Successful} successful, " +
+//                                  $"{response.Failed} failed out of {response.TotalProcessed} total treatment groups. " +
+//                                  $"Processed {response.PatientsProcessed} patients with {response.VisitsCreated} visits.";
 
-//                _logger.LogInformation("Bulk prescription PDF generation completed. Success: {Success}, Failed: {Failed}",
+//                _logger.LogInformation("Treatment import completed: {Added} added, {Failed} failed",
 //                    response.Successful, response.Failed);
 
 //                return Ok(ApiResponseFactory.Success(response, response.Message));
 //            }
 //            catch (Exception ex)
 //            {
-//                _logger.LogError(ex, "Error during bulk PDF generation for Clinic ID {ClinicId}", request.ClinicId);
-//                return StatusCode(500, ApiResponseFactory.Fail("An error occurred during bulk PDF generation."));
+//                _logger.LogError(ex, "Failed to import treatments from Excel");
+//                return StatusCode(500, ApiResponseFactory.Fail("Failed to process Excel file: " + ex.Message));
 //            }
 //            finally
 //            {
@@ -752,84 +1239,335 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-
-//        [HttpPost("generate-all-unsent")]
-//        [Authorize]
-//        public async Task<IActionResult> GenerateAllUnsentPrescriptionPdfs([FromBody] GenerateUnsentRequest request)
+//        // API 2: Generate treatment PDFs for all unsent treatments Arthrose
+//        [HttpPost("generate-pdfs")]
+//        //[Authorize]
+//        public async Task<IActionResult> GenerateTreatmentPdfs([FromBody] TreatmentPdfRequest request)
 //        {
-//            HttpContext.Items["Log-Category"] = "Generate All Unsent Prescription PDFs";
+//            HttpContext.Items["Log-Category"] = "Treatment PDF Generation";
 
-//            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
-//            if (!isAuthorized)
-//            {
-//                _logger.LogWarning("Unauthorized unsent PDF generation attempt for Clinic ID {ClinicId}", request.ClinicId);
-//                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to generate prescriptions for this clinic."));
-//            }
+//            //bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(CLINIC_ID, User);
+//            //if (!isAuthorized)
+//            //{
+//            //    _logger.LogWarning("Unauthorized PDF generation attempt for Clinic ID {ClinicId}", CLINIC_ID);
+//            //    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to generate PDFs for this clinic."));
+//            //}
+
+//            var response = new TreatmentPdfResponse();
+//            var transaction = await _clinicRepository.BeginTransactionAsync();
+//            var committed = false;
 
 //            try
 //            {
-//                // Get all unsent prescription records for the clinic
-//                var unsentPrescriptions = await GetUnsentPrescriptionRecords(request.ClinicId);
+//                // Get all unsent treatment records
+//                var treatmentRecords = await GetUnsentTreatmentRecords();
 
-//                if (!unsentPrescriptions.Any())
+//                if (!treatmentRecords.Any())
 //                {
-//                    _logger.LogInformation("No unsent prescriptions found for Clinic ID {ClinicId}", request.ClinicId);
-//                    return Ok(ApiResponseFactory.Success(new BulkPdfGenerationResponse
+//                    return Ok(ApiResponseFactory.Success(new TreatmentPdfResponse
 //                    {
 //                        TotalProcessed = 0,
 //                        Successful = 0,
 //                        Failed = 0,
-//                        Message = "No unsent prescriptions found."
-//                    }, "No unsent prescriptions found."));
+//                        Message = "No unsent treatment records found."
+//                    }, "No unsent treatment records found."));
 //                }
 
-//                var bulkRequest = new BulkPdfGenerationRequest
-//                {
-//                    ClinicId = request.ClinicId,
-//                    PrescriptionIds = unsentPrescriptions.Select(p => p.Id).ToList()
-//                };
+//                // Download Chromium once for all PDFs
+//                await new BrowserFetcher().DownloadAsync();
 
-//                // Reuse the bulk generation logic
-//                return await GenerateBulkPrescriptionPdfs(bulkRequest);
+//                using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
+//                {
+//                    Headless = true,
+//                    Args = new[] { "--no-sandbox", "--disable-setuid-sandbox" }
+//                });
+
+//                foreach (var treatmentRecord in treatmentRecords)
+//                {
+//                    response.TotalProcessed++;
+
+//                    try
+//                    {
+//                        var success = await ProcessSingleTreatmentPdf(treatmentRecord, browser, response);
+//                        if (success)
+//                        {
+//                            response.Successful++;
+//                        }
+//                        else
+//                        {
+//                            response.Failed++;
+//                            response.FailedRecords.Add(new TreatmentPdfFailed
+//                            {
+//                                RecordId = treatmentRecord.Id,
+//                                Reason = "PDF generation or upload failed"
+//                            });
+//                        }
+//                    }
+//                    catch (Exception ex)
+//                    {
+//                        _logger.LogError(ex, "Error generating PDF for treatment record {RecordId}", treatmentRecord.Id);
+//                        response.Failed++;
+//                        response.FailedRecords.Add(new TreatmentPdfFailed
+//                        {
+//                            RecordId = treatmentRecord.Id,
+//                            Reason = $"Processing error: {ex.Message}"
+//                        });
+//                    }
+//                }
+
+//                await transaction.CommitAsync();
+//                committed = true;
+
+//                response.Message = $"Treatment PDF generation completed: {response.Successful} successful, " +
+//                                  $"{response.Failed} failed out of {response.TotalProcessed} total treatments.";
+
+//                return Ok(ApiResponseFactory.Success(response, response.Message));
 //            }
 //            catch (Exception ex)
 //            {
-//                _logger.LogError(ex, "Error generating all unsent prescriptions for Clinic ID {ClinicId}", request.ClinicId);
-//                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while generating unsent prescriptions."));
+//                _logger.LogError(ex, "Error during treatment PDF generation");
+//                return StatusCode(500, ApiResponseFactory.Fail("An error occurred during PDF generation."));
+//            }
+//            finally
+//            {
+//                if (!committed && transaction.GetDbTransaction().Connection != null)
+//                    await transaction.RollbackAsync();
 //            }
 //        }
 
-//        private async Task<ClinicPatientRecord?> GetPrescriptionRecordById(int prescriptionId, int clinicId)
+//        private async Task<List<ExcelTreatmentRow>> ProcessCsvFile(IFormFile file)
 //        {
-//            // This method would need to be added to your repository
-//            // For now, we'll get all prescription records and filter
-//            var allRecords = await _clinicPatientRecordRepository.GetPrescriptionRecordsByClinicIdAsync(clinicId);
-//            return allRecords.FirstOrDefault(r => r.Id == prescriptionId && r.Type == RecordType.Prescription);
+//            var treatments = new List<ExcelTreatmentRow>();
+
+//            using var reader = new StreamReader(file.OpenReadStream());
+//            var csvContent = await reader.ReadToEndAsync();
+//            var lines = csvContent.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+//            for (int i = 1; i < lines.Length; i++) // Skip header
+//            {
+//                var columns = lines[i].Split(',');
+//                if (columns.Length >= 9)
+//                {
+//                    var treatment = new ExcelTreatmentRow
+//                    {
+//                        PatientName = columns[0].Trim(),
+//                        PatientId = columns[1].Trim(),
+//                        DateString = columns[2].Trim(),
+//                        TreatmentName = columns[3].Trim(),
+//                        Status = columns[4].Trim(),
+//                        Cost = int.TryParse(columns[5].Trim(), out var cost) ? cost : 0,
+//                        Quantity = int.TryParse(columns[6].Trim(), out var qty) ? qty : 1,
+//                        QuantityType = columns[7].Trim(),
+//                        FinalCost = int.TryParse(columns[8].Trim(), out var finalCost) ? finalCost : 0
+//                    };
+
+//                    if (DateTime.TryParseExact(treatment.DateString, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedDate))
+//                    {
+//                        treatment.ParsedDate = parsedDate;
+//                        treatments.Add(treatment);
+//                    }
+//                }
+//            }
+
+//            return treatments;
 //        }
 
-//        private async Task<List<ClinicPatientRecord>> GetUnsentPrescriptionRecords(int clinicId)
+//        private async Task<List<ExcelTreatmentRow>> ProcessExcelFile(IFormFile file)
 //        {
-//            // This method would need to be added to your repository
-//            // For now, we'll get all prescription records and filter
-//            var allRecords = await _clinicPatientRecordRepository.GetPrescriptionRecordsByClinicIdAsync(clinicId);
-//            return allRecords.Where(r => r.Type == RecordType.Prescription && !r.SendToPatient).ToList();
+//            var treatments = new List<ExcelTreatmentRow>();
+
+//            using var stream = new MemoryStream();
+//            await file.CopyToAsync(stream);
+
+//            ExcelPackage.License.SetNonCommercialPersonal("HFiles");
+//            using var package = new ExcelPackage(stream);
+//            var worksheet = package.Workbook.Worksheets[0];
+
+//            if (worksheet.Dimension == null) return treatments;
+
+//            var rowCount = worksheet.Dimension.End.Row;
+
+//            for (int row = 2; row <= rowCount; row++)
+//            {
+//                var treatment = new ExcelTreatmentRow
+//                {
+//                    PatientName = worksheet.Cells[row, 1].Text.Trim(),
+//                    PatientId = worksheet.Cells[row, 2].Text.Trim(),
+//                    DateString = worksheet.Cells[row, 3].Text.Trim(),
+//                    TreatmentName = worksheet.Cells[row, 4].Text.Trim(),
+//                    Status = worksheet.Cells[row, 5].Text.Trim(),
+//                    Cost = int.TryParse(worksheet.Cells[row, 6].Text.Trim(), out var cost) ? cost : 0,
+//                    Quantity = int.TryParse(worksheet.Cells[row, 7].Text.Trim(), out var qty) ? qty : 1,
+//                    QuantityType = worksheet.Cells[row, 8].Text.Trim(),
+//                    FinalCost = int.TryParse(worksheet.Cells[row, 9].Text.Trim(), out var finalCost) ? finalCost : 0
+//                };
+
+//                if (DateTime.TryParseExact(treatment.DateString, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedDate))
+//                {
+//                    treatment.ParsedDate = parsedDate;
+//                    treatments.Add(treatment);
+//                }
+//            }
+
+//            return treatments;
 //        }
 
-//        private async Task<bool> ProcessSinglePrescription(
-//            ClinicPatientRecord prescriptionRecord,
-//            ClinicVisit visit,
-//            ClinicPatient clinicPatient,
-//            Domain.Entities.Users.User user,
-//            PrescriptionJsonPayload prescriptionData,
-//            IBrowser browser,
-//            BulkPdfGenerationResponse response)
+//        private async Task<bool> ProcessTreatmentGroup(string patientId, DateTime appointmentDate,
+//            List<ExcelTreatmentRow> treatments, TreatmentImportResponse response)
+//        {
+//            // 1. Find user by patientId
+//            var user = await _userRepository.GetUserByPatientIdAsync(patientId);
+//            if (user == null)
+//            {
+//                response.SkippedReasons.Add($"Patient {patientId}: User not found in database");
+//                return false;
+//            }
+
+//            // 2. Get or create clinic patient
+//            var fullName = $"{user.FirstName} {user.LastName}".Trim();
+//            var clinicPatient = await _clinicVisitRepository.GetOrCreatePatientAsync(user.HfId ?? "", fullName);
+
+//            // 3. Check if visit exists for this date
+//            var existingVisit = await GetExistingVisitByDate(clinicPatient.Id, appointmentDate);
+//            ClinicVisit visit;
+
+//            if (existingVisit == null)
+//            {
+//                // Create new visit
+//                visit = new ClinicVisit
+//                {
+//                    ClinicPatientId = clinicPatient.Id,
+//                    ClinicId = CLINIC_ID,
+//                    AppointmentDate = appointmentDate.Date,
+//                    AppointmentTime = APPOINTMENT_TIME,
+//                    PaymentMethod = null
+//                };
+
+//                await _clinicVisitRepository.SaveVisitAsync(visit);
+//                response.VisitsCreated++;
+//            }
+//            else
+//            {
+//                visit = existingVisit;
+//            }
+
+//            // 4. Create treatment JSON data
+//            var treatmentJsonData = CreateTreatmentJsonData(user, clinicPatient, treatments, patientId);
+
+//            // 5. Check if treatment record already exists
+//            var existingRecord = await _clinicPatientRecordRepository.GetByCompositeKeyAsync(
+//                CLINIC_ID, clinicPatient.Id, visit.Id, RecordType.Treatment);
+
+//            if (existingRecord != null)
+//            {
+//                response.SkippedReasons.Add($"Patient {patientId} on {appointmentDate:dd-MM-yyyy}: Treatment record already exists");
+//                return false;
+//            }
+
+//            // 6. Create treatment record
+//            var treatmentRecord = new ClinicPatientRecord
+//            {
+//                ClinicId = CLINIC_ID,
+//                PatientId = clinicPatient.Id,
+//                ClinicVisitId = visit.Id,
+//                Type = RecordType.Treatment,
+//                JsonData = treatmentJsonData,
+//                SendToPatient = false
+//            };
+
+//            await _clinicPatientRecordRepository.SaveAsync(treatmentRecord);
+
+//            response.PatientsProcessed++;
+//            response.AddedTreatments.Add(new AddedTreatmentSummary
+//            {
+//                PatientId = patientId,
+//                PatientName = fullName,
+//                HFID = user.HfId ?? "",
+//                AppointmentDate = appointmentDate.ToString("dd-MM-yyyy"),
+//                TreatmentCount = treatments.Count,
+//                TotalCost = treatments.Sum(t => t.FinalCost),
+//                Treatments = treatments.Select(t => t.TreatmentName).ToList()
+//            });
+
+//            return true;
+//        }
+
+//        private async Task<ClinicVisit?> GetExistingVisitByDate(int clinicPatientId, DateTime appointmentDate)
+//        {
+//            return await _clinicVisitRepository.GetExistingVisitAsync(clinicPatientId, appointmentDate);
+//        }
+
+//        private string CreateTreatmentJsonData(Domain.Entities.Users.User user, ClinicPatient clinicPatient,
+//            List<ExcelTreatmentRow> treatments, string patientId)
+//        {
+//            var treatmentItems = treatments.Select(t => new
+//            {
+//                name = t.TreatmentName,
+//                qtyPerDay = $"{t.Quantity} {t.QuantityType}",
+//                cost = t.Cost,
+//                status = "Not Started",
+//                total = t.FinalCost
+//            }).ToArray();
+
+//            var totalCost = treatments.Sum(t => t.FinalCost);
+
+//            var treatmentData = new
+//            {
+//                patient = new
+//                {
+//                    name = $"{user.FirstName} {user.LastName}".Trim(),
+//                    hfid = user.HfId ?? "",
+//                    gender = user.Gender ?? "",
+//                    tid = patientId,
+//                    dob = user.DOB ?? "",
+//                    mobile = user.PhoneNumber ?? "",
+//                    doctor = DOCTOR_NAME,
+//                    city = user.City ?? ""
+//                },
+//                treatments = treatmentItems,
+//                totalCost = totalCost,
+//                grandTotal = totalCost,
+//                clinicInfo = new
+//                {
+//                    name = "ARTHROSE",
+//                    subtitle = "CRANIOFACIAL PAIN & TMJ CENTRE",
+//                    website = "www.arthrosetmjindia.com"
+//                }
+//            };
+
+//            return JsonConvert.SerializeObject(treatmentData, Formatting.None);
+//        }
+
+//        private async Task<List<ClinicPatientRecord>> GetUnsentTreatmentRecords()
+//        {
+//            return await _clinicPatientRecordRepository.GetUnsentTreatmentRecordsAsync(CLINIC_ID);
+//        }
+
+//        private async Task<bool> ProcessSingleTreatmentPdf(ClinicPatientRecord treatmentRecord,
+//            IBrowser browser, TreatmentPdfResponse response)
 //        {
 //            try
 //            {
-//                // Generate HTML content
-//                var htmlContent = GeneratePrescriptionHtml(prescriptionData, visit.AppointmentDate, visit.AppointmentTime);
+//                // Get related data
+//                var visit = await _clinicVisitRepository.GetByIdAsync(treatmentRecord.ClinicVisitId);
+//                var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(treatmentRecord.PatientId);
+//                var user = clinicPatient != null ? await _userRepository.GetUserByHFIDAsync(clinicPatient.HFID) : null;
 
-//                // Generate PDF
+//                if (visit == null || clinicPatient == null || user == null)
+//                {
+//                    return false;
+//                }
+
+//                // Parse treatment JSON
+//                var treatmentData = JsonConvert.DeserializeObject<TreatmentJsonPayload>(treatmentRecord.JsonData);
+//                if (treatmentData?.Patient == null || treatmentData.Treatments == null)
+//                {
+//                    return false;
+//                }
+
+//                // Generate HTML and PDF
+//                var htmlContent = GenerateTreatmentHtml(treatmentData);
+
 //                using var page = await browser.NewPageAsync();
 //                await page.SetContentAsync(htmlContent);
 
@@ -852,12 +1590,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                    return false;
 //                }
 
-//                // Save PDF to temporary file
-//                var tempFileName = $"prescription_{prescriptionRecord.ClinicId}_{prescriptionRecord.PatientId}_{prescriptionRecord.ClinicVisitId}_{DateTime.UtcNow:yyyyMMddHHmmss}.pdf";
+//                // Upload to S3
+//                var tempFileName = $"treatment_{treatmentRecord.ClinicId}_{treatmentRecord.PatientId}_{treatmentRecord.ClinicVisitId}_{DateTime.UtcNow:yyyyMMddHHmmss}.pdf";
 //                var tempFilePath = Path.Combine(Path.GetTempPath(), tempFileName);
 //                await System.IO.File.WriteAllBytesAsync(tempFilePath, pdfBytes);
 
-//                // Upload to S3
 //                var s3Key = $"clinic/{tempFileName}";
 //                var s3Url = await _s3StorageService.UploadFileToS3(tempFilePath, s3Key);
 
@@ -867,12 +1604,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                    return false;
 //                }
 
-//                // Update prescription record
-//                prescriptionRecord.SendToPatient = true;
-//                await _clinicPatientRecordRepository.UpdateAsync(prescriptionRecord);
+//                // Update record
+//                treatmentRecord.SendToPatient = true;
+//                await _clinicPatientRecordRepository.UpdateAsync(treatmentRecord);
 
-//                // Create user report entry
-//                var reportName = $"Arthrose_Prescription_{prescriptionData.Patient.Name.Replace(" ", "_")}_{visit.AppointmentDate:dd-MM-yy}";
+//                // Create user report
+//                var reportName = $"Arthrose_Treatment_{treatmentData.Patient.Name.Replace(" ", "_")}_{visit.AppointmentDate:dd-MM-yy}";
 //                var epochTime = new DateTimeOffset(visit.AppointmentDate.Date + visit.AppointmentTime).ToUnixTimeSeconds();
 //                var fileSizeKb = Math.Round((decimal)pdfBytes.Length / 1024, 2);
 
@@ -880,29 +1617,29 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                {
 //                    UserId = user.Id,
 //                    ReportName = reportName,
-//                    ReportCategory = 4, // Prescription category
+//                    ReportCategory = 1, // Treatment category
 //                    ReportUrl = s3Url,
 //                    EpochTime = epochTime,
 //                    FileSize = fileSizeKb,
 //                    UploadedBy = "Clinic",
-//                    ClinicId = 8, // Fixed lab ID
+//                    ClinicId = 8,
 //                    UserType = "Independent",
 //                    DeletedBy = 0
 //                };
 
 //                await _userRepository.SaveAsync(userReport);
 
-//                // Clean up temporary file
+//                // Clean up
 //                System.IO.File.Delete(tempFilePath);
 
 //                // Add to successful records
-//                response.SuccessfulRecords.Add(new SuccessfulRecord
+//                response.SuccessfulRecords.Add(new TreatmentPdfSuccess
 //                {
-//                    PrescriptionId = prescriptionRecord.Id,
-//                    PatientName = prescriptionData.Patient.Name,
+//                    RecordId = treatmentRecord.Id,
+//                    PatientName = treatmentData.Patient.Name,
 //                    HFID = clinicPatient.HFID,
 //                    AppointmentDate = visit.AppointmentDate.ToString("dd-MM-yyyy"),
-//                    PrescriptionUrl = s3Url,
+//                    TreatmentUrl = s3Url,
 //                    FileSizeKB = fileSizeKb
 //                });
 
@@ -910,34 +1647,30 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //            }
 //            catch (Exception ex)
 //            {
-//                _logger.LogError(ex, "Error processing single prescription ID {PrescriptionId}", prescriptionRecord.Id);
+//                _logger.LogError(ex, "Error processing treatment PDF for record {RecordId}", treatmentRecord.Id);
 //                return false;
 //            }
 //        }
 
-//        private string GeneratePrescriptionHtml(PrescriptionJsonPayload data, DateTime appointmentDate, TimeSpan appointmentTime)
+//        private string GenerateTreatmentHtml(TreatmentJsonPayload data)
 //        {
-//            var medicationsTableRows = new StringBuilder();
+//            var treatmentTableRows = new StringBuilder();
 
-//            for (int i = 0; i < data.Medications.Count; i++)
+//            for (int i = 0; i < data.Treatments.Count; i++)
 //            {
-//                var med = data.Medications[i];
-//                medicationsTableRows.AppendLine($@"
+//                var treatment = data.Treatments[i];
+//                treatmentTableRows.AppendLine($@"
 //                    <tr>
 //                        <td>{i + 1}</td>
-//                        <td>
-//                            {med.Name}
-//                            <div class=""prescription-instruction"">
-//                                Instruction: {med.Instruction}
-//                            </div>
-//                        </td>
-//                        <td>{med.Dosage}</td>
-//                        <td>{med.Frequency}</td>
-//                        <td>{med.Timing}</td>
+//                        <td>{treatment.Name}</td>
+//                        <td>{treatment.QtyPerDay}</td>
+//                        <td class=""right"">{treatment.Cost:N2}</td>
+//                        <td>{treatment.Status}</td>
+//                        <td class=""right"">{treatment.Total:N2}</td>
 //                    </tr>");
 //            }
 
-//            var formattedDob = !string.IsNullOrEmpty(data.Patient.Dob) ? data.Patient.Dob : "Not Provided";
+//            var formattedDob = !string.IsNullOrEmpty(data.Patient.Dob) ? data.Patient.Dob : " ";
 
 //            return $@"
 //<!DOCTYPE html>
@@ -955,8 +1688,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //        text-align: center;
 //        margin-bottom: 20px;
 //      }}
-//  .header img{{
-//max-height: 130px;
+//      .header img {{
+//        max-height: 130px;
 //        width: auto;
 //      }}
 //      .patient-info {{
@@ -980,40 +1713,34 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //        margin-bottom: 8px;
 //        font-size: 14px;
 //        color: #333;
-//        margin-top: 24px;
 //      }}
-//      table.prescription {{
+//      table.treatment {{
 //        width: 100%;
 //        border-collapse: collapse;
 //        margin-top: 8px;
 //        font-size: 13px;
 //        border: 1px solid #000;
 //      }}
-//      table.prescription th,
-//      table.prescription td {{
+//      table.treatment th,
+//      table.treatment td {{
 //        border: 1px solid #000;
 //        padding: 10px;
 //        text-align: left;
 //      }}
-//      table.prescription th {{
+//      table.treatment th {{
 //        background: #f9f9f9;
 //        font-weight: 600;
 //        color: #333;
 //      }}
-//      .prescription-instruction {{
-//        font-style: italic;
-//        color: #666;
-//        font-size: 11px;
+//      table.treatment td.right {{
+//        text-align: right;
 //      }}
-//      .additional-notes {{
-//        margin-top: 15px;
-//        padding: 10px;
-//        background-color: #f8f9fa;
-//        border-left: 4px solid #007bff;
-//        font-size: 12px;
+//      .totals {{
+//        font-weight: bold;
+//        background-color: #f9f9f9;
 //      }}
-//      .additional-notes strong {{
-//        color: #333;
+//      .totals td {{
+//        border-top: 2px solid #000;
 //      }}
 //      .signature {{
 //        margin-top: 40px;
@@ -1041,26 +1768,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //        justify-content: space-between;
 //        color: #000;
 //      }}
-//      .logo-placeholder {{
-//        display: inline-block;
-//        width: 200px;
-//        height: 80px;
-//        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-//        border-radius: 4px;
-//        position: relative;
-//        margin: 0 auto;
-//      }}
-//      .logo-placeholder::before {{
-//        content: ""ARTHROSE CRANIOFACIAL PAIN & TMJ CENTRE"";
-//        position: absolute;
-//        top: 50%;
-//        left: 50%;
-//        transform: translate(-50%, -50%);
-//        font-size: 15px;
-//        font-weight: bold;
-//        color: #1976d2;
-//        text-align: center;
-//      }}
 //    </style>
 //  </head>
 //  <body>
@@ -1078,7 +1785,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //        </tr>
 //        <tr>
 //          <td><strong>Gender:</strong> {data.Patient.Gender}</td>
-//          <td><strong>PRFID:</strong> {data.Patient.Prfid}</td>
+//          <td><strong>TID:</strong> {data.Patient.Tid}</td>
 //        </tr>
 //        <tr>
 //          <td><strong>DOB:</strong> {formattedDob}</td>
@@ -1091,28 +1798,31 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //      </table>
 //    </div>
 
-//    <!-- Prescription Section -->
-//    <div class=""section-title"">Prescription</div>
-//    <table class=""prescription"">
+//    <!-- Treatment Plan -->
+//    <div class=""section-title"">Treatment Plan</div>
+//    <table class=""treatment"">
 //      <thead>
 //        <tr>
 //          <th>S.No.</th>
-//          <th>Medication</th>
-//          <th>Dosage</th>
-//          <th>Duration</th>
-//          <th>Timing</th>
+//          <th>Treatment Name</th>
+//          <th>Qty/Day</th>
+//          <th>Cost (₹)</th>
+//          <th>Status</th>
+//          <th>Total (₹)</th>
 //        </tr>
 //      </thead>
 //      <tbody>
-//        {medicationsTableRows}
+//        {treatmentTableRows}
+//        <tr class=""totals"">
+//          <td colspan=""5"" class=""right"">Total:</td>
+//          <td class=""right"">{data.TotalCost:N2}</td>
+//        </tr>
+//        <tr class=""totals"">
+//          <td colspan=""5"" class=""right"">Grand Total:</td>
+//          <td class=""right"">{data.GrandTotal:N2}</td>
+//        </tr>
 //      </tbody>
 //    </table>
-
-//    <!-- Additional Notes -->
-//    <div class=""additional-notes"">
-//      <strong>Additional Notes:</strong><br />
-//      {data.AdditionalNotes}
-//    </div>
 
 //    <!-- Signature -->
 //    <div class=""signature"">

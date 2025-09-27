@@ -6,6 +6,7 @@
         DebitCard,
         Cash,
         BankTransfer,
-        Check
+        Check,
+        Wallet
     }
 }

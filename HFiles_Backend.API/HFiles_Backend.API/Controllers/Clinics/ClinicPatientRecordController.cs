@@ -15,8 +15,6 @@ using OfficeOpenXml;
 using PuppeteerSharp;
 using PuppeteerSharp.Media;
 using System.Globalization;
-using System.Text;
-using System.Text.Json;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -122,9 +120,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     await transaction.RollbackAsync();
             }
         }
-
-
-
 
 
         // Fetch JSON Data
@@ -1137,12 +1132,1442 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-//        // API 1: Import treatments from Excel Arthrose
-//        [HttpPost("import-excel")]
+        //        // API 1: Import treatments from Excel Arthrose
+        //        [HttpPost("import-excel")]
+        //        //[Authorize]
+        //        public async Task<IActionResult> ImportTreatmentsFromExcel([FromForm] TreatmentImportRequest request)
+        //        {
+        //            HttpContext.Items["Log-Category"] = "Treatment Import";
+
+        //            if (request.ExcelFile == null || request.ExcelFile.Length == 0)
+        //                return BadRequest(ApiResponseFactory.Fail("Excel file is required."));
+
+        //            if (!Path.GetExtension(request.ExcelFile.FileName).Equals(".csv", StringComparison.OrdinalIgnoreCase) &&
+        //                !Path.GetExtension(request.ExcelFile.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+        //                return BadRequest(ApiResponseFactory.Fail("Only .csv and .xlsx files are supported."));
+
+        //            //bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(CLINIC_ID, User);
+        //            //if (!isAuthorized)
+        //            //{
+        //            //    _logger.LogWarning("Unauthorized treatment import attempt for Clinic ID {ClinicId}", CLINIC_ID);
+        //            //    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to import treatments for this clinic."));
+        //            //}
+
+        //            var response = new TreatmentImportResponse();
+        //            var transaction = await _clinicRepository.BeginTransactionAsync();
+        //            var committed = false;
+
+        //            try
+        //            {
+        //                List<ExcelTreatmentRow> treatmentRows;
+
+        //                if (Path.GetExtension(request.ExcelFile.FileName).Equals(".csv", StringComparison.OrdinalIgnoreCase))
+        //                {
+        //                    treatmentRows = await ProcessCsvFile(request.ExcelFile);
+        //                }
+        //                else
+        //                {
+        //                    treatmentRows = await ProcessExcelFile(request.ExcelFile);
+        //                }
+
+        //                if (!treatmentRows.Any())
+        //                {
+        //                    return BadRequest(ApiResponseFactory.Fail("No valid treatment data found in the file."));
+        //                }
+
+        //                // Group treatments by patient and date
+        //                var groupedTreatments = treatmentRows
+        //                    .GroupBy(t => new { t.PatientId, t.ParsedDate.Date })
+        //                    .ToList();
+
+        //                foreach (var group in groupedTreatments)
+        //                {
+        //                    response.TotalProcessed++;
+
+        //                    try
+        //                    {
+        //                        var success = await ProcessTreatmentGroup(group.Key.PatientId, group.Key.Date, group.ToList(), response);
+        //                        if (success)
+        //                        {
+        //                            response.Successful++;
+        //                        }
+        //                        else
+        //                        {
+        //                            response.Failed++;
+        //                        }
+        //                    }
+        //                    catch (Exception ex)
+        //                    {
+        //                        _logger.LogError(ex, "Error processing treatment group for Patient {PatientId} on {Date}",
+        //                            group.Key.PatientId, group.Key.Date);
+        //                        response.Failed++;
+        //                        response.SkippedReasons.Add($"Patient {group.Key.PatientId} on {group.Key.Date:dd-MM-yyyy}: Processing error - {ex.Message}");
+        //                    }
+        //                }
+
+        //                await transaction.CommitAsync();
+        //                committed = true;
+
+        //                response.Message = $"Treatment import completed: {response.Successful} successful, " +
+        //                                  $"{response.Failed} failed out of {response.TotalProcessed} total treatment groups. " +
+        //                                  $"Processed {response.PatientsProcessed} patients with {response.VisitsCreated} visits.";
+
+        //                _logger.LogInformation("Treatment import completed: {Added} added, {Failed} failed",
+        //                    response.Successful, response.Failed);
+
+        //                return Ok(ApiResponseFactory.Success(response, response.Message));
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                _logger.LogError(ex, "Failed to import treatments from Excel");
+        //                return StatusCode(500, ApiResponseFactory.Fail("Failed to process Excel file: " + ex.Message));
+        //            }
+        //            finally
+        //            {
+        //                if (!committed && transaction.GetDbTransaction().Connection != null)
+        //                    await transaction.RollbackAsync();
+        //            }
+        //        }
+
+
+
+
+
+
+        //        // API 2: Generate treatment PDFs for all unsent treatments Arthrose
+        //        [HttpPost("generate-pdfs")]
+        //        //[Authorize]
+        //        public async Task<IActionResult> GenerateTreatmentPdfs([FromBody] TreatmentPdfRequest request)
+        //        {
+        //            HttpContext.Items["Log-Category"] = "Treatment PDF Generation";
+
+        //            //bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(CLINIC_ID, User);
+        //            //if (!isAuthorized)
+        //            //{
+        //            //    _logger.LogWarning("Unauthorized PDF generation attempt for Clinic ID {ClinicId}", CLINIC_ID);
+        //            //    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to generate PDFs for this clinic."));
+        //            //}
+
+        //            var response = new TreatmentPdfResponse();
+        //            var transaction = await _clinicRepository.BeginTransactionAsync();
+        //            var committed = false;
+
+        //            try
+        //            {
+        //                // Get all unsent treatment records
+        //                var treatmentRecords = await GetUnsentTreatmentRecords();
+
+        //                if (!treatmentRecords.Any())
+        //                {
+        //                    return Ok(ApiResponseFactory.Success(new TreatmentPdfResponse
+        //                    {
+        //                        TotalProcessed = 0,
+        //                        Successful = 0,
+        //                        Failed = 0,
+        //                        Message = "No unsent treatment records found."
+        //                    }, "No unsent treatment records found."));
+        //                }
+
+        //                // Download Chromium once for all PDFs
+        //                await new BrowserFetcher().DownloadAsync();
+
+        //                using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
+        //                {
+        //                    Headless = true,
+        //                    Args = new[] { "--no-sandbox", "--disable-setuid-sandbox" }
+        //                });
+
+        //                foreach (var treatmentRecord in treatmentRecords)
+        //                {
+        //                    response.TotalProcessed++;
+
+        //                    try
+        //                    {
+        //                        var success = await ProcessSingleTreatmentPdf(treatmentRecord, browser, response);
+        //                        if (success)
+        //                        {
+        //                            response.Successful++;
+        //                        }
+        //                        else
+        //                        {
+        //                            response.Failed++;
+        //                            response.FailedRecords.Add(new TreatmentPdfFailed
+        //                            {
+        //                                RecordId = treatmentRecord.Id,
+        //                                Reason = "PDF generation or upload failed"
+        //                            });
+        //                        }
+        //                    }
+        //                    catch (Exception ex)
+        //                    {
+        //                        _logger.LogError(ex, "Error generating PDF for treatment record {RecordId}", treatmentRecord.Id);
+        //                        response.Failed++;
+        //                        response.FailedRecords.Add(new TreatmentPdfFailed
+        //                        {
+        //                            RecordId = treatmentRecord.Id,
+        //                            Reason = $"Processing error: {ex.Message}"
+        //                        });
+        //                    }
+        //                }
+
+        //                await transaction.CommitAsync();
+        //                committed = true;
+
+        //                response.Message = $"Treatment PDF generation completed: {response.Successful} successful, " +
+        //                                  $"{response.Failed} failed out of {response.TotalProcessed} total treatments.";
+
+        //                return Ok(ApiResponseFactory.Success(response, response.Message));
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                _logger.LogError(ex, "Error during treatment PDF generation");
+        //                return StatusCode(500, ApiResponseFactory.Fail("An error occurred during PDF generation."));
+        //            }
+        //            finally
+        //            {
+        //                if (!committed && transaction.GetDbTransaction().Connection != null)
+        //                    await transaction.RollbackAsync();
+        //            }
+        //        }
+
+        //        private async Task<List<ExcelTreatmentRow>> ProcessCsvFile(IFormFile file)
+        //        {
+        //            var treatments = new List<ExcelTreatmentRow>();
+
+        //            using var reader = new StreamReader(file.OpenReadStream());
+        //            var csvContent = await reader.ReadToEndAsync();
+        //            var lines = csvContent.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        //            for (int i = 1; i < lines.Length; i++) // Skip header
+        //            {
+        //                var columns = lines[i].Split(',');
+        //                if (columns.Length >= 9)
+        //                {
+        //                    var treatment = new ExcelTreatmentRow
+        //                    {
+        //                        PatientName = columns[0].Trim(),
+        //                        PatientId = columns[1].Trim(),
+        //                        DateString = columns[2].Trim(),
+        //                        TreatmentName = columns[3].Trim(),
+        //                        Status = columns[4].Trim(),
+        //                        Cost = int.TryParse(columns[5].Trim(), out var cost) ? cost : 0,
+        //                        Quantity = int.TryParse(columns[6].Trim(), out var qty) ? qty : 1,
+        //                        QuantityType = columns[7].Trim(),
+        //                        FinalCost = int.TryParse(columns[8].Trim(), out var finalCost) ? finalCost : 0
+        //                    };
+
+        //                    if (DateTime.TryParseExact(treatment.DateString, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedDate))
+        //                    {
+        //                        treatment.ParsedDate = parsedDate;
+        //                        treatments.Add(treatment);
+        //                    }
+        //                }
+        //            }
+
+        //            return treatments;
+        //        }
+
+        //        private async Task<List<ExcelTreatmentRow>> ProcessExcelFile(IFormFile file)
+        //        {
+        //            var treatments = new List<ExcelTreatmentRow>();
+
+        //            using var stream = new MemoryStream();
+        //            await file.CopyToAsync(stream);
+
+        //            ExcelPackage.License.SetNonCommercialPersonal("HFiles");
+        //            using var package = new ExcelPackage(stream);
+        //            var worksheet = package.Workbook.Worksheets[0];
+
+        //            if (worksheet.Dimension == null) return treatments;
+
+        //            var rowCount = worksheet.Dimension.End.Row;
+
+        //            for (int row = 2; row <= rowCount; row++)
+        //            {
+        //                var treatment = new ExcelTreatmentRow
+        //                {
+        //                    PatientName = worksheet.Cells[row, 1].Text.Trim(),
+        //                    PatientId = worksheet.Cells[row, 2].Text.Trim(),
+        //                    DateString = worksheet.Cells[row, 3].Text.Trim(),
+        //                    TreatmentName = worksheet.Cells[row, 4].Text.Trim(),
+        //                    Status = worksheet.Cells[row, 5].Text.Trim(),
+        //                    Cost = int.TryParse(worksheet.Cells[row, 6].Text.Trim(), out var cost) ? cost : 0,
+        //                    Quantity = int.TryParse(worksheet.Cells[row, 7].Text.Trim(), out var qty) ? qty : 1,
+        //                    QuantityType = worksheet.Cells[row, 8].Text.Trim(),
+        //                    FinalCost = int.TryParse(worksheet.Cells[row, 9].Text.Trim(), out var finalCost) ? finalCost : 0
+        //                };
+
+        //                if (DateTime.TryParseExact(treatment.DateString, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedDate))
+        //                {
+        //                    treatment.ParsedDate = parsedDate;
+        //                    treatments.Add(treatment);
+        //                }
+        //            }
+
+        //            return treatments;
+        //        }
+
+        //        private async Task<bool> ProcessTreatmentGroup(string patientId, DateTime appointmentDate,
+        //            List<ExcelTreatmentRow> treatments, TreatmentImportResponse response)
+        //        {
+        //            // 1. Find user by patientId
+        //            var user = await _userRepository.GetUserByPatientIdAsync(patientId);
+        //            if (user == null)
+        //            {
+        //                response.SkippedReasons.Add($"Patient {patientId}: User not found in database");
+        //                return false;
+        //            }
+
+        //            // 2. Get or create clinic patient
+        //            var fullName = $"{user.FirstName} {user.LastName}".Trim();
+        //            var clinicPatient = await _clinicVisitRepository.GetOrCreatePatientAsync(user.HfId ?? "", fullName);
+
+        //            // 3. Check if visit exists for this date
+        //            var existingVisit = await GetExistingVisitByDate(clinicPatient.Id, appointmentDate);
+        //            ClinicVisit visit;
+
+        //            if (existingVisit == null)
+        //            {
+        //                // Create new visit
+        //                visit = new ClinicVisit
+        //                {
+        //                    ClinicPatientId = clinicPatient.Id,
+        //                    ClinicId = CLINIC_ID,
+        //                    AppointmentDate = appointmentDate.Date,
+        //                    AppointmentTime = APPOINTMENT_TIME,
+        //                    PaymentMethod = null
+        //                };
+
+        //                await _clinicVisitRepository.SaveVisitAsync(visit);
+        //                response.VisitsCreated++;
+        //            }
+        //            else
+        //            {
+        //                visit = existingVisit;
+        //            }
+
+        //            // 4. Create treatment JSON data
+        //            var treatmentJsonData = CreateTreatmentJsonData(user, clinicPatient, treatments, patientId);
+
+        //            // 5. Check if treatment record already exists
+        //            var existingRecord = await _clinicPatientRecordRepository.GetByCompositeKeyAsync(
+        //                CLINIC_ID, clinicPatient.Id, visit.Id, RecordType.Treatment);
+
+        //            if (existingRecord != null)
+        //            {
+        //                response.SkippedReasons.Add($"Patient {patientId} on {appointmentDate:dd-MM-yyyy}: Treatment record already exists");
+        //                return false;
+        //            }
+
+        //            // 6. Create treatment record
+        //            var treatmentRecord = new ClinicPatientRecord
+        //            {
+        //                ClinicId = CLINIC_ID,
+        //                PatientId = clinicPatient.Id,
+        //                ClinicVisitId = visit.Id,
+        //                Type = RecordType.Treatment,
+        //                JsonData = treatmentJsonData,
+        //                SendToPatient = false
+        //            };
+
+        //            await _clinicPatientRecordRepository.SaveAsync(treatmentRecord);
+
+        //            response.PatientsProcessed++;
+        //            response.AddedTreatments.Add(new AddedTreatmentSummary
+        //            {
+        //                PatientId = patientId,
+        //                PatientName = fullName,
+        //                HFID = user.HfId ?? "",
+        //                AppointmentDate = appointmentDate.ToString("dd-MM-yyyy"),
+        //                TreatmentCount = treatments.Count,
+        //                TotalCost = treatments.Sum(t => t.FinalCost),
+        //                Treatments = treatments.Select(t => t.TreatmentName).ToList()
+        //            });
+
+        //            return true;
+        //        }
+
+        //        private async Task<ClinicVisit?> GetExistingVisitByDate(int clinicPatientId, DateTime appointmentDate)
+        //        {
+        //            return await _clinicVisitRepository.GetExistingVisitAsync(clinicPatientId, appointmentDate);
+        //        }
+
+        //        private string CreateTreatmentJsonData(Domain.Entities.Users.User user, ClinicPatient clinicPatient,
+        //            List<ExcelTreatmentRow> treatments, string patientId)
+        //        {
+        //            var treatmentItems = treatments.Select(t => new
+        //            {
+        //                name = t.TreatmentName,
+        //                qtyPerDay = $"{t.Quantity} {t.QuantityType}",
+        //                cost = t.Cost,
+        //                status = "Not Started",
+        //                total = t.FinalCost
+        //            }).ToArray();
+
+        //            var totalCost = treatments.Sum(t => t.FinalCost);
+
+        //            var treatmentData = new
+        //            {
+        //                patient = new
+        //                {
+        //                    name = $"{user.FirstName} {user.LastName}".Trim(),
+        //                    hfid = user.HfId ?? "",
+        //                    gender = user.Gender ?? "",
+        //                    tid = patientId,
+        //                    dob = user.DOB ?? "",
+        //                    mobile = user.PhoneNumber ?? "",
+        //                    doctor = DOCTOR_NAME,
+        //                    city = user.City ?? ""
+        //                },
+        //                treatments = treatmentItems,
+        //                totalCost = totalCost,
+        //                grandTotal = totalCost,
+        //                clinicInfo = new
+        //                {
+        //                    name = "ARTHROSE",
+        //                    subtitle = "CRANIOFACIAL PAIN & TMJ CENTRE",
+        //                    website = "www.arthrosetmjindia.com"
+        //                }
+        //            };
+
+        //            return JsonConvert.SerializeObject(treatmentData, Formatting.None);
+        //        }
+
+        //        private async Task<List<ClinicPatientRecord>> GetUnsentTreatmentRecords()
+        //        {
+        //            return await _clinicPatientRecordRepository.GetUnsentTreatmentRecordsAsync(CLINIC_ID);
+        //        }
+
+        //        private async Task<bool> ProcessSingleTreatmentPdf(ClinicPatientRecord treatmentRecord,
+        //            IBrowser browser, TreatmentPdfResponse response)
+        //        {
+        //            try
+        //            {
+        //                // Get related data
+        //                var visit = await _clinicVisitRepository.GetByIdAsync(treatmentRecord.ClinicVisitId);
+        //                var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(treatmentRecord.PatientId);
+        //                var user = clinicPatient != null ? await _userRepository.GetUserByHFIDAsync(clinicPatient.HFID) : null;
+
+        //                if (visit == null || clinicPatient == null || user == null)
+        //                {
+        //                    return false;
+        //                }
+
+        //                // Parse treatment JSON
+        //                var treatmentData = JsonConvert.DeserializeObject<TreatmentJsonPayload>(treatmentRecord.JsonData);
+        //                if (treatmentData?.Patient == null || treatmentData.Treatments == null)
+        //                {
+        //                    return false;
+        //                }
+
+        //                // Generate HTML and PDF
+        //                var htmlContent = GenerateTreatmentHtml(treatmentData);
+
+        //                using var page = await browser.NewPageAsync();
+        //                await page.SetContentAsync(htmlContent);
+
+        //                var pdfOptions = new PdfOptions
+        //                {
+        //                    Format = PaperFormat.A4,
+        //                    PrintBackground = true,
+        //                    MarginOptions = new MarginOptions
+        //                    {
+        //                        Top = "0.5in",
+        //                        Bottom = "0.5in",
+        //                        Left = "0.5in",
+        //                        Right = "0.5in"
+        //                    }
+        //                };
+
+        //                var pdfBytes = await page.PdfDataAsync(pdfOptions);
+        //                if (pdfBytes == null || pdfBytes.Length == 0)
+        //                {
+        //                    return false;
+        //                }
+
+        //                // Upload to S3
+        //                var tempFileName = $"treatment_{treatmentRecord.ClinicId}_{treatmentRecord.PatientId}_{treatmentRecord.ClinicVisitId}_{DateTime.UtcNow:yyyyMMddHHmmss}.pdf";
+        //                var tempFilePath = Path.Combine(Path.GetTempPath(), tempFileName);
+        //                await System.IO.File.WriteAllBytesAsync(tempFilePath, pdfBytes);
+
+        //                var s3Key = $"clinic/{tempFileName}";
+        //                var s3Url = await _s3StorageService.UploadFileToS3(tempFilePath, s3Key);
+
+        //                if (string.IsNullOrEmpty(s3Url))
+        //                {
+        //                    System.IO.File.Delete(tempFilePath);
+        //                    return false;
+        //                }
+
+        //                // Update record
+        //                treatmentRecord.SendToPatient = true;
+        //                await _clinicPatientRecordRepository.UpdateAsync(treatmentRecord);
+
+        //                // Create user report
+        //                var reportName = $"Arthrose_Treatment_{treatmentData.Patient.Name.Replace(" ", "_")}_{visit.AppointmentDate:dd-MM-yy}";
+        //                var epochTime = new DateTimeOffset(visit.AppointmentDate.Date + visit.AppointmentTime).ToUnixTimeSeconds();
+        //                var fileSizeKb = Math.Round((decimal)pdfBytes.Length / 1024, 2);
+
+        //                var userReport = new UserReport
+        //                {
+        //                    UserId = user.Id,
+        //                    ReportName = reportName,
+        //                    ReportCategory = 1, // Treatment category
+        //                    ReportUrl = s3Url,
+        //                    EpochTime = epochTime,
+        //                    FileSize = fileSizeKb,
+        //                    UploadedBy = "Clinic",
+        //                    ClinicId = 8,
+        //                    UserType = "Independent",
+        //                    DeletedBy = 0
+        //                };
+
+        //                await _userRepository.SaveAsync(userReport);
+
+        //                // Clean up
+        //                System.IO.File.Delete(tempFilePath);
+
+        //                // Add to successful records
+        //                response.SuccessfulRecords.Add(new TreatmentPdfSuccess
+        //                {
+        //                    RecordId = treatmentRecord.Id,
+        //                    PatientName = treatmentData.Patient.Name,
+        //                    HFID = clinicPatient.HFID,
+        //                    AppointmentDate = visit.AppointmentDate.ToString("dd-MM-yyyy"),
+        //                    TreatmentUrl = s3Url,
+        //                    FileSizeKB = fileSizeKb
+        //                });
+
+        //                return true;
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                _logger.LogError(ex, "Error processing treatment PDF for record {RecordId}", treatmentRecord.Id);
+        //                return false;
+        //            }
+        //        }
+
+        //        private string GenerateTreatmentHtml(TreatmentJsonPayload data)
+        //        {
+        //            var treatmentTableRows = new StringBuilder();
+
+        //            for (int i = 0; i < data.Treatments.Count; i++)
+        //            {
+        //                var treatment = data.Treatments[i];
+        //                treatmentTableRows.AppendLine($@"
+        //                    <tr>
+        //                        <td>{i + 1}</td>
+        //                        <td>{treatment.Name}</td>
+        //                        <td>{treatment.QtyPerDay}</td>
+        //                        <td class=""right"">{treatment.Cost:N2}</td>
+        //                        <td>{treatment.Status}</td>
+        //                        <td class=""right"">{treatment.Total:N2}</td>
+        //                    </tr>");
+        //            }
+
+        //            var formattedDob = !string.IsNullOrEmpty(data.Patient.Dob) ? data.Patient.Dob : " ";
+
+        //            return $@"
+        //<!DOCTYPE html>
+        //<html lang=""en"">
+        //  <head>
+        //    <meta charset=""UTF-8"" />
+        //    <style>
+        //      body {{
+        //        font-family: Arial, Helvetica, sans-serif;
+        //        margin: 40px;
+        //        color: #333;
+        //        background-color: #fff;
+        //      }}
+        //      .header {{
+        //        text-align: center;
+        //        margin-bottom: 20px;
+        //      }}
+        //      .header img {{
+        //        max-height: 130px;
+        //        width: auto;
+        //      }}
+        //      .patient-info {{
+        //        border: 1px solid #e5e7eb;
+        //        border-radius: 8px;
+        //        padding: 16px;
+        //        margin-bottom: 24px;
+        //        font-size: 13px;
+        //        background-color: #fafafa;
+        //      }}
+        //      .patient-info table {{
+        //        width: 100%;
+        //        border-collapse: collapse;
+        //      }}
+        //      .patient-info td {{
+        //        padding: 4px 8px;
+        //        vertical-align: top;
+        //      }}
+        //      .section-title {{
+        //        font-weight: bold;
+        //        margin-bottom: 8px;
+        //        font-size: 14px;
+        //        color: #333;
+        //      }}
+        //      table.treatment {{
+        //        width: 100%;
+        //        border-collapse: collapse;
+        //        margin-top: 8px;
+        //        font-size: 13px;
+        //        border: 1px solid #000;
+        //      }}
+        //      table.treatment th,
+        //      table.treatment td {{
+        //        border: 1px solid #000;
+        //        padding: 10px;
+        //        text-align: left;
+        //      }}
+        //      table.treatment th {{
+        //        background: #f9f9f9;
+        //        font-weight: 600;
+        //        color: #333;
+        //      }}
+        //      table.treatment td.right {{
+        //        text-align: right;
+        //      }}
+        //      .totals {{
+        //        font-weight: bold;
+        //        background-color: #f9f9f9;
+        //      }}
+        //      .totals td {{
+        //        border-top: 2px solid #000;
+        //      }}
+        //      .signature {{
+        //        margin-top: 40px;
+        //        text-align: right;
+        //        font-size: 14px;
+        //        color: #333;
+        //      }}
+        //      .signature .line {{
+        //        margin-bottom: 2px;
+        //        border-top: 1px solid #333;
+        //        width: 116px;
+        //        margin-left: auto;
+        //      }}
+        //      .signature p {{
+        //        font-family: ""Cedarville Cursive"", cursive;
+        //        font-size: 15px;
+        //        color: #1a3c6e;
+        //        margin: 0;
+        //        padding-right: 0px;
+        //      }}
+        //      footer {{
+        //        margin-top: 40px;
+        //        font-size: 15px;
+        //        display: flex;
+        //        justify-content: space-between;
+        //        color: #000;
+        //      }}
+        //    </style>
+        //  </head>
+        //  <body>
+        //    <!-- Header with Logo -->
+        //    <div class=""header"">
+        //      <img src=""https://d7cop3y0lcg80.cloudfront.net/reports/1/0604d10d087f97b877ea0ae85e9494b5df28b6e7_26-09-2025_10-12-19.png"" alt=""ARTHROSE CRANIOFACIAL PAIN & TMJ CENTRE Logo"" />
+        //    </div>
+
+        //    <!-- Patient Info -->
+        //    <div class=""patient-info"">
+        //      <table>
+        //        <tr>
+        //          <td><strong>Patient Name:</strong> {data.Patient.Name}</td>
+        //          <td><strong>HFID:</strong> {data.Patient.Hfid}</td>
+        //        </tr>
+        //        <tr>
+        //          <td><strong>Gender:</strong> {data.Patient.Gender}</td>
+        //          <td><strong>TID:</strong> {data.Patient.Tid}</td>
+        //        </tr>
+        //        <tr>
+        //          <td><strong>DOB:</strong> {formattedDob}</td>
+        //          <td><strong>Mobile:</strong> {data.Patient.Mobile}</td>
+        //        </tr>
+        //        <tr>
+        //          <td><strong>Consultant Coach:</strong> {data.Patient.Doctor}</td>
+        //          <td><strong>City:</strong> {data.Patient.City}</td>
+        //        </tr>
+        //      </table>
+        //    </div>
+
+        //    <!-- Treatment Plan -->
+        //    <div class=""section-title"">Treatment Plan</div>
+        //    <table class=""treatment"">
+        //      <thead>
+        //        <tr>
+        //          <th>S.No.</th>
+        //          <th>Treatment Name</th>
+        //          <th>Qty/Day</th>
+        //          <th>Cost (₹)</th>
+        //          <th>Status</th>
+        //          <th>Total (₹)</th>
+        //        </tr>
+        //      </thead>
+        //      <tbody>
+        //        {treatmentTableRows}
+        //        <tr class=""totals"">
+        //          <td colspan=""5"" class=""right"">Total:</td>
+        //          <td class=""right"">{data.TotalCost:N2}</td>
+        //        </tr>
+        //        <tr class=""totals"">
+        //          <td colspan=""5"" class=""right"">Grand Total:</td>
+        //          <td class=""right"">{data.GrandTotal:N2}</td>
+        //        </tr>
+        //      </tbody>
+        //    </table>
+
+        //    <!-- Signature -->
+        //    <div class=""signature"">
+        //      <p>{data.Patient.Doctor}</p>
+        //      <div class=""line"">{data.Patient.Doctor}</div>
+        //    </div>
+
+        //    <footer>
+        //      <span>www.arthrosetmjindia.com</span>
+        //      <span>www.hfiles.in</span>
+        //    </footer>
+        //  </body>
+        //</html>";
+        //        }
+
+
+
+
+        // Add these methods to the ClinicPatientRecordController class
+
+        // API 1: Import invoices from Excel/CSV
+        //        [HttpPost("import-invoices")]
+        //        //[Authorize]
+        //        public async Task<IActionResult> ImportInvoicesFromExcel([FromForm] InvoiceImportRequest request)
+        //        {
+        //            HttpContext.Items["Log-Category"] = "Invoice Import";
+
+        //            if (request.ExcelFile == null || request.ExcelFile.Length == 0)
+        //                return BadRequest(ApiResponseFactory.Fail("Excel file is required."));
+
+        //            if (!Path.GetExtension(request.ExcelFile.FileName).Equals(".csv", StringComparison.OrdinalIgnoreCase) &&
+        //                !Path.GetExtension(request.ExcelFile.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+        //                return BadRequest(ApiResponseFactory.Fail("Only .csv and .xlsx files are supported."));
+
+        //            //bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(CLINIC_ID, User);
+        //            //if (!isAuthorized)
+        //            //{
+        //            //    _logger.LogWarning("Unauthorized invoice import attempt for Clinic ID {ClinicId}", CLINIC_ID);
+        //            //    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to import invoices for this clinic."));
+        //            //}
+
+        //            var response = new InvoiceImportResponse();
+        //            var transaction = await _clinicRepository.BeginTransactionAsync();
+        //            var committed = false;
+
+        //            try
+        //            {
+        //                List<ExcelInvoiceRow> invoiceRows;
+
+        //                if (Path.GetExtension(request.ExcelFile.FileName).Equals(".csv", StringComparison.OrdinalIgnoreCase))
+        //                {
+        //                    invoiceRows = await ProcessInvoiceCsvFile(request.ExcelFile);
+        //                }
+        //                else
+        //                {
+        //                    invoiceRows = await ProcessInvoiceExcelFile(request.ExcelFile);
+        //                }
+
+        //                if (!invoiceRows.Any())
+        //                {
+        //                    return BadRequest(ApiResponseFactory.Fail("No valid invoice data found in the file."));
+        //                }
+
+        //                // Group invoices by patient, date, and invoice ID
+        //                var groupedInvoices = invoiceRows
+        //                    .GroupBy(i => new { i.PatientId, i.ParsedDate.Date, i.InvoiceId })
+        //                    .ToList();
+
+        //                foreach (var group in groupedInvoices)
+        //                {
+        //                    response.TotalProcessed++;
+
+        //                    try
+        //                    {
+        //                        var success = await ProcessInvoiceGroup(
+        //                            group.Key.PatientId,
+        //                            group.Key.Date,
+        //                            group.Key.InvoiceId,
+        //                            group.ToList(),
+        //                            response);
+
+        //                        if (success)
+        //                        {
+        //                            response.Successful++;
+        //                        }
+        //                        else
+        //                        {
+        //                            response.Failed++;
+        //                        }
+        //                    }
+        //                    catch (Exception ex)
+        //                    {
+        //                        _logger.LogError(ex, "Error processing invoice group for Patient {PatientId} on {Date} Invoice {InvoiceId}",
+        //                            group.Key.PatientId, group.Key.Date, group.Key.InvoiceId);
+        //                        response.Failed++;
+        //                        response.SkippedReasons.Add($"Patient {group.Key.PatientId} on {group.Key.Date:dd-MM-yyyy} Invoice {group.Key.InvoiceId}: Processing error - {ex.Message}");
+        //                    }
+        //                }
+
+        //                await transaction.CommitAsync();
+        //                committed = true;
+
+        //                response.Message = $"Invoice import completed: {response.Successful} successful, " +
+        //                                  $"{response.Failed} failed out of {response.TotalProcessed} total invoice groups. " +
+        //                                  $"Processed {response.PatientsProcessed} patients with {response.VisitsCreated} visits.";
+
+        //                _logger.LogInformation("Invoice import completed: {Added} added, {Failed} failed",
+        //                    response.Successful, response.Failed);
+
+        //                return Ok(ApiResponseFactory.Success(response, response.Message));
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                _logger.LogError(ex, "Failed to import invoices from Excel");
+        //                return StatusCode(500, ApiResponseFactory.Fail("Failed to process Excel file: " + ex.Message));
+        //            }
+        //            finally
+        //            {
+        //                if (!committed && transaction.GetDbTransaction().Connection != null)
+        //                    await transaction.RollbackAsync();
+        //            }
+        //        }
+
+        //        // API 2: Generate invoice PDFs for all unsent invoices
+        //        [HttpPost("generate-invoice-pdfs")]
+        //        //[Authorize]
+        //        public async Task<IActionResult> GenerateInvoicePdfs([FromBody] InvoicePdfRequest request)
+        //        {
+        //            HttpContext.Items["Log-Category"] = "Invoice PDF Generation";
+
+        //            //bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(CLINIC_ID, User);
+        //            //if (!isAuthorized)
+        //            //{
+        //            //    _logger.LogWarning("Unauthorized PDF generation attempt for Clinic ID {ClinicId}", CLINIC_ID);
+        //            //    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to generate PDFs for this clinic."));
+        //            //}
+
+        //            var response = new InvoicePdfResponse();
+        //            var transaction = await _clinicRepository.BeginTransactionAsync();
+        //            var committed = false;
+
+        //            try
+        //            {
+        //                // Get all unsent invoice records
+        //                var invoiceRecords = await GetUnsentInvoiceRecords();
+
+        //                if (!invoiceRecords.Any())
+        //                {
+        //                    return Ok(ApiResponseFactory.Success(new InvoicePdfResponse
+        //                    {
+        //                        TotalProcessed = 0,
+        //                        Successful = 0,
+        //                        Failed = 0,
+        //                        Message = "No unsent invoice records found."
+        //                    }, "No unsent invoice records found."));
+        //                }
+
+        //                // Download Chromium once for all PDFs
+        //                await new BrowserFetcher().DownloadAsync();
+
+        //                using var browser = await Puppeteer.LaunchAsync(new LaunchOptions
+        //                {
+        //                    Headless = true,
+        //                    Args = new[] { "--no-sandbox", "--disable-setuid-sandbox" }
+        //                });
+
+        //                foreach (var invoiceRecord in invoiceRecords)
+        //                {
+        //                    response.TotalProcessed++;
+
+        //                    try
+        //                    {
+        //                        var success = await ProcessSingleInvoicePdf(invoiceRecord, browser, response);
+        //                        if (success)
+        //                        {
+        //                            response.Successful++;
+        //                        }
+        //                        else
+        //                        {
+        //                            response.Failed++;
+        //                            response.FailedRecords.Add(new InvoicePdfFailed
+        //                            {
+        //                                RecordId = invoiceRecord.Id,
+        //                                Reason = "PDF generation or upload failed"
+        //                            });
+        //                        }
+        //                    }
+        //                    catch (Exception ex)
+        //                    {
+        //                        _logger.LogError(ex, "Error generating PDF for invoice record {RecordId}", invoiceRecord.Id);
+        //                        response.Failed++;
+        //                        response.FailedRecords.Add(new InvoicePdfFailed
+        //                        {
+        //                            RecordId = invoiceRecord.Id,
+        //                            Reason = $"Processing error: {ex.Message}"
+        //                        });
+        //                    }
+        //                }
+
+        //                await transaction.CommitAsync();
+        //                committed = true;
+
+        //                response.Message = $"Invoice PDF generation completed: {response.Successful} successful, " +
+        //                                  $"{response.Failed} failed out of {response.TotalProcessed} total invoices.";
+
+        //                return Ok(ApiResponseFactory.Success(response, response.Message));
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                _logger.LogError(ex, "Error during invoice PDF generation");
+        //                return StatusCode(500, ApiResponseFactory.Fail("An error occurred during PDF generation."));
+        //            }
+        //            finally
+        //            {
+        //                if (!committed && transaction.GetDbTransaction().Connection != null)
+        //                    await transaction.RollbackAsync();
+        //            }
+        //        }
+
+        //        // Helper methods for invoice processing
+        //        private async Task<List<ExcelInvoiceRow>> ProcessInvoiceCsvFile(IFormFile file)
+        //        {
+        //            var invoices = new List<ExcelInvoiceRow>();
+
+        //            using var reader = new StreamReader(file.OpenReadStream());
+        //            var csvContent = await reader.ReadToEndAsync();
+        //            var lines = csvContent.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        //            for (int i = 1; i < lines.Length; i++) // Skip header
+        //            {
+        //                var columns = lines[i].Split(',');
+        //                if (columns.Length >= 8)
+        //                {
+        //                    var invoice = new ExcelInvoiceRow
+        //                    {
+        //                        PatientName = columns[0].Trim(),
+        //                        PatientId = columns[1].Trim(),
+        //                        DateString = columns[2].Trim(),
+        //                        InvoiceId = columns[3].Trim(),
+        //                        ServiceName = columns[4].Trim(),
+        //                        Cost = int.TryParse(columns[5].Trim(), out var cost) ? cost : 0,
+        //                        QuantityValue = columns[6].Trim(),
+        //                        FinalCost = int.TryParse(columns[7].Trim(), out var finalCost) ? finalCost : 0
+        //                    };
+
+        //                    if (DateTime.TryParseExact(invoice.DateString, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedDate))
+        //                    {
+        //                        invoice.ParsedDate = parsedDate;
+        //                        invoices.Add(invoice);
+        //                    }
+        //                }
+        //            }
+
+        //            return invoices;
+        //        }
+
+        //        private async Task<List<ExcelInvoiceRow>> ProcessInvoiceExcelFile(IFormFile file)
+        //        {
+        //            var invoices = new List<ExcelInvoiceRow>();
+
+        //            using var stream = new MemoryStream();
+        //            await file.CopyToAsync(stream);
+
+        //            ExcelPackage.License.SetNonCommercialPersonal("HFiles");
+        //            using var package = new ExcelPackage(stream);
+        //            var worksheet = package.Workbook.Worksheets[0];
+
+        //            if (worksheet.Dimension == null) return invoices;
+
+        //            var rowCount = worksheet.Dimension.End.Row;
+
+        //            for (int row = 2; row <= rowCount; row++)
+        //            {
+        //                var invoice = new ExcelInvoiceRow
+        //                {
+        //                    PatientName = worksheet.Cells[row, 1].Text.Trim(),
+        //                    PatientId = worksheet.Cells[row, 2].Text.Trim(),
+        //                    DateString = worksheet.Cells[row, 3].Text.Trim(),
+        //                    InvoiceId = worksheet.Cells[row, 4].Text.Trim(),
+        //                    ServiceName = worksheet.Cells[row, 5].Text.Trim(),
+        //                    Cost = int.TryParse(worksheet.Cells[row, 6].Text.Trim(), out var cost) ? cost : 0,
+        //                    QuantityValue = worksheet.Cells[row, 7].Text.Trim(),
+        //                    FinalCost = int.TryParse(worksheet.Cells[row, 8].Text.Trim(), out var finalCost) ? finalCost : 0
+        //                };
+
+        //                if (DateTime.TryParseExact(invoice.DateString, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedDate))
+        //                {
+        //                    invoice.ParsedDate = parsedDate;
+        //                    invoices.Add(invoice);
+        //                }
+        //            }
+
+        //            return invoices;
+        //        }
+
+        //        private async Task<bool> ProcessInvoiceGroup(string patientId, DateTime appointmentDate,
+        //            string invoiceId, List<ExcelInvoiceRow> invoices, InvoiceImportResponse response)
+        //        {
+        //            // 1. Find user by patientId
+        //            var user = await _userRepository.GetUserByPatientIdAsync(patientId);
+        //            if (user == null)
+        //            {
+        //                response.SkippedReasons.Add($"Patient {patientId}: User not found in database");
+        //                return false;
+        //            }
+
+        //            // 2. Get or create clinic patient
+        //            var fullName = $"{user.FirstName} {user.LastName}".Trim();
+        //            var clinicPatient = await _clinicVisitRepository.GetOrCreatePatientAsync(user.HfId ?? "", fullName);
+
+        //            // 3. Check if visit exists for this date
+        //            var existingVisit = await GetExistingVisitByDate(clinicPatient.Id, appointmentDate);
+        //            ClinicVisit visit;
+
+        //            if (existingVisit == null)
+        //            {
+        //                // Create new visit
+        //                visit = new ClinicVisit
+        //                {
+        //                    ClinicPatientId = clinicPatient.Id,
+        //                    ClinicId = CLINIC_ID,
+        //                    AppointmentDate = appointmentDate.Date,
+        //                    AppointmentTime = APPOINTMENT_TIME,
+        //                    PaymentMethod = null
+        //                };
+
+        //                await _clinicVisitRepository.SaveVisitAsync(visit);
+        //                response.VisitsCreated++;
+        //            }
+        //            else
+        //            {
+        //                visit = existingVisit;
+        //            }
+
+        //            // 4. Create invoice JSON data
+        //            var invoiceJsonData = CreateInvoiceJsonData(user, clinicPatient, invoices, invoiceId, appointmentDate);
+
+        //            // 5. Check if invoice record already exists
+        //            var existingRecord = await _clinicPatientRecordRepository.GetByCompositeKeyAsync(
+        //                CLINIC_ID, clinicPatient.Id, visit.Id, RecordType.Invoice);
+
+        //            if (existingRecord != null)
+        //            {
+        //                response.SkippedReasons.Add($"Patient {patientId} on {appointmentDate:dd-MM-yyyy} Invoice {invoiceId}: Invoice record already exists");
+        //                return false;
+        //            }
+
+        //            // 6. Create invoice record
+        //            var invoiceRecord = new ClinicPatientRecord
+        //            {
+        //                ClinicId = CLINIC_ID,
+        //                PatientId = clinicPatient.Id,
+        //                ClinicVisitId = visit.Id,
+        //                Type = RecordType.Invoice,
+        //                JsonData = invoiceJsonData,
+        //                SendToPatient = false
+        //            };
+
+        //            await _clinicPatientRecordRepository.SaveAsync(invoiceRecord);
+
+        //            response.PatientsProcessed++;
+        //            response.AddedInvoices.Add(new AddedInvoiceSummary
+        //            {
+        //                PatientId = patientId,
+        //                PatientName = fullName,
+        //                HFID = user.HfId ?? "",
+        //                AppointmentDate = appointmentDate.ToString("dd-MM-yyyy"),
+        //                InvoiceId = invoiceId,
+        //                ServiceCount = invoices.Count,
+        //                TotalCost = invoices.Sum(i => i.FinalCost),
+        //                Services = invoices.Select(i => i.ServiceName).ToList()
+        //            });
+
+        //            return true;
+        //        }
+
+        //        private string CreateInvoiceJsonData(Domain.Entities.Users.User user, ClinicPatient clinicPatient,
+        //            List<ExcelInvoiceRow> invoices, string invoiceId, DateTime appointmentDate)
+        //        {
+        //            var serviceItems = invoices.Select(i => new
+        //            {
+        //                name = i.ServiceName,
+        //                qtyPerDay = i.QuantityValue,
+        //                cost = i.Cost,
+        //                total = i.FinalCost
+        //            }).ToArray();
+
+        //            var totalCost = invoices.Sum(i => i.FinalCost);
+
+        //            var invoiceData = new
+        //            {
+        //                patient = new
+        //                {
+        //                    name = $"{user.FirstName} {user.LastName}".Trim(),
+        //                    hfid = user.HfId ?? "",
+        //                    gender = user.Gender ?? "",
+        //                    invid = invoiceId,
+        //                    dob = user.DOB ?? "",
+        //                    date = appointmentDate.ToString("dd/MM/yyyy"),
+        //                    mobile = user.PhoneNumber ?? "",
+        //                    city = user.City ?? ""
+        //                },
+        //                services = serviceItems,
+        //                totalCost = totalCost,
+        //                grandTotal = totalCost,
+        //                paid = totalCost,
+        //                clinicInfo = new
+        //                {
+        //                    name = "ARTHROSE",
+        //                    subtitle = "CRANIOFACIAL PAIN & TMJ CENTRE",
+        //                    website = "www.arthrosetmjindia.com"
+        //                }
+        //            };
+
+        //            return JsonConvert.SerializeObject(invoiceData, Formatting.None);
+        //        }
+
+        //        private async Task<List<ClinicPatientRecord>> GetUnsentInvoiceRecords()
+        //        {
+        //            return await _clinicPatientRecordRepository.GetUnsentInvoiceRecordsAsync(CLINIC_ID); // Gets only UNSENT invoices
+        //        }
+
+        //        private async Task<bool> ProcessSingleInvoicePdf(ClinicPatientRecord invoiceRecord,
+        //            IBrowser browser, InvoicePdfResponse response)
+        //        {
+        //            try
+        //            {
+        //                // Get related data
+        //                var visit = await _clinicVisitRepository.GetByIdAsync(invoiceRecord.ClinicVisitId);
+        //                var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(invoiceRecord.PatientId);
+        //                var user = clinicPatient != null ? await _userRepository.GetUserByHFIDAsync(clinicPatient.HFID) : null;
+
+        //                if (visit == null || clinicPatient == null || user == null)
+        //                {
+        //                    return false;
+        //                }
+
+        //                // Parse invoice JSON
+        //                var invoiceData = JsonConvert.DeserializeObject<InvoiceJsonPayload>(invoiceRecord.JsonData);
+        //                if (invoiceData?.Patient == null || invoiceData.Services == null)
+        //                {
+        //                    return false;
+        //                }
+
+        //                // Generate HTML and PDF
+        //                var htmlContent = GenerateInvoiceHtml(invoiceData);
+
+        //                using var page = await browser.NewPageAsync();
+        //                await page.SetContentAsync(htmlContent);
+
+        //                var pdfOptions = new PdfOptions
+        //                {
+        //                    Format = PaperFormat.A4,
+        //                    PrintBackground = true,
+        //                    MarginOptions = new MarginOptions
+        //                    {
+        //                        Top = "0.5in",
+        //                        Bottom = "0.5in",
+        //                        Left = "0.5in",
+        //                        Right = "0.5in"
+        //                    }
+        //                };
+
+        //                var pdfBytes = await page.PdfDataAsync(pdfOptions);
+        //                if (pdfBytes == null || pdfBytes.Length == 0)
+        //                {
+        //                    return false;
+        //                }
+
+        //                // Upload to S3
+        //                var tempFileName = $"invoice_clinic{invoiceRecord.ClinicId}_patient{invoiceRecord.PatientId}_{Guid.NewGuid()}.pdf";
+        //                var tempFilePath = Path.Combine(Path.GetTempPath(), tempFileName);
+        //                await System.IO.File.WriteAllBytesAsync(tempFilePath, pdfBytes);
+
+        //                var s3Key = $"clinic/{tempFileName}";
+        //                var s3Url = await _s3StorageService.UploadFileToS3(tempFilePath, s3Key);
+
+        //                if (string.IsNullOrEmpty(s3Url))
+        //                {
+        //                    System.IO.File.Delete(tempFilePath);
+        //                    return false;
+        //                }
+
+        //                // Update invoice record to mark as sent
+        //                invoiceRecord.SendToPatient = true;
+        //                await _clinicPatientRecordRepository.UpdateAsync(invoiceRecord);
+
+        //                // Create user report
+        //                var reportName = $"Arthrose_Invoice_{invoiceData.Patient.Name.Replace(" ", "_")}_{visit.AppointmentDate:dd-MM-yy}";
+        //                var epochTime = new DateTimeOffset(visit.AppointmentDate.Date + visit.AppointmentTime).ToUnixTimeSeconds();
+        //                var fileSizeKb = Math.Round((decimal)pdfBytes.Length / 1024, 2);
+
+        //                var userReport = new UserReport
+        //                {
+        //                    UserId = user.Id,
+        //                    ReportName = reportName,
+        //                    ReportCategory = 8, // Invoice category
+        //                    ReportUrl = s3Url,
+        //                    EpochTime = epochTime,
+        //                    FileSize = fileSizeKb,
+        //                    UploadedBy = "Clinic",
+        //                    ClinicId = 8,
+        //                    UserType = "Independent",
+        //                    DeletedBy = 0
+        //                };
+
+        //                await _userRepository.SaveAsync(userReport);
+
+        //                // Create another clinic patient record with the PDF URL
+        //                var pdfRecord = new ClinicPatientRecord
+        //                {
+        //                    ClinicId = CLINIC_ID,
+        //                    PatientId = invoiceRecord.PatientId,
+        //                    ClinicVisitId = invoiceRecord.ClinicVisitId,
+        //                    Type = RecordType.Invoice,
+        //                    JsonData = JsonConvert.SerializeObject(new { url = s3Url }),
+        //                    SendToPatient = true
+        //                };
+
+        //                await _clinicPatientRecordRepository.SaveAsync(pdfRecord);
+
+        //                // Clean up
+        //                System.IO.File.Delete(tempFilePath);
+
+        //                // Add to successful records
+        //                response.SuccessfulRecords.Add(new InvoicePdfSuccess
+        //                {
+        //                    RecordId = invoiceRecord.Id,
+        //                    PatientName = invoiceData.Patient.Name,
+        //                    HFID = clinicPatient.HFID,
+        //                    AppointmentDate = visit.AppointmentDate.ToString("dd-MM-yyyy"),
+        //                    InvoiceUrl = s3Url,
+        //                    FileSizeKB = fileSizeKb
+        //                });
+
+        //                return true;
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                _logger.LogError(ex, "Error processing invoice PDF for record {RecordId}", invoiceRecord.Id);
+        //                return false;
+        //            }
+        //        }
+
+        //        private async Task<ClinicVisit?> GetExistingVisitByDate(int clinicPatientId, DateTime appointmentDate)
+        //        {
+        //            return await _clinicVisitRepository.GetExistingVisitAsync(clinicPatientId, appointmentDate);
+        //        }
+
+        //        private string GenerateInvoiceHtml(InvoiceJsonPayload data)
+        //        {
+        //            var serviceTableRows = new StringBuilder();
+
+        //            for (int i = 0; i < data.Services.Count; i++)
+        //            {
+        //                var service = data.Services[i];
+        //                serviceTableRows.AppendLine($@"
+        //            <tr>
+        //                <td>{i + 1}</td>
+        //                <td>{service.Name}</td>
+        //                <td>{service.QtyPerDay}</td>
+        //                <td class=""right"">{service.Cost:0.00}</td>
+        //                <td class=""right"">{service.Total:0.00}</td>
+        //            </tr>");
+        //            }
+
+        //            var formattedDob = !string.IsNullOrEmpty(data.Patient.Dob) ? data.Patient.Dob : "Invalid Date";
+
+        //            return $@"
+        //<!DOCTYPE html>
+        //<html lang=""en"">
+        //  <head>
+        //    <meta charset=""UTF-8"" />
+        //    <style>
+        //      body {{
+        //        font-family: Arial, Helvetica, sans-serif;
+        //        margin: 40px;
+        //        color: #333;
+        //        background-color: #fff;
+        //      }}
+        //      .header {{
+        //        text-align: center;
+        //        margin-bottom: 20px;
+        //      }}
+        //      .header img {{
+        //        max-height: 130px;
+        //        width: auto;
+        //      }}
+        //      .patient-info {{
+        //        border: 1px solid #e5e7eb;
+        //        border-radius: 8px;
+        //        padding: 16px;
+        //        margin-bottom: 24px;
+        //        font-size: 13px;
+        //        background-color: #fafafa;
+        //      }}
+        //      .patient-info table {{
+        //        width: 100%;
+        //        border-collapse: collapse;
+        //      }}
+        //      .patient-info td {{
+        //        padding: 4px 8px;
+        //        vertical-align: top;
+        //      }}
+        //      .section-title {{
+        //        font-weight: bold;
+        //        margin-bottom: 8px;
+        //        font-size: 14px;
+        //        color: #333;
+        //      }}
+        //      table.invoice {{
+        //        width: 100%;
+        //        border-collapse: collapse;
+        //        margin-top: 8px;
+        //        font-size: 13px;
+        //        border: 1px solid #000;
+        //      }}
+        //      table.invoice th,
+        //      table.invoice td {{
+        //        border: 1px solid #000;
+        //        padding: 10px;
+        //        text-align: left;
+        //      }}
+        //      table.invoice th {{
+        //        background: #f9f9f9;
+        //        font-weight: 600;
+        //        color: #333;
+        //      }}
+        //      table.invoice td.right {{
+        //        text-align: right;
+        //      }}
+        //      .totals {{
+        //        font-weight: bold;
+        //        background-color: #f9f9f9;
+        //      }}
+        //      .totals td {{
+        //        border-top: 2px solid #000;
+        //      }}
+        //      .signature {{
+        //        margin-top: 40px;
+        //        text-align: right;
+        //        font-size: 14px;
+        //        color: #333;
+        //      }}
+        //      .signature .line {{
+        //        margin-bottom: 2px;
+        //        border-top: 1px solid #333;
+        //        width: 116px;
+        //        margin-left: auto;
+        //      }}
+        //      .signature p {{
+        //        font-family: ""Cedarville Cursive"", cursive;
+        //        font-size: 15px;
+        //        color: #1a3c6e;
+        //        margin: 0;
+        //        padding-right: 0px;
+        //      }}
+        //      footer {{
+        //        margin-top: 40px;
+        //        font-size: 15px;
+        //        display: flex;
+        //        justify-content: space-between;
+        //        color: #000;
+        //      }}
+        //    </style>
+        //  </head>
+        //  <body>
+        //    <!-- Header with Logo -->
+        //    <div class=""header"">
+        //      <img src=""https://d7cop3y0lcg80.cloudfront.net/reports/1/0604d10d087f97b877ea0ae85e9494b5df28b6e7_26-09-2025_10-12-19.png"" alt=""ARTHROSE CRANIOFACIAL PAIN & TMJ CENTRE Logo"" />
+        //    </div>
+
+        //    <!-- Patient Info -->
+        //    <div class=""patient-info"">
+        //      <table>
+        //        <tr>
+        //          <td><strong>Patient Name:</strong> {data.Patient.Name}</td>
+        //          <td><strong>HFID:</strong> {data.Patient.Hfid}</td>
+        //        </tr>
+        //        <tr>
+        //          <td><strong>Gender:</strong> {data.Patient.Gender}</td>
+        //          <td><strong>INVID:</strong> {data.Patient.Invid}</td>
+        //        </tr>
+        //        <tr>
+        //          <td><strong>DOB:</strong> {formattedDob}</td>
+        //          <td><strong>Mobile:</strong> {data.Patient.Mobile}</td>
+        //        </tr>
+        //        <tr>
+        //          <td><strong>Consultant Coach:</strong> {DOCTOR_NAME}</td>
+        //          <td><strong>City:</strong> {data.Patient.City}</td>
+        //        </tr>
+        //      </table>
+        //    </div>
+
+        //    <!-- Invoice -->
+        //    <div class=""section-title"">Invoice</div>
+        //    <table class=""invoice"">
+        //      <thead>
+        //        <tr>
+        //          <th>S.No.</th>
+        //          <th>Service/Product</th>
+        //          <th>Qty/Day</th>
+        //          <th>Cost (₹)</th>
+        //          <th>Total (₹)</th>
+        //        </tr>
+        //      </thead>
+        //      <tbody>
+        //        {serviceTableRows}
+        //        <tr class=""totals"">
+        //          <td colspan=""4"" class=""right"">Total Cost:</td>
+        //          <td class=""right"">₹{data.TotalCost:0.00}</td>
+        //        </tr>
+        //        <tr class=""totals"">
+        //          <td colspan=""4"" class=""right"">Grand Total:</td>
+        //          <td class=""right"">₹{data.GrandTotal:0.00}</td>
+        //        </tr>
+        //        <tr class=""totals"">
+        //          <td colspan=""4"" class=""right"">paid</td>
+        //          <td class=""right"">₹{data.Paid:0.00}</td>
+        //        </tr>
+        //        <tr class=""totals"">
+        //          <td colspan=""4"" class=""right"">Balance</td>
+        //          <td class=""right"">₹{(data.GrandTotal - data.Paid):0.00}</td>
+        //        </tr>
+        //      </tbody>
+        //    </table>
+
+        //    <!-- Signature -->
+        //    <div class=""signature"">
+        //      <p>{DOCTOR_NAME}</p>
+        //      <div class=""line"">{DOCTOR_NAME}</div>
+        //    </div>
+
+        //    <footer>
+        //      <span>www.arthrosetmjindia.com</span>
+        //      <span>www.hfiles.in</span>
+        //    </footer>
+        //  </body>
+        //</html>";
+        //        }
+
+
+
+
+//        // API 1: Import receipts from Excel/CSV
+//        [HttpPost("import-receipts")]
 //        //[Authorize]
-//        public async Task<IActionResult> ImportTreatmentsFromExcel([FromForm] TreatmentImportRequest request)
+//        public async Task<IActionResult> ImportReceiptsFromExcel([FromForm] ReceiptImportRequest request)
 //        {
-//            HttpContext.Items["Log-Category"] = "Treatment Import";
+//            HttpContext.Items["Log-Category"] = "Receipt Import";
 
 //            if (request.ExcelFile == null || request.ExcelFile.Length == 0)
 //                return BadRequest(ApiResponseFactory.Fail("Excel file is required."));
@@ -1151,47 +2576,46 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                !Path.GetExtension(request.ExcelFile.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
 //                return BadRequest(ApiResponseFactory.Fail("Only .csv and .xlsx files are supported."));
 
-//            //bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(CLINIC_ID, User);
-//            //if (!isAuthorized)
-//            //{
-//            //    _logger.LogWarning("Unauthorized treatment import attempt for Clinic ID {ClinicId}", CLINIC_ID);
-//            //    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to import treatments for this clinic."));
-//            //}
-
-//            var response = new TreatmentImportResponse();
+//            var response = new ReceiptImportResponse();
 //            var transaction = await _clinicRepository.BeginTransactionAsync();
 //            var committed = false;
 
 //            try
 //            {
-//                List<ExcelTreatmentRow> treatmentRows;
+//                List<ExcelReceiptRow> receiptRows;
 
 //                if (Path.GetExtension(request.ExcelFile.FileName).Equals(".csv", StringComparison.OrdinalIgnoreCase))
 //                {
-//                    treatmentRows = await ProcessCsvFile(request.ExcelFile);
+//                    receiptRows = await ProcessReceiptCsvFile(request.ExcelFile);
 //                }
 //                else
 //                {
-//                    treatmentRows = await ProcessExcelFile(request.ExcelFile);
+//                    receiptRows = await ProcessReceiptExcelFile(request.ExcelFile);
 //                }
 
-//                if (!treatmentRows.Any())
+//                if (!receiptRows.Any())
 //                {
-//                    return BadRequest(ApiResponseFactory.Fail("No valid treatment data found in the file."));
+//                    return BadRequest(ApiResponseFactory.Fail("No valid receipt data found in the file."));
 //                }
 
-//                // Group treatments by patient and date
-//                var groupedTreatments = treatmentRows
-//                    .GroupBy(t => new { t.PatientId, t.ParsedDate.Date })
+//                // Group receipts by patient and date
+//                var groupedReceipts = receiptRows
+//                    .GroupBy(r => new { r.PatientId, r.ParsedDate.Date, r.ReceiptId })
 //                    .ToList();
 
-//                foreach (var group in groupedTreatments)
+//                foreach (var group in groupedReceipts)
 //                {
 //                    response.TotalProcessed++;
 
 //                    try
 //                    {
-//                        var success = await ProcessTreatmentGroup(group.Key.PatientId, group.Key.Date, group.ToList(), response);
+//                        var success = await ProcessReceiptGroup(
+//                            group.Key.PatientId,
+//                            group.Key.Date,
+//                            group.Key.ReceiptId,
+//                            group.ToList(),
+//                            response);
+
 //                        if (success)
 //                        {
 //                            response.Successful++;
@@ -1203,28 +2627,28 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                    }
 //                    catch (Exception ex)
 //                    {
-//                        _logger.LogError(ex, "Error processing treatment group for Patient {PatientId} on {Date}",
-//                            group.Key.PatientId, group.Key.Date);
+//                        _logger.LogError(ex, "Error processing receipt group for Patient {PatientId} on {Date} Receipt {ReceiptId}",
+//                            group.Key.PatientId, group.Key.Date, group.Key.ReceiptId);
 //                        response.Failed++;
-//                        response.SkippedReasons.Add($"Patient {group.Key.PatientId} on {group.Key.Date:dd-MM-yyyy}: Processing error - {ex.Message}");
+//                        response.SkippedReasons.Add($"Patient {group.Key.PatientId} on {group.Key.Date:dd-MM-yyyy} Receipt {group.Key.ReceiptId}: Processing error - {ex.Message}");
 //                    }
 //                }
 
 //                await transaction.CommitAsync();
 //                committed = true;
 
-//                response.Message = $"Treatment import completed: {response.Successful} successful, " +
-//                                  $"{response.Failed} failed out of {response.TotalProcessed} total treatment groups. " +
+//                response.Message = $"Receipt import completed: {response.Successful} successful, " +
+//                                  $"{response.Failed} failed out of {response.TotalProcessed} total receipt groups. " +
 //                                  $"Processed {response.PatientsProcessed} patients with {response.VisitsCreated} visits.";
 
-//                _logger.LogInformation("Treatment import completed: {Added} added, {Failed} failed",
+//                _logger.LogInformation("Receipt import completed: {Added} added, {Failed} failed",
 //                    response.Successful, response.Failed);
 
 //                return Ok(ApiResponseFactory.Success(response, response.Message));
 //            }
 //            catch (Exception ex)
 //            {
-//                _logger.LogError(ex, "Failed to import treatments from Excel");
+//                _logger.LogError(ex, "Failed to import receipts from Excel");
 //                return StatusCode(500, ApiResponseFactory.Fail("Failed to process Excel file: " + ex.Message));
 //            }
 //            finally
@@ -1234,43 +2658,31 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //            }
 //        }
 
-
-
-
-
-
-//        // API 2: Generate treatment PDFs for all unsent treatments Arthrose
-//        [HttpPost("generate-pdfs")]
+//        // API 2: Generate receipt PDFs for all unsent receipts
+//        [HttpPost("generate-receipt-pdfs")]
 //        //[Authorize]
-//        public async Task<IActionResult> GenerateTreatmentPdfs([FromBody] TreatmentPdfRequest request)
+//        public async Task<IActionResult> GenerateReceiptPdfs([FromBody] ReceiptPdfRequest request)
 //        {
-//            HttpContext.Items["Log-Category"] = "Treatment PDF Generation";
+//            HttpContext.Items["Log-Category"] = "Receipt PDF Generation";
 
-//            //bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(CLINIC_ID, User);
-//            //if (!isAuthorized)
-//            //{
-//            //    _logger.LogWarning("Unauthorized PDF generation attempt for Clinic ID {ClinicId}", CLINIC_ID);
-//            //    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to generate PDFs for this clinic."));
-//            //}
-
-//            var response = new TreatmentPdfResponse();
+//            var response = new ReceiptPdfResponse();
 //            var transaction = await _clinicRepository.BeginTransactionAsync();
 //            var committed = false;
 
 //            try
 //            {
-//                // Get all unsent treatment records
-//                var treatmentRecords = await GetUnsentTreatmentRecords();
+//                // Get all unsent receipt records
+//                var receiptRecords = await GetUnsentReceiptRecords();
 
-//                if (!treatmentRecords.Any())
+//                if (!receiptRecords.Any())
 //                {
-//                    return Ok(ApiResponseFactory.Success(new TreatmentPdfResponse
+//                    return Ok(ApiResponseFactory.Success(new ReceiptPdfResponse
 //                    {
 //                        TotalProcessed = 0,
 //                        Successful = 0,
 //                        Failed = 0,
-//                        Message = "No unsent treatment records found."
-//                    }, "No unsent treatment records found."));
+//                        Message = "No unsent receipt records found."
+//                    }, "No unsent receipt records found."));
 //                }
 
 //                // Download Chromium once for all PDFs
@@ -1282,13 +2694,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                    Args = new[] { "--no-sandbox", "--disable-setuid-sandbox" }
 //                });
 
-//                foreach (var treatmentRecord in treatmentRecords)
+//                foreach (var receiptRecord in receiptRecords)
 //                {
 //                    response.TotalProcessed++;
 
 //                    try
 //                    {
-//                        var success = await ProcessSingleTreatmentPdf(treatmentRecord, browser, response);
+//                        var success = await ProcessSingleReceiptPdf(receiptRecord, browser, response);
 //                        if (success)
 //                        {
 //                            response.Successful++;
@@ -1296,20 +2708,20 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                        else
 //                        {
 //                            response.Failed++;
-//                            response.FailedRecords.Add(new TreatmentPdfFailed
+//                            response.FailedRecords.Add(new ReceiptPdfFailed
 //                            {
-//                                RecordId = treatmentRecord.Id,
+//                                RecordId = receiptRecord.Id,
 //                                Reason = "PDF generation or upload failed"
 //                            });
 //                        }
 //                    }
 //                    catch (Exception ex)
 //                    {
-//                        _logger.LogError(ex, "Error generating PDF for treatment record {RecordId}", treatmentRecord.Id);
+//                        _logger.LogError(ex, "Error generating PDF for receipt record {RecordId}", receiptRecord.Id);
 //                        response.Failed++;
-//                        response.FailedRecords.Add(new TreatmentPdfFailed
+//                        response.FailedRecords.Add(new ReceiptPdfFailed
 //                        {
-//                            RecordId = treatmentRecord.Id,
+//                            RecordId = receiptRecord.Id,
 //                            Reason = $"Processing error: {ex.Message}"
 //                        });
 //                    }
@@ -1318,14 +2730,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                await transaction.CommitAsync();
 //                committed = true;
 
-//                response.Message = $"Treatment PDF generation completed: {response.Successful} successful, " +
-//                                  $"{response.Failed} failed out of {response.TotalProcessed} total treatments.";
+//                response.Message = $"Receipt PDF generation completed: {response.Successful} successful, " +
+//                                  $"{response.Failed} failed out of {response.TotalProcessed} total receipts.";
 
 //                return Ok(ApiResponseFactory.Success(response, response.Message));
 //            }
 //            catch (Exception ex)
 //            {
-//                _logger.LogError(ex, "Error during treatment PDF generation");
+//                _logger.LogError(ex, "Error during receipt PDF generation");
 //                return StatusCode(500, ApiResponseFactory.Fail("An error occurred during PDF generation."));
 //            }
 //            finally
@@ -1335,9 +2747,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //            }
 //        }
 
-//        private async Task<List<ExcelTreatmentRow>> ProcessCsvFile(IFormFile file)
+//        // Helper methods for receipt processing
+//        private async Task<List<ExcelReceiptRow>> ProcessReceiptCsvFile(IFormFile file)
 //        {
-//            var treatments = new List<ExcelTreatmentRow>();
+//            var receipts = new List<ExcelReceiptRow>();
 
 //            using var reader = new StreamReader(file.OpenReadStream());
 //            var csvContent = await reader.ReadToEndAsync();
@@ -1346,35 +2759,33 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //            for (int i = 1; i < lines.Length; i++) // Skip header
 //            {
 //                var columns = lines[i].Split(',');
-//                if (columns.Length >= 9)
+//                if (columns.Length >= 7)
 //                {
-//                    var treatment = new ExcelTreatmentRow
+//                    var receipt = new ExcelReceiptRow
 //                    {
 //                        PatientName = columns[0].Trim(),
 //                        PatientId = columns[1].Trim(),
 //                        DateString = columns[2].Trim(),
-//                        TreatmentName = columns[3].Trim(),
-//                        Status = columns[4].Trim(),
-//                        Cost = int.TryParse(columns[5].Trim(), out var cost) ? cost : 0,
-//                        Quantity = int.TryParse(columns[6].Trim(), out var qty) ? qty : 1,
-//                        QuantityType = columns[7].Trim(),
-//                        FinalCost = int.TryParse(columns[8].Trim(), out var finalCost) ? finalCost : 0
+//                        ReceiptId = columns[3].Trim(),
+//                        InvoiceId = columns[4].Trim(),
+//                        ModeOfPayment = columns[5].Trim(),
+//                        AmountPaid = int.TryParse(columns[6].Trim(), out var amountPaid) ? amountPaid : 0
 //                    };
 
-//                    if (DateTime.TryParseExact(treatment.DateString, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedDate))
+//                    if (DateTime.TryParseExact(receipt.DateString, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedDate))
 //                    {
-//                        treatment.ParsedDate = parsedDate;
-//                        treatments.Add(treatment);
+//                        receipt.ParsedDate = parsedDate;
+//                        receipts.Add(receipt);
 //                    }
 //                }
 //            }
 
-//            return treatments;
+//            return receipts;
 //        }
 
-//        private async Task<List<ExcelTreatmentRow>> ProcessExcelFile(IFormFile file)
+//        private async Task<List<ExcelReceiptRow>> ProcessReceiptExcelFile(IFormFile file)
 //        {
-//            var treatments = new List<ExcelTreatmentRow>();
+//            var receipts = new List<ExcelReceiptRow>();
 
 //            using var stream = new MemoryStream();
 //            await file.CopyToAsync(stream);
@@ -1383,37 +2794,35 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //            using var package = new ExcelPackage(stream);
 //            var worksheet = package.Workbook.Worksheets[0];
 
-//            if (worksheet.Dimension == null) return treatments;
+//            if (worksheet.Dimension == null) return receipts;
 
 //            var rowCount = worksheet.Dimension.End.Row;
 
 //            for (int row = 2; row <= rowCount; row++)
 //            {
-//                var treatment = new ExcelTreatmentRow
+//                var receipt = new ExcelReceiptRow
 //                {
 //                    PatientName = worksheet.Cells[row, 1].Text.Trim(),
 //                    PatientId = worksheet.Cells[row, 2].Text.Trim(),
 //                    DateString = worksheet.Cells[row, 3].Text.Trim(),
-//                    TreatmentName = worksheet.Cells[row, 4].Text.Trim(),
-//                    Status = worksheet.Cells[row, 5].Text.Trim(),
-//                    Cost = int.TryParse(worksheet.Cells[row, 6].Text.Trim(), out var cost) ? cost : 0,
-//                    Quantity = int.TryParse(worksheet.Cells[row, 7].Text.Trim(), out var qty) ? qty : 1,
-//                    QuantityType = worksheet.Cells[row, 8].Text.Trim(),
-//                    FinalCost = int.TryParse(worksheet.Cells[row, 9].Text.Trim(), out var finalCost) ? finalCost : 0
+//                    ReceiptId = worksheet.Cells[row, 4].Text.Trim(),
+//                    InvoiceId = worksheet.Cells[row, 5].Text.Trim(),
+//                    ModeOfPayment = worksheet.Cells[row, 6].Text.Trim(),
+//                    AmountPaid = int.TryParse(worksheet.Cells[row, 7].Text.Trim(), out var amountPaid) ? amountPaid : 0
 //                };
 
-//                if (DateTime.TryParseExact(treatment.DateString, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedDate))
+//                if (DateTime.TryParseExact(receipt.DateString, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedDate))
 //                {
-//                    treatment.ParsedDate = parsedDate;
-//                    treatments.Add(treatment);
+//                    receipt.ParsedDate = parsedDate;
+//                    receipts.Add(receipt);
 //                }
 //            }
 
-//            return treatments;
+//            return receipts;
 //        }
 
-//        private async Task<bool> ProcessTreatmentGroup(string patientId, DateTime appointmentDate,
-//            List<ExcelTreatmentRow> treatments, TreatmentImportResponse response)
+//        private async Task<bool> ProcessReceiptGroup(string patientId, DateTime appointmentDate,
+//            string receiptId, List<ExcelReceiptRow> receipts, ReceiptImportResponse response)
 //        {
 //            // 1. Find user by patientId
 //            var user = await _userRepository.GetUserByPatientIdAsync(patientId);
@@ -1433,6 +2842,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 //            if (existingVisit == null)
 //            {
+//                // Parse payment method from receipt data
+//                var firstReceipt = receipts.First();
+//                var paymentMethod = ParsePaymentMethod(firstReceipt.ModeOfPayment);
+
 //                // Create new visit
 //                visit = new ClinicVisit
 //                {
@@ -1440,7 +2853,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                    ClinicId = CLINIC_ID,
 //                    AppointmentDate = appointmentDate.Date,
 //                    AppointmentTime = APPOINTMENT_TIME,
-//                    PaymentMethod = null
+//                    PaymentMethod = paymentMethod
 //                };
 
 //                await _clinicVisitRepository.SaveVisitAsync(visit);
@@ -1449,47 +2862,139 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //            else
 //            {
 //                visit = existingVisit;
+
+//                // Always update payment method from receipt data
+//                var firstReceipt = receipts.First();
+//                var parsedPaymentMethod = ParsePaymentMethod(firstReceipt.ModeOfPayment);
+
+//                // Update if payment method is different or not set
+//                if (visit.PaymentMethod != parsedPaymentMethod)
+//                {
+//                    visit.PaymentMethod = parsedPaymentMethod;
+//                    await _clinicVisitRepository.UpdateAsync(visit);
+//                }
 //            }
 
-//            // 4. Create treatment JSON data
-//            var treatmentJsonData = CreateTreatmentJsonData(user, clinicPatient, treatments, patientId);
+//            // 4. Create receipt JSON data
+//            var receiptJsonData = CreateReceiptJsonData(user, clinicPatient, receipts, receiptId, appointmentDate);
 
-//            // 5. Check if treatment record already exists
+//            // 5. Check if receipt record already exists
 //            var existingRecord = await _clinicPatientRecordRepository.GetByCompositeKeyAsync(
-//                CLINIC_ID, clinicPatient.Id, visit.Id, RecordType.Treatment);
+//                CLINIC_ID, clinicPatient.Id, visit.Id, RecordType.Receipt);
 
 //            if (existingRecord != null)
 //            {
-//                response.SkippedReasons.Add($"Patient {patientId} on {appointmentDate:dd-MM-yyyy}: Treatment record already exists");
+//                response.SkippedReasons.Add($"Patient {patientId} on {appointmentDate:dd-MM-yyyy} Receipt {receiptId}: Receipt record already exists");
 //                return false;
 //            }
 
-//            // 6. Create treatment record
-//            var treatmentRecord = new ClinicPatientRecord
+//            // 6. Create receipt record
+//            var receiptRecord = new ClinicPatientRecord
 //            {
 //                ClinicId = CLINIC_ID,
 //                PatientId = clinicPatient.Id,
 //                ClinicVisitId = visit.Id,
-//                Type = RecordType.Treatment,
-//                JsonData = treatmentJsonData,
+//                Type = RecordType.Receipt,
+//                JsonData = receiptJsonData,
 //                SendToPatient = false
 //            };
 
-//            await _clinicPatientRecordRepository.SaveAsync(treatmentRecord);
+//            await _clinicPatientRecordRepository.SaveAsync(receiptRecord);
 
 //            response.PatientsProcessed++;
-//            response.AddedTreatments.Add(new AddedTreatmentSummary
+//            response.AddedReceipts.Add(new AddedReceiptSummary
 //            {
 //                PatientId = patientId,
 //                PatientName = fullName,
 //                HFID = user.HfId ?? "",
 //                AppointmentDate = appointmentDate.ToString("dd-MM-yyyy"),
-//                TreatmentCount = treatments.Count,
-//                TotalCost = treatments.Sum(t => t.FinalCost),
-//                Treatments = treatments.Select(t => t.TreatmentName).ToList()
+//                ReceiptId = receiptId,
+//                InvoiceId = receipts.First().InvoiceId,
+//                ModeOfPayment = receipts.First().ModeOfPayment,
+//                AmountPaid = receipts.Sum(r => r.AmountPaid)
 //            });
 
 //            return true;
+//        }
+
+//        private PaymentMethod? ParsePaymentMethod(string modeOfPayment)
+//        {
+//            if (string.IsNullOrWhiteSpace(modeOfPayment))
+//                return null;
+
+//            return modeOfPayment.ToUpper().Trim() switch
+//            {
+//                "CARD" => PaymentMethod.DebitCard,
+//                "DEBIT CARD" => PaymentMethod.DebitCard,
+//                "CREDIT CARD" => PaymentMethod.CreditCard,
+//                "CASH" => PaymentMethod.Cash,
+//                "WALLET" => PaymentMethod.Wallet,
+//                "BANK TRANSFER" => PaymentMethod.BankTransfer,
+//                "CHECK" => PaymentMethod.Check,
+//                "CHEQUE" => PaymentMethod.Check,
+//                _ => null // Unknown payment method, store as null
+//            };
+//        }
+
+//        // FIXED: Date formatting in CreateReceiptJsonData
+//        private string CreateReceiptJsonData(Domain.Entities.Users.User user, ClinicPatient clinicPatient,
+//            List<ExcelReceiptRow> receipts, string receiptId, DateTime appointmentDate)
+//        {
+//            var firstReceipt = receipts.First();
+//            var totalAmount = receipts.Sum(r => r.AmountPaid);
+
+//            // Convert payment mode
+//            var modeOfPayment = firstReceipt.ModeOfPayment.ToUpper() switch
+//            {
+//                "CARD" => "Debit Card",
+//                "CASH" => "Cash",
+//                "WALLET" => "Wallet",
+//                _ => firstReceipt.ModeOfPayment
+//            };
+
+//            var serviceItems = receipts.Select(r => new
+//            {
+//                name = "Service",
+//                qtyPerDay = "1 QTY",
+//                cost = r.AmountPaid,
+//                total = r.AmountPaid,
+//                ModeOfPayment = modeOfPayment,
+//                ChequeNo = "--"
+//            }).ToArray();
+
+//            var receiptData = new
+//            {
+//                patient = new
+//                {
+//                    name = $"{user.FirstName} {user.LastName}".Trim(),
+//                    uhid = user.HfId ?? "",
+//                    gender = user.Gender ?? "",
+//                    receiptId = receiptId,
+//                    dob = user.DOB ?? "",
+//                    doctor = DOCTOR_NAME,
+//                    mobile = user.PhoneNumber ?? "",
+//                    city = user.City ?? ""
+//                },
+//                receipt = new
+//                {
+//                    // FIXED: Changed from appointmentDate.ToString("MMM") to dd/MM/yyyy format
+//                    date = appointmentDate.ToString("dd/MM/yyyy"),
+//                    receiptNumber = receiptId,
+//                    modeOfPayment = modeOfPayment,
+//                    chequeNo = "--",
+//                    amountPaid = totalAmount,
+//                    amountInWords = ConvertAmountToWords(totalAmount)
+//                },
+//                services = serviceItems,
+//                clinicInfo = new
+//                {
+//                    name = "Arthrose",
+//                    subtitle = "CRANIOFACIAL PAIN & TMJ CENTRE",
+//                    website = "www.arthrosetmjindia.com"
+//                }
+//            };
+
+//            return JsonConvert.SerializeObject(receiptData, Formatting.None);
 //        }
 
 //        private async Task<ClinicVisit?> GetExistingVisitByDate(int clinicPatientId, DateTime appointmentDate)
@@ -1497,60 +3002,25 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //            return await _clinicVisitRepository.GetExistingVisitAsync(clinicPatientId, appointmentDate);
 //        }
 
-//        private string CreateTreatmentJsonData(Domain.Entities.Users.User user, ClinicPatient clinicPatient,
-//            List<ExcelTreatmentRow> treatments, string patientId)
+//        private string ConvertAmountToWords(int amount)
 //        {
-//            var treatmentItems = treatments.Select(t => new
-//            {
-//                name = t.TreatmentName,
-//                qtyPerDay = $"{t.Quantity} {t.QuantityType}",
-//                cost = t.Cost,
-//                status = "Not Started",
-//                total = t.FinalCost
-//            }).ToArray();
-
-//            var totalCost = treatments.Sum(t => t.FinalCost);
-
-//            var treatmentData = new
-//            {
-//                patient = new
-//                {
-//                    name = $"{user.FirstName} {user.LastName}".Trim(),
-//                    hfid = user.HfId ?? "",
-//                    gender = user.Gender ?? "",
-//                    tid = patientId,
-//                    dob = user.DOB ?? "",
-//                    mobile = user.PhoneNumber ?? "",
-//                    doctor = DOCTOR_NAME,
-//                    city = user.City ?? ""
-//                },
-//                treatments = treatmentItems,
-//                totalCost = totalCost,
-//                grandTotal = totalCost,
-//                clinicInfo = new
-//                {
-//                    name = "ARTHROSE",
-//                    subtitle = "CRANIOFACIAL PAIN & TMJ CENTRE",
-//                    website = "www.arthrosetmjindia.com"
-//                }
-//            };
-
-//            return JsonConvert.SerializeObject(treatmentData, Formatting.None);
+//            // Simple implementation - you can enhance this with a proper number-to-words converter
+//            return $"{amount} Only";
 //        }
 
-//        private async Task<List<ClinicPatientRecord>> GetUnsentTreatmentRecords()
+//        private async Task<List<ClinicPatientRecord>> GetUnsentReceiptRecords()
 //        {
-//            return await _clinicPatientRecordRepository.GetUnsentTreatmentRecordsAsync(CLINIC_ID);
+//            return await _clinicPatientRecordRepository.GetUnsentReceiptRecordsAsync(CLINIC_ID);
 //        }
 
-//        private async Task<bool> ProcessSingleTreatmentPdf(ClinicPatientRecord treatmentRecord,
-//            IBrowser browser, TreatmentPdfResponse response)
+//        private async Task<bool> ProcessSingleReceiptPdf(ClinicPatientRecord receiptRecord,
+//            IBrowser browser, ReceiptPdfResponse response)
 //        {
 //            try
 //            {
 //                // Get related data
-//                var visit = await _clinicVisitRepository.GetByIdAsync(treatmentRecord.ClinicVisitId);
-//                var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(treatmentRecord.PatientId);
+//                var visit = await _clinicVisitRepository.GetByIdAsync(receiptRecord.ClinicVisitId);
+//                var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(receiptRecord.PatientId);
 //                var user = clinicPatient != null ? await _userRepository.GetUserByHFIDAsync(clinicPatient.HFID) : null;
 
 //                if (visit == null || clinicPatient == null || user == null)
@@ -1558,15 +3028,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                    return false;
 //                }
 
-//                // Parse treatment JSON
-//                var treatmentData = JsonConvert.DeserializeObject<TreatmentJsonPayload>(treatmentRecord.JsonData);
-//                if (treatmentData?.Patient == null || treatmentData.Treatments == null)
+//                // Parse receipt JSON
+//                var receiptData = JsonConvert.DeserializeObject<ReceiptJsonPayload>(receiptRecord.JsonData);
+//                if (receiptData?.Patient == null || receiptData.Receipt == null)
 //                {
 //                    return false;
 //                }
 
 //                // Generate HTML and PDF
-//                var htmlContent = GenerateTreatmentHtml(treatmentData);
+//                var htmlContent = GenerateReceiptHtml(receiptData);
 
 //                using var page = await browser.NewPageAsync();
 //                await page.SetContentAsync(htmlContent);
@@ -1591,7 +3061,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                }
 
 //                // Upload to S3
-//                var tempFileName = $"treatment_{treatmentRecord.ClinicId}_{treatmentRecord.PatientId}_{treatmentRecord.ClinicVisitId}_{DateTime.UtcNow:yyyyMMddHHmmss}.pdf";
+//                var tempFileName = $"receipt_clinic{receiptRecord.ClinicId}_patient{receiptRecord.PatientId}_{Guid.NewGuid()}.pdf";
 //                var tempFilePath = Path.Combine(Path.GetTempPath(), tempFileName);
 //                await System.IO.File.WriteAllBytesAsync(tempFilePath, pdfBytes);
 
@@ -1604,12 +3074,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                    return false;
 //                }
 
-//                // Update record
-//                treatmentRecord.SendToPatient = true;
-//                await _clinicPatientRecordRepository.UpdateAsync(treatmentRecord);
+//                // Update receipt record to mark as sent
+//                receiptRecord.SendToPatient = true;
+//                await _clinicPatientRecordRepository.UpdateAsync(receiptRecord);
 
 //                // Create user report
-//                var reportName = $"Arthrose_Treatment_{treatmentData.Patient.Name.Replace(" ", "_")}_{visit.AppointmentDate:dd-MM-yy}";
+//                var reportName = $"Arthrose_Receipt_{receiptData.Patient.Name.Replace(" ", "_")}_{visit.AppointmentDate:dd-MM-yy}";
 //                var epochTime = new DateTimeOffset(visit.AppointmentDate.Date + visit.AppointmentTime).ToUnixTimeSeconds();
 //                var fileSizeKb = Math.Round((decimal)pdfBytes.Length / 1024, 2);
 
@@ -1617,7 +3087,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //                {
 //                    UserId = user.Id,
 //                    ReportName = reportName,
-//                    ReportCategory = 1, // Treatment category
+//                    ReportCategory = 8, // Receipt category
 //                    ReportUrl = s3Url,
 //                    EpochTime = epochTime,
 //                    FileSize = fileSizeKb,
@@ -1629,17 +3099,30 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 //                await _userRepository.SaveAsync(userReport);
 
+//                // Create another clinic patient record with the PDF URL (similar to prescription pattern)
+//                var pdfRecord = new ClinicPatientRecord
+//                {
+//                    ClinicId = CLINIC_ID,
+//                    PatientId = receiptRecord.PatientId,
+//                    ClinicVisitId = receiptRecord.ClinicVisitId,
+//                    Type = RecordType.Receipt,
+//                    JsonData = JsonConvert.SerializeObject(new { url = s3Url }),
+//                    SendToPatient = true
+//                };
+
+//                await _clinicPatientRecordRepository.SaveAsync(pdfRecord);
+
 //                // Clean up
 //                System.IO.File.Delete(tempFilePath);
 
 //                // Add to successful records
-//                response.SuccessfulRecords.Add(new TreatmentPdfSuccess
+//                response.SuccessfulRecords.Add(new ReceiptPdfSuccess
 //                {
-//                    RecordId = treatmentRecord.Id,
-//                    PatientName = treatmentData.Patient.Name,
+//                    RecordId = receiptRecord.Id,
+//                    PatientName = receiptData.Patient.Name,
 //                    HFID = clinicPatient.HFID,
 //                    AppointmentDate = visit.AppointmentDate.ToString("dd-MM-yyyy"),
-//                    TreatmentUrl = s3Url,
+//                    ReceiptUrl = s3Url,
 //                    FileSizeKB = fileSizeKb
 //                });
 
@@ -1647,30 +3130,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //            }
 //            catch (Exception ex)
 //            {
-//                _logger.LogError(ex, "Error processing treatment PDF for record {RecordId}", treatmentRecord.Id);
+//                _logger.LogError(ex, "Error processing receipt PDF for record {RecordId}", receiptRecord.Id);
 //                return false;
 //            }
 //        }
 
-//        private string GenerateTreatmentHtml(TreatmentJsonPayload data)
+//        private string GenerateReceiptHtml(ReceiptJsonPayload data)
 //        {
-//            var treatmentTableRows = new StringBuilder();
-
-//            for (int i = 0; i < data.Treatments.Count; i++)
-//            {
-//                var treatment = data.Treatments[i];
-//                treatmentTableRows.AppendLine($@"
-//                    <tr>
-//                        <td>{i + 1}</td>
-//                        <td>{treatment.Name}</td>
-//                        <td>{treatment.QtyPerDay}</td>
-//                        <td class=""right"">{treatment.Cost:N2}</td>
-//                        <td>{treatment.Status}</td>
-//                        <td class=""right"">{treatment.Total:N2}</td>
-//                    </tr>");
-//            }
-
-//            var formattedDob = !string.IsNullOrEmpty(data.Patient.Dob) ? data.Patient.Dob : " ";
+//            var formattedDob = !string.IsNullOrEmpty(data.Patient.Dob) ? data.Patient.Dob : "Invalid Date";
 
 //            return $@"
 //<!DOCTYPE html>
@@ -1714,33 +3181,47 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //        font-size: 14px;
 //        color: #333;
 //      }}
-//      table.treatment {{
+//      table.receipt {{
 //        width: 100%;
 //        border-collapse: collapse;
 //        margin-top: 8px;
 //        font-size: 13px;
 //        border: 1px solid #000;
 //      }}
-//      table.treatment th,
-//      table.treatment td {{
+//      table.receipt th,
+//      table.receipt td {{
 //        border: 1px solid #000;
 //        padding: 10px;
 //        text-align: left;
 //      }}
-//      table.treatment th {{
+//      table.receipt th {{
 //        background: #f9f9f9;
 //        font-weight: 600;
 //        color: #333;
 //      }}
-//      table.treatment td.right {{
+//      table.receipt td.right {{
 //        text-align: right;
 //      }}
-//      .totals {{
-//        font-weight: bold;
-//        background-color: #f9f9f9;
+//      table.receipt td.center {{
+//        text-align: center;
 //      }}
-//      .totals td {{
-//        border-top: 2px solid #000;
+//      .amount-paid {{
+//        color: #28a745;
+//        font-weight: bold;
+//      }}
+//      .receipt-details {{
+//        margin-top: 20px;
+//        border: 1px solid #28a745;
+//        border-left: 4px solid #28a745;
+//        padding: 15px;
+//        background-color: #f8f9fa;
+//        font-size: 14px;
+//      }}
+//      .receipt-details .thanks {{
+//        margin-bottom: 10px;
+//      }}
+//      .receipt-details .amount {{
+//        font-weight: bold;
 //      }}
 //      .signature {{
 //        margin-top: 40px;
@@ -1781,11 +3262,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //      <table>
 //        <tr>
 //          <td><strong>Patient Name:</strong> {data.Patient.Name}</td>
-//          <td><strong>HFID:</strong> {data.Patient.Hfid}</td>
+//          <td><strong>HFID:</strong> {data.Patient.Uhid}</td>
 //        </tr>
 //        <tr>
 //          <td><strong>Gender:</strong> {data.Patient.Gender}</td>
-//          <td><strong>TID:</strong> {data.Patient.Tid}</td>
+//          <td><strong>RCID:</strong> {data.Patient.ReceiptId}</td>
 //        </tr>
 //        <tr>
 //          <td><strong>DOB:</strong> {formattedDob}</td>
@@ -1798,36 +3279,44 @@ namespace HFiles_Backend.API.Controllers.Clinics
 //      </table>
 //    </div>
 
-//    <!-- Treatment Plan -->
-//    <div class=""section-title"">Treatment Plan</div>
-//    <table class=""treatment"">
+//    <!-- Receipt -->
+//    <div class=""section-title"">Receipt</div>
+//    <table class=""receipt"">
 //      <thead>
 //        <tr>
-//          <th>S.No.</th>
-//          <th>Treatment Name</th>
-//          <th>Qty/Day</th>
-//          <th>Cost (₹)</th>
-//          <th>Status</th>
-//          <th>Total (₹)</th>
+//          <th>Date</th>
+//          <th>Receipt Number</th>
+//          <th>Mode Of Payment</th>
+//          <th>Cheque No.</th>
+//          <th>Amount Paid (₹)</th>
 //        </tr>
 //      </thead>
 //      <tbody>
-//        {treatmentTableRows}
-//        <tr class=""totals"">
-//          <td colspan=""5"" class=""right"">Total:</td>
-//          <td class=""right"">{data.TotalCost:N2}</td>
-//        </tr>
-//        <tr class=""totals"">
-//          <td colspan=""5"" class=""right"">Grand Total:</td>
-//          <td class=""right"">{data.GrandTotal:N2}</td>
+//        <tr>
+//          <td>{data.Receipt.Date}</td>
+//          <td>{data.Receipt.ReceiptNumber}</td>
+//          <td>{data.Receipt.ModeOfPayment}</td>
+//          <td class=""center"">{data.Receipt.ChequeNo}</td>
+//          <td class=""right amount-paid"">₹{data.Receipt.AmountPaid:0.00}</td>
 //        </tr>
 //      </tbody>
 //    </table>
 
+//    <!-- Receipt Details -->
+//    <div class=""receipt-details"">
+//      <div class=""thanks"">
+//        <strong>Received with thanks from:</strong> {data.Patient.Name}
+//      </div>
+//      <div class=""amount"">
+//        <strong>The sum of Rupees:</strong> {data.Receipt.AmountInWords}
+//        <span style=""color: #28a745"">(₹{data.Receipt.AmountPaid:0.00})</span> /-
+//      </div>
+//    </div>
+
 //    <!-- Signature -->
 //    <div class=""signature"">
-//      <p>{data.Patient.Doctor}</p>
-//      <div class=""line"">{data.Patient.Doctor}</div>
+//      <p>{DOCTOR_NAME}</p>
+//      <div class=""line"">{DOCTOR_NAME}</div>
 //    </div>
 
 //    <footer>

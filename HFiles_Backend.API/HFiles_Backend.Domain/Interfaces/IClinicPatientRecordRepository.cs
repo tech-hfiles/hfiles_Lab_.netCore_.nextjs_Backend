@@ -16,5 +16,9 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<List<ClinicPatientRecord>> GetPrescriptionRecordsByClinicIdAsync(int clinicId);
         Task<bool> PrescriptionExistsForVisitAsync(int clinicId, int patientId, int visitId);
         Task<List<ClinicPatientRecord>> GetUnsentTreatmentRecordsAsync(int clinicId);
+        Task<List<ClinicPatientRecord>> GetInvoiceRecordsByClinicIdAsync(int clinicId);
+        Task<List<ClinicPatientRecord>> GetUnsentInvoiceRecordsAsync(int clinicId);
+        Task<List<ClinicPatientRecord>> GetReceiptRecordsByClinicIdAsync(int clinicId);
+        Task<List<ClinicPatientRecord>> GetUnsentReceiptRecordsAsync(int clinicId);
     }
 }

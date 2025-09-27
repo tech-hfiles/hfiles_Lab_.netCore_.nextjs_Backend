@@ -391,5 +391,37 @@ namespace HFiles_Backend.Infrastructure.Repositories
                             !r.SendToPatient)
                 .ToListAsync();
         }
+
+        public async Task<List<ClinicPatientRecord>> GetInvoiceRecordsByClinicIdAsync(int clinicId)
+        {
+            return await _context.ClinicPatientRecords
+                .Where(r => r.ClinicId == clinicId && r.Type == RecordType.Invoice)
+                .ToListAsync();
+        }
+
+        public async Task<List<ClinicPatientRecord>> GetUnsentInvoiceRecordsAsync(int clinicId)
+        {
+            return await _context.ClinicPatientRecords
+                .Where(r => r.ClinicId == clinicId &&
+                            r.Type == RecordType.Invoice &&
+                            !r.SendToPatient)
+                .ToListAsync();
+        }
+
+        public async Task<List<ClinicPatientRecord>> GetReceiptRecordsByClinicIdAsync(int clinicId)
+        {
+            return await _context.ClinicPatientRecords
+                .Where(r => r.ClinicId == clinicId && r.Type == RecordType.Receipt)
+                .ToListAsync();
+        }
+
+        public async Task<List<ClinicPatientRecord>> GetUnsentReceiptRecordsAsync(int clinicId)
+        {
+            return await _context.ClinicPatientRecords
+                .Where(r => r.ClinicId == clinicId &&
+                            r.Type == RecordType.Receipt &&
+                            !r.SendToPatient)
+                .ToListAsync();
+        }
     }
 }

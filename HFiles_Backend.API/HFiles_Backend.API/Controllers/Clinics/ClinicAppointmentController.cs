@@ -1224,7 +1224,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-<<<<<<< Updated upstream
         // Calendar View
         [HttpGet("clinic/{clinicId}/calendar-url")]
         [Authorize]
@@ -1325,9 +1324,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         }
 
 
-=======
->>>>>>> Stashed changes
-        /* ***************************************************************************************** */
+/* ***************************************************************************************** */
         ////ARTHROSE APPOINTMENTS API
 
 

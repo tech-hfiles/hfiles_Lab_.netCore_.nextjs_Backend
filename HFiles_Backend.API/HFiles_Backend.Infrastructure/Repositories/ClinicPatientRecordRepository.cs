@@ -167,7 +167,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
         public async Task<List<ClinicPatientRecord>> GetTreatmentRecordsAsync(int clinicId, int patientId, int visitId)
         {
             return await _context.ClinicPatientRecords
-                .Where(r =>
+                .Where(r =>           
                     r.ClinicId == clinicId &&
                     r.PatientId == patientId &&
                     r.ClinicVisitId == visitId &&

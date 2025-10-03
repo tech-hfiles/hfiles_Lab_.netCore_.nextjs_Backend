@@ -1,4 +1,6 @@
-﻿using HFiles_Backend.API.DTOs.Clinics;
+﻿using Google.Apis.Auth.OAuth2;
+using Google.Apis.Calendar.v3;
+using Google.Apis.Services;
 using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
@@ -9,15 +11,11 @@ using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Repositories;
-using Humanizer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
 using Newtonsoft.Json;
-using OfficeOpenXml;
-using Org.BouncyCastle.Asn1.X509;
 using System.Globalization;
-using System.Text.RegularExpressions;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -33,7 +31,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
     IClinicPatientRecordRepository clinicPatientRecordRepository,
      IConfiguration configuration,
      IEmailTemplateService emailTemplateService,
-     EmailService emailService
+     EmailService emailService,
+     IGoogleCalendarService googleCalendarService
     ) : ControllerBase
     {
         private readonly IAppointmentRepository _appointmentRepository = appointmentRepository;
@@ -46,6 +45,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IConfiguration _configuration = configuration;
         private readonly IEmailTemplateService _emailTemplateService = emailTemplateService;
         private readonly EmailService _emailService = emailService;
+        private readonly IGoogleCalendarService _googleCalendarService = googleCalendarService;
 
 
 
@@ -176,6 +176,26 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 await _appointmentRepository.SaveAppointmentAsync(appointment);
                 await _clinicRepository.SaveChangesAsync();
+
+                // Get clinic name
+                var clinic = await _clinicRepository.GetClinicByIdAsync(dto.ClinicId);
+
+                // Create Google Calendar Event
+                var googleEventId = await _googleCalendarService.CreateAppointmentAsync(
+                    dto.ClinicId,  // Pass clinic ID
+                    dto.VisitorUsername,
+                    clinic?.ClinicName ?? "Clinic",
+                    date.Date,
+                    time,
+                    dto.VisitorPhoneNumber
+                );
+
+                if (!string.IsNullOrEmpty(googleEventId))
+                {
+                    appointment.GoogleCalendarEventId = googleEventId;
+                    await _clinicRepository.SaveChangesAsync();
+                }
+
                 await transaction.CommitAsync();
                 committed = true;
 
@@ -440,6 +460,18 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return NotFound(ApiResponseFactory.Fail("Appointment not found."));
                 }
 
+                // Update status
+                if (!string.IsNullOrWhiteSpace(dto.Status))
+                {
+                    appointment.Status = dto.Status;
+
+                    // Cancel in Google Calendar if status is Canceled
+                    if (dto.Status == "Canceled" && !string.IsNullOrEmpty(appointment.GoogleCalendarEventId))
+                    {
+                        await _googleCalendarService.CancelAppointmentAsync(appointment.ClinicId, appointment.GoogleCalendarEventId);
+                    }
+                }
+
                 var now = DateTime.Now;
                 var appointmentDateTime = appointment.AppointmentDate.Date + appointment.AppointmentTime;
 
@@ -515,7 +547,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
-            var transaction = await _clinicRepository.BeginTransactionAsync(); 
+            var transaction = await _clinicRepository.BeginTransactionAsync();
             var committed = false;
 
             try
@@ -532,6 +564,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 {
                     _logger.LogWarning("Unauthorized delete attempt for appointment ID {AppointmentId} in Clinic ID {ClinicId}", appointmentId, appointment.ClinicId);
                     return Unauthorized(ApiResponseFactory.Fail("You are not authorized to delete appointments for this clinic."));
+                }
+
+                // Delete from Google Calendar
+                if (!string.IsNullOrEmpty(appointment.GoogleCalendarEventId))
+                {
+                    await _googleCalendarService.DeleteAppointmentAsync(appointment.ClinicId, appointment.GoogleCalendarEventId);
                 }
 
                 await _appointmentRepository.DeleteAsync(appointment);
@@ -565,7 +603,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 _logger.LogInformation("Deleted appointment ID {AppointmentId} from Clinic ID {ClinicId}", appointmentId, appointment.ClinicId);
                 return Ok(ApiResponseFactory.Success(response, "Appointment deleted successfully."));
-            }              
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error while deleting appointment ID {AppointmentId}", appointmentId);
@@ -684,12 +722,31 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 };
                 await _appointmentRepository.SaveAppointmentAsync(appointment);
 
+                // Create Google Calendar Event for follow-up appointment
+                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
+                var googleEventId = await _googleCalendarService.CreateAppointmentAsync(
+                    clinicId,
+                    fullName,
+                    clinic?.ClinicName ?? "Clinic",
+                    date.Date,
+                    time,
+                    phone
+                );
+
+                if (!string.IsNullOrEmpty(googleEventId))
+                {
+                    appointment.GoogleCalendarEventId = googleEventId;
+                    // Just save changes to update the existing record
+                    await _clinicRepository.SaveChangesAsync();
+                    _logger.LogInformation("Google Calendar event created for follow-up appointment. EventId: {EventId}", googleEventId);
+                }
+
                 await transaction.CommitAsync();
                 committed = true;
 
                 // Generate consent form links and send email
                 var consentFormLinks = new List<ConsentFormLinkInfo>();
-                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
+                //var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
 
                 if (visit.ConsentFormsSent.Any())
                 {
@@ -809,8 +866,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpPost("clinics/{clinicId}/appointments/follow-up")]
         [Authorize]
         public async Task<IActionResult> BookFollowUpAppointmentForExistingPatient(
-        [FromBody] FollowUpAppointmentDto dto,
-        [FromRoute] int clinicId)
+            [FromBody] FollowUpAppointmentDto dto,
+            [FromRoute] int clinicId)
         {
             HttpContext.Items["Log-Category"] = "Follow-up Appointment (Existing Patient)";
 
@@ -858,6 +915,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return NotFound(ApiResponseFactory.Fail("No user found for provided HFID."));
                 }
 
+                if (user.FirstName == null)
+                {
+                    _logger.LogWarning("No FirstName found for HFID {HFID}", dto.HFID);
+                    return NotFound(ApiResponseFactory.Fail("No FirstName found for provided HFID."));
+                }
+
                 var fullName = $"{user.FirstName} {user.LastName}";
                 var phone = user.PhoneNumber ?? "N/A";
 
@@ -894,6 +957,83 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 };
                 await _appointmentRepository.SaveAppointmentAsync(appointment);
 
+                // Create Google Calendar Event for follow-up appointment
+                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
+                var googleEventId = await _googleCalendarService.CreateAppointmentAsync(
+                    clinicId,
+                    fullName,
+                    clinic?.ClinicName ?? "Clinic",
+                    date.Date,
+                    time,
+                    phone
+                );
+
+                if (!string.IsNullOrEmpty(googleEventId))
+                {
+                    appointment.GoogleCalendarEventId = googleEventId;
+                    // Just save changes to update the existing record
+                    await _clinicRepository.SaveChangesAsync();
+                    _logger.LogInformation("Google Calendar event created for follow-up appointment. EventId: {EventId}", googleEventId);
+                }
+
+                // Generate consent form links and send email
+                var consentFormLinks = new List<ConsentFormLinkInfo>();
+                //var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
+
+                if (visit.ConsentFormsSent.Any())
+                {
+                    var baseUrl = GetBaseUrl();
+
+                    for (int i = 0; i < visit.ConsentFormsSent.Count; i++)
+                    {
+                        var consentFormEntry = visit.ConsentFormsSent.ElementAt(i);
+                        var consentFormTitle = dto.ConsentFormTitles[i];
+                        var encodedConsentName = UrlEncodeForConsentForm(consentFormTitle);
+
+                        // Determine the correct form URL based on consent form name
+                        string formUrl = DetermineConsentFormUrl(consentFormTitle);
+                        var consentFormLink = $"{baseUrl}/{formUrl}?ConsentId={consentFormEntry.Id}&ConsentName={encodedConsentName}&hfid={patient.HFID}";
+
+                        consentFormLinks.Add(new ConsentFormLinkInfo
+                        {
+                            ConsentFormId = consentFormEntry.Id,
+                            ConsentFormName = consentFormTitle,
+                            ConsentFormLink = consentFormLink
+                        });
+                    }
+
+                    // Send email with consent form links using the appointment confirmation template
+                    if (consentFormLinks.Any())
+                    {
+                        try
+                        {
+                            var emailTemplate = _emailTemplateService.GenerateAppointmentConfirmationWithConsentFormsEmailTemplate(
+                                user.FirstName,
+                                consentFormLinks,
+                                clinic?.ClinicName ?? "Clinic",
+                                date.ToString("dd-MM-yyyy"),
+                                time.ToString(@"hh\:mm")
+                            );
+
+                            var consentFormNames = string.Join(", ", consentFormLinks.Select(f => f.ConsentFormName));
+                            await _emailService.SendEmailAsync(
+                                user.Email,
+                                $"Appointment Confirmation & Consent Forms - {clinic?.ClinicName}",
+                                emailTemplate
+                            );
+
+                            _logger.LogInformation("Appointment confirmation email sent successfully to {Email} with {Count} consent forms",
+                                user.Email, consentFormLinks.Count);
+                        }
+                        catch (Exception emailEx)
+                        {
+                            _logger.LogError(emailEx, "Failed to send appointment confirmation email to {Email} for appointment {AppointmentId}",
+                                user.Email, appointment.Id);
+                            // Don't fail the entire operation if email fails
+                        }
+                    }
+                }
+
                 // Response + Notification
                 var response = new
                 {
@@ -901,10 +1041,21 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     PatientName = fullName,
                     AppointmentDate = date.ToString("dd-MM-yyyy"),
                     AppointmentTime = time.ToString(@"hh\:mm"),
+                    ConsentFormsSent = consentForms.Select(f => f.Title).ToList(),
+                    ConsentFormLinks = consentFormLinks.Select(link => new
+                    {
+                        ConsentFormId = link.ConsentFormId,
+                        ConsentFormName = link.ConsentFormName,
+                        ConsentFormLink = link.ConsentFormLink
+                    }).ToList(),
+                    Treatment = appointment.Treatment,
                     AppointmentStatus = appointment.Status,
                     ClinicId = clinicId,
+                    EmailSent = consentFormLinks.Any(),
+                    SentToEmail = user.Email,
+                    ClinicName = clinic?.ClinicName,
 
-                    // Notification
+                    // Enhanced notification section
                     NotificationContext = new
                     {
                         AppointmentId = appointment.Id,
@@ -913,12 +1064,18 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         PhoneNumber = phone,
                         AppointmentDate = date.ToString("dd-MM-yyyy"),
                         AppointmentTime = time.ToString(@"hh\:mm"),
-                        Status = "Scheduled"
+                        Status = "Scheduled",
+                        ConsentFormsCount = consentFormLinks.Count,
+                        ConsentFormNames = string.Join(", ", consentFormLinks.Select(f => f.ConsentFormName)),
+                        ClinicName = clinic?.ClinicName,
+                        EmailStatus = consentFormLinks.Any() ? "Sent" : "No forms to send"
                     },
-                    NotificationMessage = $"Follow-up appointment booked for {fullName} on {date:dd-MM-yyyy} at {time:hh\\:mm}."
+                    NotificationMessage = CreateNotificationMessage(fullName, date, time, consentFormLinks)
                 };
 
-                _logger.LogInformation("Follow-up appointment booked for existing patient HFID {HFID} in Clinic ID {ClinicId}", dto.HFID, clinicId);
+                _logger.LogInformation("Follow-up appointment booked for existing patient HFID {HFID} in Clinic ID {ClinicId}. Consent forms sent: {ConsentFormsCount}",
+                    dto.HFID, clinicId, consentFormLinks.Count);
+
                 return Ok(ApiResponseFactory.Success(response, "Follow-up appointment booked successfully."));
             }
             catch (Exception ex)
@@ -1063,6 +1220,108 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
         }
 
+
+
+
+
+        // Calendar View
+        [HttpGet("clinic/{clinicId}/calendar-url")]
+        [Authorize]
+        public async Task<IActionResult> GetClinicCalendarUrl([FromRoute] int clinicId)
+        {
+            HttpContext.Items["Log-Category"] = "Google Calendar URL";
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                return Unauthorized(ApiResponseFactory.Fail("Not authorized to access this clinic's calendar."));
+            }
+
+            try
+            {
+                var calendarUrl = await _googleCalendarService.GetCalendarEmbedUrlAsync(clinicId);
+
+                if (string.IsNullOrEmpty(calendarUrl))
+                {
+                    return NotFound(ApiResponseFactory.Fail("Google Calendar not configured for this clinic."));
+                }
+
+                var response = new
+                {
+                    CalendarUrl = calendarUrl,
+                    Message = "Open this URL to view your clinic's appointments in Google Calendar"
+                };
+
+                return Ok(ApiResponseFactory.Success(response, "Calendar URL retrieved successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving calendar URL for Clinic {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("Failed to retrieve calendar URL."));
+            }
+        }
+
+
+
+
+
+        [HttpPost("clinics/{clinicId}/setup-calendar-sharing")]
+        [Authorize]
+        public async Task<IActionResult> SetupCalendarSharing([FromRoute] int clinicId)
+        {
+            HttpContext.Items["Log-Category"] = "Calendar Sharing Setup";
+
+            try
+            {
+                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
+                if (clinic == null || string.IsNullOrEmpty(clinic.GoogleCalendarId))
+                    return BadRequest(ApiResponseFactory.Fail("Calendar not configured"));
+
+                if (string.IsNullOrEmpty(clinic.GoogleCredentialsPath) || !System.IO.File.Exists(clinic.GoogleCredentialsPath))
+                    return BadRequest(ApiResponseFactory.Fail("Credentials file not found"));
+
+                GoogleCredential credential;
+                using (var stream = new FileStream(clinic.GoogleCredentialsPath, FileMode.Open, FileAccess.Read))
+                {
+                    credential = GoogleCredential.FromStream(stream)
+                        .CreateScoped(CalendarService.Scope.Calendar);
+                }
+
+                var calendarService = new CalendarService(new BaseClientService.Initializer()
+                {
+                    HttpClientInitializer = credential,
+                    ApplicationName = $"HFiles Clinic - {clinic.ClinicName}",
+                });
+
+                // Make calendar publicly readable
+                var publicAcl = new Google.Apis.Calendar.v3.Data.AclRule
+                {
+                    Scope = new Google.Apis.Calendar.v3.Data.AclRule.ScopeData
+                    {
+                        Type = "default"
+                    },
+                    Role = "reader"
+                };
+
+                try
+                {
+                    await calendarService.Acl.Insert(publicAcl, clinic.GoogleCalendarId).ExecuteAsync();
+                    _logger.LogInformation("Calendar sharing configured for Clinic {ClinicId}", clinicId);
+                }
+                catch (Exception ex)
+                {
+                    // Might already be public
+                    _logger.LogWarning(ex, "Calendar might already be public for Clinic {ClinicId}", clinicId);
+                }
+
+                return Ok(ApiResponseFactory.Success("Calendar sharing configured successfully"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error setting up calendar sharing for Clinic {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
+            }
+        }
 
 
         /* ***************************************************************************************** */

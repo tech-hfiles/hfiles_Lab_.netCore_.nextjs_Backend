@@ -40,5 +40,8 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Required]
         [StringLength(20)]
         public string Status { get; set; } = "Scheduled";
+
+        [MaxLength(255)]
+        public string? GoogleCalendarEventId { get; set; }
     }
 }

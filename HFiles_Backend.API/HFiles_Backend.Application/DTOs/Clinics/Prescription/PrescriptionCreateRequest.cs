@@ -27,6 +27,10 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Prescription
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public MedicationTiming Timing { get; set; }
 
+        [Required(ErrorMessage = "Duration is required.")]
+        [MaxLength(50, ErrorMessage = "Duration cannot exceed 50 characters.")]
+        public string Duration { get; set; } = null!;
+
         [MaxLength(1000, ErrorMessage = "Instructions cannot exceed 1000 characters.")]
         public string? Instructions { get; set; }
     }

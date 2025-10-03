@@ -76,6 +76,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     MedicationDosage = request.MedicationDosage,
                     Frequency = request.Frequency,
                     Timing = request.Timing,
+                    Duration = request.Duration,
                     Instructions = request.Instructions
                 };
 
@@ -189,6 +190,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (request.MedicationDosage != null) existing.MedicationDosage = request.MedicationDosage;
                 if (request.Frequency.HasValue) existing.Frequency = request.Frequency.Value;
                 if (request.Timing.HasValue) existing.Timing = request.Timing.Value;
+                if (request.Duration != null) existing.Duration = request.Duration;
                 if (request.Instructions != null) existing.Instructions = request.Instructions;
 
                 await _clinicalPrescriptionRepository.UpdatePrescriptionAsync(existing);

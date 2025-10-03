@@ -17,9 +17,9 @@ namespace HFiles_Backend.Domain.Entities.Labs
         public int LabAuditLogId { get; set; }
 
         [ForeignKey("LabNotificationId")]
-        public LabNotification Notification { get; set; }
+        public LabNotification? Notification { get; set; }
 
         [ForeignKey("LabAuditLogId")]
-        public LabAuditLog AuditLog { get; set; }
+        public LabAuditLog? AuditLog { get; set; }
     }
 }

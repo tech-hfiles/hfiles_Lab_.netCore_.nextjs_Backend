@@ -50,6 +50,14 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Range(1, long.MaxValue, ErrorMessage = "CreatedAtEpoch must be a positive number.")]
         public long CreatedAtEpoch { get; set; }
 
+        [MaxLength(255)]
+        public string? GoogleCalendarId { get; set; }
+
+        [MaxLength(255)]
+        public string? GoogleServiceAccountEmail { get; set; }
+
+        [MaxLength(500)]
+        public string? GoogleCredentialsPath { get; set; }
         public ICollection<ClinicVisit> Visits { get; set; } = new List<ClinicVisit>();
     }
 }

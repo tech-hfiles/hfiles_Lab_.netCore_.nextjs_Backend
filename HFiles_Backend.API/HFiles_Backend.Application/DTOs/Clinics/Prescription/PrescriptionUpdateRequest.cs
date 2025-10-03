@@ -20,6 +20,9 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Prescription
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public MedicationTiming? Timing { get; set; }
 
+        [MaxLength(50)]
+        public string? Duration { get; set; }
+
         [MaxLength(1000)]
         public string? Instructions { get; set; }
     }

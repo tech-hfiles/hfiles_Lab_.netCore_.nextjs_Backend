@@ -5,6 +5,7 @@ using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.API.Middleware;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.API.Settings;
+using HFiles_Backend.API.Settings.HFiles_Backend.Application.Settings;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Domain.Interfaces;
@@ -241,6 +242,11 @@ try
 
 
     builder.Services.AddHangfireServer();
+
+    builder.Services.Configure<GoogleCalendarSettings>(
+    builder.Configuration.GetSection("GoogleCalendar"));
+
+    builder.Services.AddScoped<IGoogleCalendarService, GoogleCalendarService>();
 
 
     builder.Services.AddControllers()

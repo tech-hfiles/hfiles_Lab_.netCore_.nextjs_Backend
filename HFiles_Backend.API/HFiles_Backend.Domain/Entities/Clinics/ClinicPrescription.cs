@@ -28,6 +28,9 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Required]
         public MedicationTiming Timing { get; set; }
 
+        [MaxLength(50)]
+        public string? Duration { get; set; } 
+
         [MaxLength(1000)]
         public string? Instructions { get; set; }
     }

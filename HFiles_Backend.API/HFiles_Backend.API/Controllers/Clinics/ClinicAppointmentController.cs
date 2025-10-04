@@ -428,15 +428,16 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpPut("clinic/{clinicId:int}/appointment/{appointmentId:int}/status")]
         [Authorize]
         public async Task<IActionResult> UpdateAppointmentStatus(
-        [FromRoute] int clinicId,
-        [FromRoute] int appointmentId,
-        [FromBody] AppointmentStatusUpdateDto dto)
+      [FromRoute] int clinicId,
+      [FromRoute] int appointmentId,
+      [FromBody] AppointmentStatusUpdateDto dto)
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                var errors = ModelState.Values.SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage).ToList();
                 _logger.LogWarning("Validation failed for status update. Errors: {@Errors}", errors);
                 return BadRequest(ApiResponseFactory.Fail(errors));
             }
@@ -456,19 +457,76 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 var appointment = await _appointmentRepository.GetAppointmentByIdAsync(appointmentId, clinicId);
                 if (appointment == null)
                 {
-                    _logger.LogWarning("Appointment not found for ID {AppointmentId} in Clinic ID {ClinicId}", appointmentId, clinicId);
+                    _logger.LogWarning("Appointment not found for ID {AppointmentId} in Clinic ID {ClinicId}",
+                        appointmentId, clinicId);
                     return NotFound(ApiResponseFactory.Fail("Appointment not found."));
                 }
 
-                // Update status
+                // NEW: Handle HFID linking if provided
+                ClinicPatient? clinicPatient = null;
+                ClinicVisit? createdVisit = null;
+
+                if (!string.IsNullOrWhiteSpace(dto.HFID))
+                {
+                    // Step 1: Get user by HFID
+                    var user = await _userRepository.GetUserByHFIDAsync(dto.HFID);
+                    if (user == null)
+                    {
+                        _logger.LogWarning("No user found for HFID {HFID}", dto.HFID);
+                        return NotFound(ApiResponseFactory.Fail($"No user found for HFID: {dto.HFID}"));
+                    }
+
+                    // Step 2: Get or create clinic patient
+                    var fullName = $"{user.FirstName} {user.LastName}".Trim();
+                    clinicPatient = await _clinicVisitRepository.GetOrCreatePatientAsync(dto.HFID, fullName);
+
+                    // Step 3: Update appointment with user details
+                    appointment.VisitorUsername = fullName;
+                    appointment.VisitorPhoneNumber = user.PhoneNumber ?? "N/A";
+
+                    // Step 4: Check if visit already exists for this appointment date/time
+                    var existingVisit = await _clinicVisitRepository.GetExistingVisitAsyncWithTime(
+                        clinicPatient.Id,
+                        appointment.AppointmentDate,
+                        appointment.AppointmentTime);
+
+                    if (existingVisit == null)
+                    {
+                        // Step 5: Create clinic visit
+                        createdVisit = new ClinicVisit
+                        {
+                            ClinicPatientId = clinicPatient.Id,
+                            ClinicId = clinicId,
+                            AppointmentDate = appointment.AppointmentDate,
+                            AppointmentTime = appointment.AppointmentTime,
+                            PaymentMethod = null
+                        };
+
+                        await _clinicVisitRepository.SaveVisitAsync(createdVisit);
+
+                        _logger.LogInformation(
+                            "Created clinic visit for Patient {PatientName} (HFID: {HFID}) in Clinic {ClinicId}",
+                            fullName, dto.HFID, clinicId);
+                    }
+                    else
+                    {
+                        createdVisit = existingVisit;
+                        _logger.LogInformation(
+                            "Using existing visit ID {VisitId} for Patient {PatientName}",
+                            existingVisit.Id, fullName);
+                    }
+                }
+
+                // Update status logic (existing code)
                 if (!string.IsNullOrWhiteSpace(dto.Status))
                 {
                     appointment.Status = dto.Status;
 
-                    // Cancel in Google Calendar if status is Canceled
                     if (dto.Status == "Canceled" && !string.IsNullOrEmpty(appointment.GoogleCalendarEventId))
                     {
-                        await _googleCalendarService.CancelAppointmentAsync(appointment.ClinicId, appointment.GoogleCalendarEventId);
+                        await _googleCalendarService.CancelAppointmentAsync(
+                            appointment.ClinicId,
+                            appointment.GoogleCalendarEventId);
                     }
                 }
 
@@ -478,24 +536,25 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (dto.Status == "Canceled")
                 {
                     if (appointmentDateTime <= now)
-                        return BadRequest(ApiResponseFactory.Fail("Cannot cancel past or ongoing appointments."));
+                        return BadRequest(ApiResponseFactory.Fail(
+                            "Cannot cancel past or ongoing appointments."));
                 }
                 else if (dto.Status == "Completed")
                 {
                     if (appointment.AppointmentDate.Date != now.Date || appointmentDateTime > now)
-                        return BadRequest(ApiResponseFactory.Fail("Can only mark as completed if appointment is today and time has passed."));
+                        return BadRequest(ApiResponseFactory.Fail(
+                            "Can only mark as completed if appointment is today and time has passed."));
 
                     appointment.Treatment = dto.Treatment;
                 }
 
-                if (!string.IsNullOrWhiteSpace(dto.Status))
-                {
-                    appointment.Status = dto.Status;
-                }
+                // Save appointment changes
+                await _appointmentRepository.UpdateAsync(appointment);
                 await _clinicRepository.SaveChangesAsync();
                 await transaction.CommitAsync();
                 committed = true;
 
+                // Build response
                 var response = new
                 {
                     appointment.Id,
@@ -506,6 +565,17 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
                     appointment.Status,
                     appointment.Treatment,
+
+                    // NEW: Include patient linking info if HFID was provided
+                    PatientLinkInfo = !string.IsNullOrWhiteSpace(dto.HFID) ? new
+                    {
+                        HFID = dto.HFID,
+                        ClinicPatientId = clinicPatient?.Id,
+                        ClinicVisitId = createdVisit?.Id,
+                        PatientName = clinicPatient?.PatientName,
+                        LinkedSuccessfully = true
+                    } : null,
+
                     NotificationContext = new
                     {
                         PatientName = appointment.VisitorUsername,
@@ -514,20 +584,29 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         Time = appointment.AppointmentTime.ToString(@"hh\:mm"),
                         ClinicId = appointment.ClinicId,
                         NewStatus = appointment.Status,
-                        TreatmentDetails = appointment.Treatment
+                        TreatmentDetails = appointment.Treatment,
+                        HFID = dto.HFID,
+                        WasLinkedToPatient = !string.IsNullOrWhiteSpace(dto.HFID)
                     },
+
                     NotificationMessage = $"Appointment for {appointment.VisitorUsername} on {appointment.AppointmentDate:dd-MM-yyyy} at {appointment.AppointmentTime:hh\\:mm} has been updated to '{appointment.Status}'" +
-                            $"{(appointment.Status == "Completed" && !string.IsNullOrWhiteSpace(appointment.Treatment) ? $" with treatment noted as: {appointment.Treatment}." : ".")}"
+                        $"{(appointment.Status == "Completed" && !string.IsNullOrWhiteSpace(appointment.Treatment) ? $" with treatment noted as: {appointment.Treatment}." : ".")}" +
+                        $"{(!string.IsNullOrWhiteSpace(dto.HFID) ? $" Patient linked with HFID: {dto.HFID}." : "")}"
                 };
 
+                _logger.LogInformation(
+                    "Appointment ID {AppointmentId} status updated to {Status}{HfidInfo}",
+                    appointmentId,
+                    dto.Status,
+                    !string.IsNullOrWhiteSpace(dto.HFID) ? $" and linked to HFID {dto.HFID}" : "");
 
-                _logger.LogInformation("Appointment ID {AppointmentId} status updated to {Status}", appointmentId, dto.Status);
                 return Ok(ApiResponseFactory.Success(response, "Appointment status updated successfully."));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error while updating appointment status for ID {AppointmentId}", appointmentId);
-                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while updating appointment status."));
+                return StatusCode(500, ApiResponseFactory.Fail(
+                    "Unexpected error occurred while updating appointment status."));
             }
             finally
             {

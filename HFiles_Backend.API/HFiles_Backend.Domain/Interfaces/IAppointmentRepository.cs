@@ -12,5 +12,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<int> MarkOverdueAppointmentsAsAbsentAsync();
         Task AddRangeAsync(IEnumerable<ClinicAppointment> appointments);
         Task<int> SaveChangesAsync();
+        Task UpdateAsync(ClinicAppointment appointment);
     }
 }

@@ -103,5 +103,11 @@ namespace HFiles_Backend.Infrastructure.Repositories
         {
             return await _context.SaveChangesAsync();
         }
+        public async Task UpdateAsync(ClinicAppointment appointment)
+        {
+            _context.ClinicAppointments.Update(appointment);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Updated appointment ID {AppointmentId}", appointment.Id);
+        }
     }
 }

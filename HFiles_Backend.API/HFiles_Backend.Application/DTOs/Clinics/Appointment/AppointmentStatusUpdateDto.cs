@@ -10,6 +10,8 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Appointment
         [MaxLength(1000, ErrorMessage = "Treatment notes must not exceed 1000 characters.")]
         public string? Treatment { get; set; }
 
+        [StringLength(50, ErrorMessage = "HFID must not exceed 50 characters.")]
+        public string? HFID { get; set; }
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
             if (Status == "Completed" && string.IsNullOrWhiteSpace(Treatment))

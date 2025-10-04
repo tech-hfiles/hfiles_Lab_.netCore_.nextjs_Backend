@@ -13,5 +13,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<ClinicVisit?> GetByIdAsync(int visitId);
         Task UpdateAsync(ClinicVisit visit);
         Task<ClinicVisit?> GetExistingVisitAsync(int clinicPatientId, DateTime appointmentDate);
+        Task<ClinicVisit?> GetExistingVisitAsyncWithTime(int clinicPatientId, DateTime appointmentDate, TimeSpan appointmentTime);
     }
 }

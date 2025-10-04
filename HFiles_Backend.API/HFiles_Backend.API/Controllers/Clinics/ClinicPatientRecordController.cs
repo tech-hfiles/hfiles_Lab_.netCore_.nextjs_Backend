@@ -139,7 +139,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
         // Fetch JSON Data
-        // Fetch JSON Data
         [HttpGet("clinic/{clinicId}/patient/{patientId}/visit/{clinicVisitId}/records")]
         [Authorize]
         public async Task<IActionResult> GetPatientRecordsByVisit(

@@ -293,7 +293,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [Authorize]
         public async Task<IActionResult> UploadPatientDocuments([FromForm] ClinicPatientDocumentUploadRequest request)
         {
-            HttpContext.Items["Log-Category"] = "Patient Document Upload";
+            HttpContext.Items["Log-Category"] = "Clinic Patient Documents Upload";
 
             if (!ModelState.IsValid || request.Documents == null || !request.Documents.Any())
                 return BadRequest(ApiResponseFactory.Fail("Invalid request. Documents are required."));

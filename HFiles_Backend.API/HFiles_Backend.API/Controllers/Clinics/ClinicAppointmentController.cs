@@ -710,7 +710,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
          [FromBody] FollowUpAppointmentDto dto,
          [FromRoute] int clinicId)
         {
-            HttpContext.Items["Log-Category"] = "Follow-up Appointment";
+            HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
             if (!ModelState.IsValid)
             {
@@ -948,7 +948,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             [FromBody] FollowUpAppointmentDto dto,
             [FromRoute] int clinicId)
         {
-            HttpContext.Items["Log-Category"] = "Follow-up Appointment (Existing Patient)";
+            HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
             if (!ModelState.IsValid)
             {

@@ -69,7 +69,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [FromRoute] int visitConsentFormId,
         [FromForm] ConsentFormUploadRequest request)
         {
-            HttpContext.Items["Log-Category"] = "Consent Form Upload";
+            HttpContext.Items["Log-Category"] = "Clinic Consent Form Upload";
 
             if (request.PdfFile == null || request.PdfFile.Length == 0)
                 return BadRequest(ApiResponseFactory.Fail("No PDF file uploaded."));
@@ -260,7 +260,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             [FromRoute] int patientId,
             [FromBody] SendConsentFormsRequest request)
         {
-            HttpContext.Items["Log-Category"] = "Send Consent Form";
+            HttpContext.Items["Log-Category"] = "Clinic Consent Form";
 
             if (!ModelState.IsValid)
             {

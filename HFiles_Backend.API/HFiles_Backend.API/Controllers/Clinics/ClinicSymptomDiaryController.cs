@@ -34,7 +34,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [Authorize]
         public async Task<IActionResult> SendSymptomDiary([FromForm] SendSymptomDiaryRequest request)
         {
-            HttpContext.Items["Log-Category"] = "Symptom Diary Email";
+            HttpContext.Items["Log-Category"] = "Clinic Symptom Diary";
 
             // Validation
             if (!ModelState.IsValid)

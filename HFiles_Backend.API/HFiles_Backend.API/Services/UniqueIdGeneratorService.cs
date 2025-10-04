@@ -20,7 +20,7 @@ namespace HFiles_Backend.API.Services
         { RecordType.Treatment, "TRT" },
         { RecordType.Invoice, "INV" },
         { RecordType.Receipt, "REC" }
-    };
+    };           
 
         public async Task<string> GenerateUniqueIdAsync(int clinicId, RecordType recordType)
         {

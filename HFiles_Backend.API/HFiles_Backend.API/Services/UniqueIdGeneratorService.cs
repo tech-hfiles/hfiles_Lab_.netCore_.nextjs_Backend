@@ -25,8 +25,8 @@ namespace HFiles_Backend.API.Services
         public async Task<string> GenerateUniqueIdAsync(int clinicId, RecordType recordType)
         {
             // Use transaction with serializable isolation to prevent race conditions
-            using var transaction = await _context.Database.BeginTransactionAsync(
-                System.Data.IsolationLevel.Serializable);
+            //using var transaction = await _context.Database.BeginTransactionAsync(
+            //    System.Data.IsolationLevel.Serializable);
 
             try
             {
@@ -51,7 +51,7 @@ namespace HFiles_Backend.API.Services
                 counter.LastNumber++;
 
                 await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
+                //await transaction.CommitAsync();
 
                 // Generate formatted ID
                 var prefix = RecordPrefixes[recordType];
@@ -65,7 +65,7 @@ namespace HFiles_Backend.API.Services
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
+                //await transaction.RollbackAsync();
                 _logger.LogError(ex,
                     "Error generating unique ID for Clinic {ClinicId}, RecordType {RecordType}",
                     clinicId, recordType);

@@ -72,8 +72,8 @@ namespace HFiles_Backend.Infrastructure.Repositories
         public async Task UpdateAsync(ClinicVisit visit)
         {
             _context.ClinicVisits.Update(visit);
-            //await _context.SaveChangesAsync();
-            await Task.CompletedTask;
+            await _context.SaveChangesAsync();
+            //await Task.CompletedTask;
         }
 
         public async Task<ClinicVisit?> GetExistingVisitAsync(int clinicPatientId, DateTime appointmentDate)

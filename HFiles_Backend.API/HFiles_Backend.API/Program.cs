@@ -206,6 +206,7 @@ try
     builder.Services.AddHostedService<TokenCleanupBackgroundService>();
     builder.Services.AddScoped<IClinicPatientMedicalHistoryRepository, ClinicPatientMedicalHistoryRepository>();
     builder.Services.AddScoped<ClinicPatientMedicalHistoryRepository, ClinicPatientMedicalHistoryRepository>();
+    builder.Services.AddScoped<IUniqueIdGeneratorService, UniqueIdGeneratorService>();
 
 
     // DbContext

@@ -381,5 +381,6 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<ClinicPatientRecord> ClinicPatientRecords { get; set; }
         public DbSet<BlacklistedToken> BlacklistedTokens { get; set; }
         public DbSet<ClinicPatientMedicalHistory> ClinicPatientMedicalHistories { get; set; }
+        public DbSet<ClinicRecordCounter> ClinicRecordCounters { get; set; }
     }
 }

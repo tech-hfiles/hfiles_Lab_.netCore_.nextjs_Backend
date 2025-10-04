@@ -13,22 +13,29 @@ namespace HFiles_Backend.Infrastructure.Repositories
         private readonly AppDbContext _context = context ?? throw new ArgumentNullException(nameof(context));
         private readonly ILogger<ClinicPatientMedicalHistoryRepository> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        public async Task<ClinicPatientMedicalHistory?> GetByClinicPatientIdAsync(int clinicPatientId, int clinicId)
+        public async Task<ClinicPatientMedicalHistory?> GetByClinicPatientIdAsync(int patientId, int clinicId)
         {
             try
             {
-                return await _context.ClinicPatientMedicalHistories
+                return await (from history in _context.ClinicPatientMedicalHistories
+                              join clinicPatient in _context.ClinicPatients
+                                  on history.ClinicPatientId equals clinicPatient.Id
+                              join user in _context.Users
+                                  on clinicPatient.HFID equals user.HfId
+                              where user.Id == patientId
+                                  && history.ClinicId == clinicId
+                                  && history.DeletedBy == 0
+                                  && user.DeletedBy == 0
+                              select history)
                     .Include(h => h.ClinicPatient)
                     .Include(h => h.Clinic)
-                    .FirstOrDefaultAsync(h =>
-                        h.ClinicPatientId == clinicPatientId &&
-                        h.ClinicId == clinicId &&
-                        h.DeletedBy == 0);
+                    .FirstOrDefaultAsync();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving medical history for ClinicPatient ID: {ClinicPatientId}, Clinic ID: {ClinicId}",
-                    clinicPatientId, clinicId);
+                _logger.LogError(ex,
+                    "Error retrieving medical history for Patient ID: {PatientId}, Clinic ID: {ClinicId}",
+                    patientId, clinicId);
                 throw;
             }
         }
@@ -86,20 +93,28 @@ namespace HFiles_Backend.Infrastructure.Repositories
             }
         }
 
-        public async Task<bool> ExistsAsync(int clinicPatientId, int clinicId)
+        public async Task<bool> ExistsAsync(int patientId, int clinicId)
         {
             try
             {
-                return await _context.ClinicPatientMedicalHistories
-                    .AnyAsync(h =>
-                        h.ClinicPatientId == clinicPatientId &&
-                        h.ClinicId == clinicId &&
-                        h.DeletedBy == 0);
+                // Using join-based approach for optimal performance (single query)
+                return await (from history in _context.ClinicPatientMedicalHistories
+                              join clinicPatient in _context.ClinicPatients
+                                  on history.ClinicPatientId equals clinicPatient.Id
+                              join user in _context.Users
+                                  on clinicPatient.HFID equals user.HfId
+                              where user.Id == patientId
+                                  && history.ClinicId == clinicId
+                                  && history.DeletedBy == 0
+                                  && user.DeletedBy == 0
+                              select history)
+                    .AnyAsync();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error checking existence of medical history for ClinicPatient ID: {ClinicPatientId}, Clinic ID: {ClinicId}",
-                    clinicPatientId, clinicId);
+                _logger.LogError(ex,
+                    "Error checking existence of medical history for Patient ID: {PatientId}, Clinic ID: {ClinicId}",
+                    patientId, clinicId);
                 throw;
             }
         }

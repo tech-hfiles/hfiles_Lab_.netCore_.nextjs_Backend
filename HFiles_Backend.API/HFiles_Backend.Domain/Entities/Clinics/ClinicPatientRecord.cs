@@ -31,6 +31,9 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Required]
         public RecordType Type { get; set; }
 
+        [MaxLength(20)]
+        public string? UniqueRecordId { get; set; }
+
         [Required]
         public string JsonData { get; set; } = null!;
         public bool SendToPatient { get; set; } 

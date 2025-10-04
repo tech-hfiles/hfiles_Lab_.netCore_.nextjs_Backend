@@ -1186,9 +1186,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         HFID = patient.HFID,
                         ProfilePhoto = profilePhoto,
                         LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
-                        PaymentStatus = lastVisit != null
-                        ? Enum.GetName(typeof(PaymentMethod), lastVisit.PaymentMethod) ?? "Pending"
-                        : "Pending",
+                        PaymentStatus = Enum.GetName(typeof(PaymentMethod), lastVisit?.PaymentMethod ?? default) ?? "Pending",
 
                         TreatmentNames = treatmentNames.Any()
                                          ? string.Join(", ", treatmentNames)

@@ -1186,7 +1186,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         HFID = patient.HFID,
                         ProfilePhoto = profilePhoto,
                         LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
-                        PaymentStatus = lastVisit.PaymentMethod?.ToString() ?? "Pending",
+                        PaymentStatus = lastVisit != null
+                        ? Enum.GetName(typeof(PaymentMethod), lastVisit.PaymentMethod) ?? "Pending"
+                        : "Pending",
+
                         TreatmentNames = treatmentNames.Any()
                                          ? string.Join(", ", treatmentNames)
                                          : "-",
@@ -1223,8 +1226,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-
-<<<<<<< Updated upstream
         // Calendar View
         [HttpGet("clinic/{clinicId}/calendar-url")]
         [Authorize]
@@ -1325,8 +1326,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
         }
 
 
-=======
->>>>>>> Stashed changes
         /* ***************************************************************************************** */
         ////ARTHROSE APPOINTMENTS API
 

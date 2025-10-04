@@ -18,5 +18,6 @@ namespace HFiles_Backend.API.Interfaces
        string clinicName,
        string appointmentDate,
        string appointmentTime);
+        string GenerateEmailBodySymptomDiary(string? firstName, string clinicName);
     }
 }

@@ -204,6 +204,8 @@ try
     builder.Services.AddScoped<ClinicMedicalHistoryRepository, ClinicMedicalHistoryRepository>();
     builder.Services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
     builder.Services.AddHostedService<TokenCleanupBackgroundService>();
+    builder.Services.AddScoped<IClinicPatientMedicalHistoryRepository, ClinicPatientMedicalHistoryRepository>();
+    builder.Services.AddScoped<ClinicPatientMedicalHistoryRepository, ClinicPatientMedicalHistoryRepository>();
 
 
     // DbContext

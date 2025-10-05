@@ -92,6 +92,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return BadRequest(ApiResponseFactory.Fail($"No email address found for user with HFID {request.HFID}."));
                 }
 
+                HttpContext.Items["Sent-To-UserId"] = user.Id ;
+                ;
+
                 // Get clinic details
                 var clinic = await _clinicRepository.GetByIdAsync(request.ClinicId);
                 if (clinic == null)
@@ -133,7 +136,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     "Symptom diary sent successfully to {Email} for HFID: {HFID} from Clinic ID: {ClinicId}",
                     user.Email, request.HFID, request.ClinicId
                 );
-
+                // Create user notification message
+                var userNotificationMessage = $"{clinicName} has sent you a symptom diary to fill out. Please check your email at {user.Email} to complete it.";
                 // Send notification
                 var notificationMessage = $"{clinicName} has sent you a symptom diary over your email {user.Email}. Kindly check your inbox.";
 
@@ -160,7 +164,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     FileName = request.SymptomDiaryFile.FileName,
                     FileSizeMB = Math.Round((decimal)request.SymptomDiaryFile.Length / (1024 * 1024), 2),
                     SentAt = DateTime.UtcNow,
-                    notificationMessage = notificationMessage
+                    notificationMessage = notificationMessage,
+                    UserNotificationMessage = userNotificationMessage
                 };
 
                 return Ok(ApiResponseFactory.Success(response, "Symptom diary sent successfully via email and notification sent."));

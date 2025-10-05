@@ -1,4 +1,6 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Entities.Users;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HFiles_Backend.Domain.Entities.Labs
@@ -16,6 +18,8 @@ namespace HFiles_Backend.Domain.Entities.Labs
         public string? EntityName { get; set; }
         public string? Details { get; set; }
         public string? Notifications { get; set; }
+        public int? SentToUserId { get; set; }
+        public string? SentToUserNotifications { get; set; }
         public long Timestamp { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         public string? IpAddress { get; set; }
         public string? SessionId { get; set; }

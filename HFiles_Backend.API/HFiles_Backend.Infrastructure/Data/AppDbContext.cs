@@ -110,7 +110,7 @@ namespace HFiles_Backend.Infrastructure.Data
             modelBuilder.Entity<LabSuperAdmin>().ToTable("labsuperadmins", t => t.ExcludeFromMigrations());
             modelBuilder.Entity<LabMember>().ToTable("labmembers", t => t.ExcludeFromMigrations());
             modelBuilder.Entity<LabResendReports>().ToTable("labresendreports", t => t.ExcludeFromMigrations());
-            modelBuilder.Entity<LabAuditLog>().ToTable("labauditlogs", t => t.ExcludeFromMigrations());
+            //modelBuilder.Entity<LabAuditLog>().ToTable("labauditlogs", t => t.ExcludeFromMigrations());
             modelBuilder.Entity<LabErrorLog>().ToTable("laberrorlogs", t => t.ExcludeFromMigrations());
 
 
@@ -382,5 +382,6 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<BlacklistedToken> BlacklistedTokens { get; set; }
         public DbSet<ClinicPatientMedicalHistory> ClinicPatientMedicalHistories { get; set; }
         public DbSet<ClinicRecordCounter> ClinicRecordCounters { get; set; }
+        //public DbSet<NotificationAuditLog> NotificationAuditLogs { get; set; }
     }
 }

@@ -115,6 +115,11 @@ namespace HFiles_Backend.API.Services
                                 ? note.GetString()
                                 : "No notification message found.";
 
+                            string? userNotificationMessage = dataElement.TryGetProperty("userNotificationMessage", out var usernote) &&
+                                                         usernote.ValueKind == JsonValueKind.String
+                               ? usernote.GetString()
+                               : "No user notification message found.";
+
                             var log = new LabAuditLog
                             {
                                 LabId = labId,
@@ -123,6 +128,7 @@ namespace HFiles_Backend.API.Services
                                 BranchId = responseLabId != labId ? responseLabId : null,
                                 EntityName = context.ActionDescriptor.RouteValues["controller"],
                                 Category = httpContext.Items["Log-Category"]?.ToString(),
+                                SentToUserId = httpContext.Items["Sent-To-UserId"] as int?,
                                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                                 IpAddress = httpContext.Connection.RemoteIpAddress?.ToString(),
                                 SessionId = sessionId,
@@ -131,7 +137,8 @@ namespace HFiles_Backend.API.Services
                                 Details = $"""
                                     Response Body: {TruncateIfNeeded(responsePayload)}
                                     """,
-                                Notifications = notificationMessage
+                                Notifications = notificationMessage,
+                                SentToUserNotifications = userNotificationMessage
                             };
 
                             dbContext.LabAuditLogs.Add(log);

@@ -316,12 +316,31 @@ namespace HFiles_Backend.API.Controllers.Clinics
             if (user == null)
                 return NotFound(ApiResponseFactory.Fail("User not found for provided HFID."));
 
+            if (string.IsNullOrWhiteSpace(user.Email))
+            {
+                _logger.LogWarning("User email not found for HFID: {HFID}", clinicPatient.HFID);
+                return BadRequest(ApiResponseFactory.Fail($"No email address found for user with HFID {clinicPatient.HFID}."));
+            }
+
+            HttpContext.Items["Sent-To-UserId"] = user.Id;
+
+            // Get clinic details
+            var clinic = await _clinicRepository.GetByIdAsync(request.ClinicId);
+            if (clinic == null)
+            {
+                _logger.LogWarning("Clinic not found for Clinic ID: {ClinicId}", request.ClinicId);
+                return NotFound(ApiResponseFactory.Fail($"Clinic with ID {request.ClinicId} not found."));
+            }
+
+            var clinicName = clinic.ClinicName ?? "Clinic";
 
             await using var transaction = await _clinicRepository.BeginTransactionAsync();
             bool committed = false;
 
             try
             {
+                var uploadedDocumentDetails = new List<string>();
+
                 foreach (var doc in request.Documents)
                 {
                     var uploadedExtension = Path.GetExtension(doc.PdfFile?.FileName)?.ToLower();
@@ -361,7 +380,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                                             ReportCategory = (int)ReportType.LabReport,
                                             ReportUrl = imageUrl,
                                             EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                                            FileSize = 0, // Optional: You can’t get size from URL unless stored separately
+                                            FileSize = 0,
                                             UploadedBy = "Clinic",
                                             UserType = user.UserReference == 0 ? "Independent" : "Dependent",
                                             DeletedBy = 0
@@ -369,6 +388,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                                         await _userRepository.SaveAsync(report);
                                     }
+                                    uploadedDocumentDetails.Add("Images (Lab Report)");
                                 }
                             }
                             catch (Exception ex)
@@ -414,35 +434,47 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                     if (s3Url != null)
                     {
+                        var reportCategory = doc.Type switch
+                        {
+                            RecordType.Prescription => (int)ReportType.MedicationsPrescription,
+                            RecordType.Treatment => (int)ReportType.MedicationsPrescription,
+                            RecordType.Invoice => (int)ReportType.InvoicesInsurance,
+                            RecordType.Receipt => (int)ReportType.InvoicesInsurance,
+                            RecordType.Images => (int)ReportType.LabReport,
+                            _ => (int)ReportType.Unknown
+                        };
+
                         var report = new UserReport
                         {
                             UserId = user.Id,
                             ReportName = $"{doc.Type}",
-                            ReportCategory = doc.Type switch
-                            {
-                                RecordType.Prescription => (int)ReportType.MedicationsPrescription,
-                                RecordType.Treatment => (int)ReportType.MedicationsPrescription,
-                                RecordType.Invoice => (int)ReportType.InvoicesInsurance,
-                                RecordType.Receipt => (int)ReportType.InvoicesInsurance,
-                                RecordType.Images => (int)ReportType.LabReport,
-                                _ => (int)ReportType.Unknown
-                            },
+                            ReportCategory = reportCategory,
                             ReportUrl = s3Url,
                             EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                             FileSize = Math.Round((decimal)(doc.PdfFile?.Length ?? 0) / 1024, 2),
                             UploadedBy = "Clinic",
-                            //LabId = request.ClinicId,
                             UserType = user.UserReference == 0 ? "Independent" : "Dependent",
                             DeletedBy = 0
                         };
 
                         await _userRepository.SaveAsync(report);
+
+                        // Add document detail with category for notification
+                        var categoryName = doc.Type switch
+                        {
+                            RecordType.Prescription => "Medications/Prescription",
+                            RecordType.Treatment => "Medications/Prescription",
+                            RecordType.Invoice => "Invoices/Insurance",
+                            RecordType.Receipt => "Invoices/Insurance",
+                            RecordType.Images => "Lab Report",
+                            _ => "Unknown"
+                        };
+
+                        uploadedDocumentDetails.Add($"{doc.Type} ({categoryName})");
                     }
                 }
 
                 await _clinicVisitRepository.UpdateAsync(visit);
-                await transaction.CommitAsync();
-                committed = true;
 
                 var patientName = clinicPatient?.PatientName ?? $"{user?.FirstName} {user?.LastName}" ?? "N/A";
                 string appointmentDate = visit?.AppointmentDate != null
@@ -455,35 +487,51 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 var uploadedDocs = request.Documents.Select(d => d.Type.ToString()).ToList();
 
+                var documentsFormatted = string.Join("\n", uploadedDocumentDetails.Select((doc, index) =>
+                    $"{index + 1}. {doc}"));
+
+                var userNotificationMessage = $"{clinicName} has uploaded {uploadedDocumentDetails.Count} document(s) to your account. You can view them in the All Reports section under the following categories:\n\n{documentsFormatted}";
+
+                await transaction.CommitAsync();
+                committed = true;
+
                 // Response + Notification
                 var response = new
                 {
                     PatientName = patientName,
+                    PatientHFID = clinicPatient?.HFID,
+                    ClinicName = clinicName,
+                    Email = user?.Email,
                     AppointmentDate = appointmentDate,
                     AppointmentTime = appointmentTime,
                     UploadedDocuments = uploadedDocs,
+                    DocumentDetails = uploadedDocumentDetails,
+                    SentAt = DateTime.UtcNow,
+                    NotificationMessage =
+                     $"Documents ({string.Join(", ", uploadedDocs)}) uploaded for patient {patientName} on HF account {clinicPatient?.HFID} for {appointmentDate} at {appointmentTime}.",
+                    UserNotificationMessage = userNotificationMessage,
 
                     NotificationContext = new
                     {
                         ClinicId = request.ClinicId,
+                        ClinicName = clinicName,
                         PatientId = request.PatientId,
                         ClinicVisitId = request.ClinicVisitId,
                         HFID = clinicPatient?.HFID,
                         PatientName = patientName,
                         AppointmentDate = appointmentDate,
                         AppointmentTime = appointmentTime,
-                        UploadedDocuments = uploadedDocs
-                    },
-                    NotificationMessage =
-                     $"Documents ({string.Join(", ", uploadedDocs)}) uploaded for patient {patientName} on HF account {clinicPatient?.HFID} for {appointmentDate} at {appointmentTime}."
-
+                        UploadedDocuments = uploadedDocs,
+                        DocumentDetails = uploadedDocumentDetails
+                    }
                 };
 
                 _logger.LogInformation(
                     "Uploaded documents ({Documents}) for Clinic ID {ClinicId}, Patient ID {PatientId}, Appointment on {AppointmentDate} {AppointmentTime}",
                     string.Join(", ", uploadedDocs), request.ClinicId, request.PatientId, appointmentDate, appointmentTime
                 );
-                return Ok(ApiResponseFactory.Success(response, "Documents uploaded successfully."));
+
+                return Ok(ApiResponseFactory.Success(response, "Documents uploaded successfully and notification sent."));
             }
             catch (Exception ex)
             {

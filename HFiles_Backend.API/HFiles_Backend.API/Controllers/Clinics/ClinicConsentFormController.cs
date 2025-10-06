@@ -324,6 +324,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return NotFound(ApiResponseFactory.Fail("FirstName not found for this patient."));
                 }
 
+                HttpContext.Items["Sent-To-UserId"] = user.Id;
+
                 // Validate visit exists for this patient and clinic
                 var visit = await _clinicRepository.GetVisitAsync(clinicId, patientId, DateTime.Today);
                 if (visit == null)
@@ -394,7 +396,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         // Default fallback
                         formUrl = "PublicTMDConsentForm";
                     }
-
+                  
                     var consentFormLink = $"{baseUrl}/{formUrl}?ConsentId={entry.Id}&ConsentName={encodedConsentName}&hfid={targetPatient.HFID}";
 
                     consentFormLinks.Add(new ConsentFormLinkInfo
@@ -421,6 +423,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 await transaction.CommitAsync();
                 committed = true;
+
+                var consentFormLinksFormatted = string.Join("\n", consentFormLinks.Select((link, index) =>
+                $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"));
+
+                var userNotificationMessage = $"{clinic.ClinicName} has sent you {consentFormEntries.Count} consent form(s) to complete. Please check the links below:\n\n{consentFormLinksFormatted}";
 
                 // Response with notification
                 var response = new
@@ -449,7 +456,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         ConsentFormNames = consentFormNames,
                         Status = "Sent"
                     },
-                    NotificationMessage = $"{consentFormEntries.Count} consent form(s) have been sent to {targetPatient.PatientName} on their HF Account (HFID: {targetPatient.HFID}). Forms: {consentFormNames}"
+                    NotificationMessage = $"{consentFormEntries.Count} consent form(s) have been sent to {targetPatient.PatientName} on their HF Account (HFID: {targetPatient.HFID}). Forms: {consentFormNames}",
+                    UserNotificationMessage = userNotificationMessage
                 };
 
                 _logger.LogInformation(

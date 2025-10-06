@@ -93,7 +93,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
 
                 HttpContext.Items["Sent-To-UserId"] = user.Id ;
-                ;
 
                 // Get clinic details
                 var clinic = await _clinicRepository.GetByIdAsync(request.ClinicId);
@@ -103,7 +102,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return NotFound(ApiResponseFactory.Fail($"Clinic with ID {request.ClinicId} not found."));
                 }
 
-                var clinicName = clinic.ClinicName ?? "Your Clinic";
+                var clinicName = clinic.ClinicName ?? "Clinic";
 
                 // Prepare email
                 var emailSubject = $"Symptom Diary from {clinicName}";

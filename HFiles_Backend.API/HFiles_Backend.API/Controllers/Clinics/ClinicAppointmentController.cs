@@ -765,6 +765,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return NotFound(ApiResponseFactory.Fail("No FirstName found for provided HFID."));
                 }
 
+                HttpContext.Items["Sent-To-UserId"] = user.Id;
                 var fullName = $"{user.FirstName} {user.LastName}";
                 var phone = user.PhoneNumber ?? "N/A";
 
@@ -880,7 +881,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         }
                     }
                 }
-
+                var consentFormsInfo = consentFormLinks.Any()
+          ? $"\n\nConsent Forms to Complete:\n{string.Join("\n", consentFormLinks.Select((link, index) => $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"))}"
+          : "";
+                var appointmentDateFormatted = date.ToString("dd-MM-yyyy");
+                var appointmentTimeFormatted = time.ToString(@"hh\:mm");
+                var userNotificationMessage = $"{clinic?.ClinicName} has scheduled an appointment for you on {appointmentDateFormatted} at {appointmentTimeFormatted}. Please arrive on time.{consentFormsInfo}";
                 // Response + Notification
                 var response = new
                 {
@@ -917,7 +923,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         ClinicName = clinic?.ClinicName,
                         EmailStatus = consentFormLinks.Any() ? "Sent" : "No forms to send"
                     },
-                    NotificationMessage = CreateNotificationMessage(patient.PatientName, date, time, consentFormLinks)
+                    NotificationMessage = CreateNotificationMessage(patient.PatientName, date, time, consentFormLinks),
+                    UserNotificationMessage = userNotificationMessage
                 };
 
                 _logger.LogInformation("Follow-up appointment created for HFID {HFID} and ClinicId {ClinicId}. Consent forms sent: {ConsentFormsCount}",
@@ -1000,6 +1007,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return NotFound(ApiResponseFactory.Fail("No FirstName found for provided HFID."));
                 }
 
+                HttpContext.Items["Sent-To-UserId"] = user.Id;
                 var fullName = $"{user.FirstName} {user.LastName}";
                 var phone = user.PhoneNumber ?? "N/A";
 
@@ -1112,7 +1120,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         }
                     }
                 }
+                var appointmentDateFormatted = date.ToString("dd-MM-yyyy");
+                var appointmentTimeFormatted = time.ToString(@"hh\:mm");
 
+                var consentFormsInfo = consentFormLinks.Any()
+                    ? $"\n\nConsent Forms to Complete:\n{string.Join("\n", consentFormLinks.Select((link, index) => $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"))}"
+                    : "";
+
+                var userNotificationMessage = $"{clinic?.ClinicName} has scheduled a follow-up appointment for you on {appointmentDateFormatted} at {appointmentTimeFormatted}. Please arrive on time.{consentFormsInfo}";
                 // Response + Notification
                 var response = new
                 {
@@ -1149,7 +1164,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         ClinicName = clinic?.ClinicName,
                         EmailStatus = consentFormLinks.Any() ? "Sent" : "No forms to send"
                     },
-                    NotificationMessage = CreateNotificationMessage(fullName, date, time, consentFormLinks)
+                    NotificationMessage = CreateNotificationMessage(fullName, date, time, consentFormLinks),
+                    UserNotificationMessage = userNotificationMessage
                 };
 
                 _logger.LogInformation("Follow-up appointment booked for existing patient HFID {HFID} in Clinic ID {ClinicId}. Consent forms sent: {ConsentFormsCount}",
@@ -1266,7 +1282,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         ProfilePhoto = profilePhoto,
                         LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
                         PaymentStatus = Enum.GetName(typeof(PaymentMethod), lastVisit?.PaymentMethod ?? default) ?? "Pending",
-                                    
+
                         TreatmentNames = treatmentNames.Any()
                                          ? string.Join(", ", treatmentNames)
                                          : "-",
@@ -1404,7 +1420,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-/* ***************************************************************************************** */
+        /* ***************************************************************************************** */
         ////ARTHROSE APPOINTMENTS API
 
 

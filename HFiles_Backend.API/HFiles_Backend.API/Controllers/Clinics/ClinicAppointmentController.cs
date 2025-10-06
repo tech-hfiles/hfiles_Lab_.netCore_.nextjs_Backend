@@ -1420,6 +1420,139 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
+
+        /// <summary>
+        /// Retrieves clinic statistics including total patients and appointments
+        /// </summary>
+        /// <param name="clinicId">The clinic ID to fetch statistics for</param>
+        /// <returns>Total patients and appointments count with detailed breakdown</returns>
+        [HttpGet("clinic/{clinicId:int}/statistics")]
+        [Authorize]
+        public async Task<IActionResult> GetClinicStatistics([FromRoute] int clinicId)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Statistics";
+
+            // Input validation
+            if (clinicId <= 0)
+            {
+                _logger.LogWarning("Invalid clinic ID provided: {ClinicId}", clinicId);
+                return BadRequest(ApiResponseFactory.Fail("Clinic ID must be a positive integer."));
+            }
+
+            // Authorization check
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized statistics access attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view statistics for this clinic."));
+            }
+
+            try
+            {
+                // Verify clinic exists
+                var clinicExists = await _clinicRepository.ExistsAsync(clinicId);
+                if (!clinicExists)
+                {
+                    _logger.LogWarning("Clinic not found for ID {ClinicId}", clinicId);
+                    return NotFound(ApiResponseFactory.Fail("Clinic not found."));
+                }
+
+                // Fetch all appointments for the clinic
+                var appointments = await _appointmentRepository.GetAppointmentsByClinicIdAsync(clinicId);
+
+                // Fetch all visits to count unique patients
+                var visits = await _clinicVisitRepository.GetVisitsByClinicIdAsync(clinicId);
+
+                // Get unique patient IDs from visits
+                var uniquePatientIds = visits
+                    .Select(v => v.ClinicPatientId)
+                    .Distinct()
+                    .ToList();
+
+                // Calculate statistics
+                var totalPatients = uniquePatientIds.Count;
+                var totalAppointments = appointments.Count;
+
+                // Appointment breakdown by status
+                var scheduledAppointments = appointments.Count(a => a.Status == "Scheduled");
+                var completedAppointments = appointments.Count(a => a.Status == "Completed");
+                var canceledAppointments = appointments.Count(a => a.Status == "Canceled");
+                var absentAppointments = appointments.Count(a => a.Status == "Absent");
+
+                // Today's statistics
+                var today = DateTime.Today;
+                var todayAppointments = appointments.Count(a => a.AppointmentDate.Date == today);
+                var todayCompletedAppointments = appointments.Count(a =>
+                    a.AppointmentDate.Date == today && a.Status == "Completed");
+
+                // Current month statistics
+                var currentMonth = DateTime.Today.Month;
+                var currentYear = DateTime.Today.Year;
+                var monthlyAppointments = appointments.Count(a =>
+                    a.AppointmentDate.Month == currentMonth &&
+                    a.AppointmentDate.Year == currentYear);
+
+                // Build response
+                var response = new
+                {
+                    ClinicId = clinicId,
+                    TotalPatients = totalPatients,
+                    TotalAppointments = totalAppointments,
+
+                    AppointmentsByStatus = new
+                    {
+                        Scheduled = scheduledAppointments,
+                        Completed = completedAppointments,
+                        Canceled = canceledAppointments,
+                        Absent = absentAppointments
+                    },
+
+                    TodayStatistics = new
+                    {
+                        TotalAppointments = todayAppointments,
+                        CompletedAppointments = todayCompletedAppointments,
+                        Date = today.ToString("dd-MM-yyyy")
+                    },
+
+                    MonthlyStatistics = new
+                    {
+                        TotalAppointments = monthlyAppointments,
+                        Month = CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(currentMonth),
+                        Year = currentYear
+                    },
+
+                    Summary = new
+                    {
+                        AverageAppointmentsPerPatient = totalPatients > 0
+                            ? Math.Round((double)totalAppointments / totalPatients, 2)
+                            : 0,
+                        CompletionRate = totalAppointments > 0
+                            ? Math.Round((double)completedAppointments / totalAppointments * 100, 2)
+                            : 0,
+                        CancellationRate = totalAppointments > 0
+                            ? Math.Round((double)canceledAppointments / totalAppointments * 100, 2)
+                            : 0
+                    }
+                };
+
+                _logger.LogInformation(
+                    "Statistics retrieved for Clinic ID {ClinicId}: {TotalPatients} patients, {TotalAppointments} appointments",
+                    clinicId, totalPatients, totalAppointments);
+
+                return Ok(ApiResponseFactory.Success(response, "Clinic statistics retrieved successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while fetching statistics for Clinic ID {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An unexpected error occurred while retrieving clinic statistics."));
+            }
+        }
+
+
+
+
+
+
         /* ***************************************************************************************** */
         ////ARTHROSE APPOINTMENTS API
 

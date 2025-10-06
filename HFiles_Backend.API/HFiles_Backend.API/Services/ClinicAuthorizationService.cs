@@ -38,6 +38,10 @@ namespace HFiles_Backend.API.Services
                 return false;
             }
 
+            if (loggedInClinic.Id != clinicId)
+            {
+                return false;
+            }
             int mainClinicId = loggedInClinic.ClinicReference == 0 ? userId : loggedInClinic.ClinicReference;
 
             _logger.LogInformation("Resolved Main Clinic ID: {MainClinicId}. Fetching associated branches.", mainClinicId);

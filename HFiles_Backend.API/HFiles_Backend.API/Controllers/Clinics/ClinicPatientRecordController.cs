@@ -463,10 +463,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         var categoryName = doc.Type switch
                         {
                             RecordType.Prescription => "Medications/Prescription",
-                            RecordType.Treatment => "Medications/Prescription",
+                            RecordType.Treatment => "Lab Reports",
                             RecordType.Invoice => "Invoices/Insurance",
                             RecordType.Receipt => "Invoices/Insurance",
-                            RecordType.Images => "Lab Report",
+                            RecordType.Images => "Lab Reports",
                             _ => "Unknown"
                         };
 

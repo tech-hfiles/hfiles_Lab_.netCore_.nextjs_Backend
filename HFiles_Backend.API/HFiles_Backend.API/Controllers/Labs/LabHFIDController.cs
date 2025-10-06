@@ -41,7 +41,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 var lab = await _context.LabSignups
                     .Where(u => u.Email == email)
-                    .Select(u => new { u.Email, u.LabName, u.HFID })
+                    .Select(u => new { u.Email, u.LabName, u.HFID, u.ProfilePhoto })
                     .FirstOrDefaultAsync()
                     .ConfigureAwait(false);
 

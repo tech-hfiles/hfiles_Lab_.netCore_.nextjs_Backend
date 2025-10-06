@@ -42,13 +42,18 @@ namespace HFiles_Backend.API.Services
                     // Try LabAdminId first
                     if (user.FindFirst("LabAdminId")?.Value is string labString && int.TryParse(labString, out var labAdminId))
                     {
-                        userId = labAdminId;
+                        if(labAdminId != 0)
+                        {
+                            userId = labAdminId;
+                        }
+
+                        // If not found, try ClinicAdminId
+                        else if (user.FindFirst("ClinicAdminId")?.Value is string clinicStr && int.TryParse(clinicStr, out var clinicAdminId))
+                        {
+                            userId = clinicAdminId;
+                        }
                     }
-                    // If not found, try ClinicAdminId
-                    else if (user.FindFirst("ClinicAdminId")?.Value is string clinicStr && int.TryParse(clinicStr, out var clinicAdminId))
-                    {
-                        userId = clinicAdminId;
-                    }
+                
 
                     string? userRole = user.FindFirst(ClaimTypes.Role)?.Value;
                     string? sessionId = user.FindFirst("SessionId")?.Value;

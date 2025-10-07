@@ -96,7 +96,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                     .Select(u => new
                     {
                         Username = $"{u.FirstName} {u.LastName}",
-                        UserEmail = u.Email
+                        UserEmail = u.Email,
+                        UserProfile = u.ProfilePhoto
                     })
                     .FirstOrDefaultAsync()
                     .ConfigureAwait(false);

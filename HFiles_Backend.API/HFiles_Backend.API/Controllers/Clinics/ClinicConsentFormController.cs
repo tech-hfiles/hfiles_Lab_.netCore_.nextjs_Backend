@@ -24,7 +24,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
     IConfiguration configuration,
     IEmailTemplateService emailTemplateService,
     IUserRepository userRepository,
-    EmailService emailService
+    EmailService emailService,
+    IWebHostEnvironment env
     ) : ControllerBase
     {
         private readonly IClinicVisitRepository _clinicVisitRepository = clinicVisitRepository;
@@ -35,14 +36,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IEmailTemplateService _emailTemplateService = emailTemplateService;
         private readonly IUserRepository _userRepository = userRepository;
         private readonly EmailService _emailService = emailService;
+        private readonly IWebHostEnvironment _env = env;
 
 
 
         private string GetBaseUrl()
         {
-            var environment = _configuration["Environment"] ?? "Development";
-            return environment.Equals("Production", StringComparison.OrdinalIgnoreCase)
-                ? "https://hfiles.in"
+            return _env.IsProduction()
+                ? "https://clinicdemo.hfiles.co.in"
                 : "http://localhost:3000";
         }
 

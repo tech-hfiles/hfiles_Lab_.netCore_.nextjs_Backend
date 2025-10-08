@@ -76,5 +76,10 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
         public void Update(ClinicSuperAdmin admin) => _context.ClinicSuperAdmins.Update(admin);
         public void Add(ClinicSuperAdmin admin) => _context.ClinicSuperAdmins.Add(admin);
+        public async Task<ClinicSuperAdmin?> GetSuperAdminByIdAsync(int superAdminId)
+        {
+            return await _context.ClinicSuperAdmins
+                .FirstOrDefaultAsync(sa => sa.Id == superAdminId && sa.IsMain == 1);
+        }
     }
 }

@@ -103,7 +103,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                         Username = $"{u.FirstName} {u.LastName}",
                         UserEmail = u.Email,
                         UserProfile = u.ProfilePhoto,
-                        UserName = u.FirstName + " " + u.LastName,
                         DOB = u.DOB,
                         Gender = u.Gender,
                         Phone = u.PhoneNumber

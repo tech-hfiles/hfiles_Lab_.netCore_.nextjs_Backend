@@ -267,7 +267,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     }
                 }
 
-                // Process patient records (prescription, treatment, invoice, receipt)
+                // Process patient records (prescription, treatment, invoice, receipt and symptom diary)
                 foreach (var r in records)
                 {
                     var recordCategory = GetRecordCategory(r.Type);
@@ -369,6 +369,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 //RecordType.Invoice => "invoice",
                 RecordType.Receipt => "receipt",
                 RecordType.Images => "images",
+                RecordType.SymptomDiary => "symptom diary",
                 _ => "other"
             };
         }

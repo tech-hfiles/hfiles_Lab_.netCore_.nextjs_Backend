@@ -6,7 +6,8 @@
         Treatment = 2,
         Invoice = 3,
         Receipt = 4,
-        Images = 5
+        Images = 5,
+        SymptomDiary = 6
     }
 }
 

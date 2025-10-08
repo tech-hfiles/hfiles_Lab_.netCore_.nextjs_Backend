@@ -342,8 +342,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
             await using var transaction = await _clinicRepository.BeginTransactionAsync();
             bool committed = false;
 
-            var tempFilePaths = new List<string>(); // Track temp files for cleanup
-
             try
             {
                 var uploadedDocumentDetails = new List<string>();
@@ -402,7 +400,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                                     patientDocumentInfoList.Add(new PatientDocumentInfo
                                     {
                                         DocumentType = "Images",
-                                        Category = categoryName
+                                        Category = categoryName,
+                                        DocumentUrl = imageUrls.FirstOrDefault() ?? ""
                                     });
                                 }
                             }
@@ -417,20 +416,19 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                     string jsonData = string.Empty;
                     string? s3Url = null;
-                    string? tempPath = null;
 
                     if (doc.PdfFile != null)
                     {
                         var fileName = $"{doc.Type.ToString().ToLower()}_clinic{request.ClinicId}_patient{request.PatientId}_{Guid.NewGuid()}{Path.GetExtension(doc.PdfFile.FileName)}";
-                        tempPath = Path.Combine(Path.GetTempPath(), fileName);
-                        tempFilePaths.Add(tempPath); // Track for cleanup
+                        var tempPath = Path.Combine(Path.GetTempPath(), fileName);
 
                         using (var stream = new FileStream(tempPath, FileMode.Create))
                             await doc.PdfFile.CopyToAsync(stream);
 
                         s3Url = await _s3StorageService.UploadFileToS3(tempPath, $"clinic/{fileName}");
 
-                        // DON'T delete temp file yet - we need it for email attachment
+                        // Delete temp file immediately after upload
+                        System.IO.File.Delete(tempPath);
 
                         if (s3Url == null)
                             return StatusCode(500, ApiResponseFactory.Fail("Failed to upload file to S3."));
@@ -477,7 +475,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                         await _userRepository.SaveAsync(report);
 
-                        // Add document detail with category for notification and email
+                        // Add document detail with category and URL for email
                         var categoryName = doc.Type switch
                         {
                             RecordType.Prescription => "Medications/Prescription",
@@ -493,8 +491,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         {
                             DocumentType = doc.Type.ToString(),
                             Category = categoryName,
-                            DocumentUrl = s3Url,
-                            TempFilePath = tempPath // Store temp path for attachment
+                            DocumentUrl = s3Url
                         });
                     }
                 }
@@ -529,57 +526,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     appointmentTime
                 );
 
-                // Prepare attachments from temp files
-                var attachments = new List<System.Net.Mail.Attachment>();
-
-                foreach (var docInfo in patientDocumentInfoList)
-                {
-                    if (!string.IsNullOrEmpty(docInfo.TempFilePath) && System.IO.File.Exists(docInfo.TempFilePath))
-                    {
-                        try
-                        {
-                            var fileStream = new FileStream(docInfo.TempFilePath, FileMode.Open, FileAccess.Read);
-                            var fileName = $"{clinicName}_{docInfo.DocumentType}_{patientFirstName}_{DateTime.UtcNow:yyyyMMddHHmmss}.pdf";
-                            var attachment = new System.Net.Mail.Attachment(fileStream, fileName, "application/pdf");
-                            attachments.Add(attachment);
-
-                            _logger.LogInformation("Added attachment {FileName} for document type {DocumentType}", fileName, docInfo.DocumentType);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Failed to attach document {DocumentType} from temp file {Path}",
-                                docInfo.DocumentType, docInfo.TempFilePath);
-                        }
-                    }
-                }
-
-                // Send email with attachments
-                await _emailService.SendEmailWithAttachmentsAsync(
+                // Send email without attachments (view buttons in email instead)
+                await _emailService.SendEmailAsync(
                     patientEmail,
                     $"Documents Uploaded - {clinicName}",
-                    emailTemplate,
-                    attachments
+                    emailTemplate
                 );
 
                 await transaction.CommitAsync();
                 committed = true;
-
-                // Clean up temp files after successful email send
-                foreach (var tempFile in tempFilePaths)
-                {
-                    try
-                    {
-                        if (System.IO.File.Exists(tempFile))
-                        {
-                            System.IO.File.Delete(tempFile);
-                            _logger.LogInformation("Deleted temp file: {TempFile}", tempFile);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to delete temp file {TempFile}", tempFile);
-                    }
-                }
 
                 // Response + Notification
                 var response = new
@@ -594,7 +549,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     DocumentDetails = uploadedDocumentDetails,
                     SentAt = DateTime.UtcNow,
                     EmailSent = true,
-                    AttachmentsCount = attachments.Count,
                     NotificationMessage =
                      $"Documents ({string.Join(", ", uploadedDocs)}) uploaded for patient {patientName} on HF account {clinicPatient?.HFID} for {appointmentDate} at {appointmentTime}.",
                     UserNotificationMessage = userNotificationMessage,
@@ -615,8 +569,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 };
 
                 _logger.LogInformation(
-                    "Uploaded documents ({Documents}) for Clinic ID {ClinicId}, Patient ID {PatientId}, Appointment on {AppointmentDate} {AppointmentTime}. Attachments sent: {AttachmentCount}",
-                    string.Join(", ", uploadedDocs), request.ClinicId, request.PatientId, appointmentDate, appointmentTime, attachments.Count
+                    "Uploaded documents ({Documents}) for Clinic ID {ClinicId}, Patient ID {PatientId}, Appointment on {AppointmentDate} {AppointmentTime}",
+                    string.Join(", ", uploadedDocs), request.ClinicId, request.PatientId, appointmentDate, appointmentTime
                 );
 
                 return Ok(ApiResponseFactory.Success(response, "Documents uploaded successfully and notification sent."));
@@ -624,18 +578,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error uploading documents for Clinic ID {ClinicId}", request.ClinicId);
-
-                // Clean up temp files on error
-                foreach (var tempFile in tempFilePaths)
-                {
-                    try
-                    {
-                        if (System.IO.File.Exists(tempFile))
-                            System.IO.File.Delete(tempFile);
-                    }
-                    catch { }
-                }
-
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while uploading documents."));
             }
             finally

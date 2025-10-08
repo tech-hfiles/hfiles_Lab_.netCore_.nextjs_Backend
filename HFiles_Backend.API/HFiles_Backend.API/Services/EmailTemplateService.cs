@@ -435,67 +435,88 @@ namespace HFiles_Backend.API.Services
 
 
         public string GeneratePatientDocumentsUploadedEmailTemplate(
-             string patientFirstName,
-             List<PatientDocumentInfo> uploadedDocuments,
-             string clinicName,
-             string appointmentDate,
-             string appointmentTime)
+      string patientFirstName,
+      List<PatientDocumentInfo> uploadedDocuments,
+      string clinicName,
+      string appointmentDate,
+      string appointmentTime)
         {
             var documentsList = string.Join("", uploadedDocuments.Select(doc =>
-                $@"<li style='margin: 10px 0;'>
-                      <strong>{doc.DocumentType}</strong> - <span style='color: #666;'>{doc.Category}</span>
-                   </li>"));
+                $@"<li style='margin: 15px 0; background-color: white; padding: 12px; border-radius: 6px; border: 1px solid #e0e0e0;'>
+              <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;'>
+                  <div style='flex: 1; min-width: 200px; margin-bottom: 8px;'>
+                      <strong style='color: #0331B5; font-size: 16px;'>{doc.DocumentType}</strong>
+                      <br/>
+                      <span style='color: #666; font-size: 14px;'>📁 {doc.Category}</span>
+                  </div>
+                  <div>
+                      <a href='{doc.DocumentUrl}' 
+                         target='_blank'
+                         style='background-color: #0331B5; 
+                                color: white; 
+                                padding: 10px 24px; 
+                                text-decoration: none; 
+                                border-radius: 6px; 
+                                font-weight: bold; 
+                                display: inline-block;
+                                font-size: 14px;'>
+                         📄 View Document
+                      </a>
+                  </div>
+              </div>
+           </li>"));
 
             return $"""
-            <html>
-            <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
-                <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
-                    <h2 style='color: #0331B5; text-align: center;'>HFiles - Documents Uploaded</h2>
-                    
-                    <p>Dear <strong>{patientFirstName}</strong>,</p>
-                    
-                    <p><strong>{clinicName}</strong> has uploaded {uploadedDocuments.Count} document(s) to your HFiles account.</p>
-                    
-                    <div style='background-color: #e8f5e8; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745;'>
-                        <h3 style='margin-top: 0; color: #155724;'>Appointment Details:</h3>
-                        <p style='margin: 5px 0;'><strong>Clinic:</strong> {clinicName}</p>
-                        <p style='margin: 5px 0;'><strong>Date:</strong> {appointmentDate}</p>
-                        <p style='margin: 5px 0;'><strong>Time:</strong> {appointmentTime}</p>
-                    </div>
-                    
-                    <div style='background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;'>
-                        <h3 style='margin-top: 0; color: #0331B5;'>Documents Uploaded:</h3>
-                        <ul style='margin: 10px 0; padding-left: 20px;'>
-                            {documentsList}
-                        </ul>
-                    </div>
-                    
-                    <div style='background-color: #e7f3ff; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #0331B5;'>
-                        <p style='margin: 0;'><strong>How to Access Your Documents:</strong></p>
-                        <ol style='margin: 10px 0; padding-left: 20px;'>
-                            <li>Log in to your HFiles account</li>
-                            <li>Go to "All Reports" section</li>
-                            <li>Find your documents under their respective categories</li>
-                        </ol>
-                    </div>
-                    
-                    <p>If you have any questions about these documents or need assistance accessing them, please contact the clinic directly.</p>
-                    
-                    <hr style='margin: 30px 0; border: none; border-top: 1px solid #eee;' />
-                    
-                    <p style='font-size: 14px; color: #666;'>
-                        Best regards,<br/>
-                        The HFiles Team<br/>
-                        <a href='mailto:contact@hfiles.in' style='color: #0331B5;'>contact@hfiles.in</a>
-                    </p>
-                    
-                    <p style='font-size: 12px; color: #999; text-align: center; margin-top: 20px;'>
-                        This is an automated message. Please do not reply to this email.
-                    </p>
-                </div>
-            </body>
-            </html>
-            """;
+    <html>
+    <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
+        <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
+            <h2 style='color: #0331B5; text-align: center;'>HFiles - Documents Uploaded</h2>
+            
+            <p>Dear <strong>{patientFirstName}</strong>,</p>
+            
+            <p><strong>{clinicName}</strong> has uploaded {uploadedDocuments.Count} document(s) to your HFiles account.</p>
+            
+            <div style='background-color: #e8f5e8; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745;'>
+                <h3 style='margin-top: 0; color: #155724;'>Appointment Details:</h3>
+                <p style='margin: 5px 0;'><strong>Clinic:</strong> {clinicName}</p>
+                <p style='margin: 5px 0;'><strong>Date:</strong> {appointmentDate}</p>
+                <p style='margin: 5px 0;'><strong>Time:</strong> {appointmentTime}</p>
+            </div>
+            
+            <div style='background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;'>
+                <h3 style='margin-top: 0; color: #0331B5;'>Documents Uploaded:</h3>
+                <ul style='margin: 10px 0; padding-left: 0; list-style: none;'>
+                    {documentsList}
+                </ul>
+            </div>
+            
+            <div style='background-color: #e7f3ff; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #0331B5;'>
+                <p style='margin: 0;'><strong>💡 Alternative Access:</strong></p>
+                <p style='margin: 10px 0;'>You can also access your documents anytime by:</p>
+                <ol style='margin: 10px 0; padding-left: 20px;'>
+                    <li>Logging in to your HFiles account</li>
+                    <li>Going to "All Reports" section</li>
+                    <li>Finding your documents under their respective categories</li>
+                </ol>
+            </div>
+            
+            <p>If you have any questions about these documents or need assistance accessing them, please contact the clinic directly.</p>
+            
+            <hr style='margin: 30px 0; border: none; border-top: 1px solid #eee;' />
+            
+            <p style='font-size: 14px; color: #666;'>
+                Best regards,<br/>
+                The HFiles Team<br/>
+                <a href='mailto:contact@hfiles.in' style='color: #0331B5;'>contact@hfiles.in</a>
+            </p>
+            
+            <p style='font-size: 12px; color: #999; text-align: center; margin-top: 20px;'>
+                This is an automated message. Please do not reply to this email.
+            </p>
+        </div>
+    </body>
+    </html>
+    """;
         }
     }
 }

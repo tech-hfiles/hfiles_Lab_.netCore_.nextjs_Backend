@@ -552,11 +552,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     }
 
                     // Check if appointment time is within the last 2 hours or has passed
-                    if (appointmentDateTime > now)
-                    {
-                        return BadRequest(ApiResponseFactory.Fail(
-                            "Cannot mark appointment as completed before it occurs."));
-                    }
+                    //if (appointmentDateTime > now)
+                    //{
+                    //    return BadRequest(ApiResponseFactory.Fail(
+                    //        "Cannot mark appointment as completed before it occurs."));
+                    //}
 
                     // Check if appointment was more than 2 hours ago
                     if (appointmentDateTime < twoHoursAgo)

@@ -407,6 +407,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             int totalAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today);
             int missedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Absent");
+            int completedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Completed");
 
             _logger.LogInformation("Fetched {Count} appointments for Clinic ID {ClinicId}", response.Count, clinicId);
 
@@ -415,6 +416,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 Appointments = response,
                 TotalAppointmentsToday = totalAppointmentsToday,
                 MissedAppointmentsToday = missedAppointmentsToday,
+                CompletedAppointmentsToday = completedAppointmentsToday,
                 DailyCounts = dailyCounts
             }, "Appointments fetched successfully."));
         }

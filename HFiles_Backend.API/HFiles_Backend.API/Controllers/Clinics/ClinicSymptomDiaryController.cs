@@ -146,7 +146,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 // Create user notification message
                 var userNotificationMessage = $"{clinicName} has sent you a symptom diary to fill out. Please check your email at {user.Email} to complete it.";
                 // Send notification
-                var notificationMessage = $"{clinicName} has sent you a symptom diary over your email {user.Email}. Kindly check your inbox.";
+                //var notificationMessage = $"{clinicName} has sent you a symptom diary over your email {user.Email}. Kindly check your inbox.";
 
                 //await _notificationService.SendNotificationAsync(new NotificationRequest
                 //{
@@ -171,7 +171,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     FileName = request.SymptomDiaryFile.FileName,
                     FileSizeMB = Math.Round((decimal)request.SymptomDiaryFile.Length / (1024 * 1024), 2),
                     SentAt = DateTime.UtcNow,
-                    notificationMessage = notificationMessage,
+                    //notificationMessage = notificationMessage,
                     UserNotificationMessage = userNotificationMessage
                 };
 
@@ -246,7 +246,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (user == null)
                     return NotFound(ApiResponseFactory.Fail("User not found for provided HFID."));
 
-                var fileName = $"Symptom_Diary_{user.FirstName + " " + user.LastName}";
+                var fileName = $"Symptom_Diary_{user.FirstName + " " + user.LastName}.{extension}";
                 var tempPath = Path.Combine(Path.GetTempPath(), fileName);
 
                 using (var stream = new FileStream(tempPath, FileMode.Create))

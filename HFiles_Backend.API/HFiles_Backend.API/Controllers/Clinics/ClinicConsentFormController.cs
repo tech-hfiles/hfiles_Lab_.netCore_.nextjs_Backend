@@ -42,9 +42,19 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
         private string GetBaseUrl()
         {
-            return _env.IsProduction()
+            var environmentName = _env.EnvironmentName;
+            var isProduction = _env.IsProduction();
+
+            _logger.LogInformation("Environment Name: {EnvironmentName}, IsProduction: {IsProduction}",
+                environmentName, isProduction);
+
+            var baseUrl = _env.IsProduction()
                 ? "https://clinicdemo.hfiles.co.in"
                 : "http://localhost:3000";
+
+            _logger.LogInformation("Selected Base URL: {BaseUrl}", baseUrl);
+
+            return baseUrl;
         }
 
 

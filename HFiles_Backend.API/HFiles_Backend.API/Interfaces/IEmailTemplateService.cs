@@ -1,4 +1,5 @@
 ﻿using HFiles_Backend.Application.DTOs.Clinics.ConsentForm;
+using HFiles_Backend.Application.DTOs.Clinics.PatientRecord;
 
 namespace HFiles_Backend.API.Interfaces
 {
@@ -19,5 +20,11 @@ namespace HFiles_Backend.API.Interfaces
        string appointmentDate,
        string appointmentTime);
         string GenerateEmailBodySymptomDiary(string? firstName, string clinicName);
+        string GeneratePatientDocumentsUploadedEmailTemplate(
+           string patientFirstName,
+           List<PatientDocumentInfo> uploadedDocuments,
+           string clinicName,
+           string appointmentDate,
+           string appointmentTime);
     }
 }

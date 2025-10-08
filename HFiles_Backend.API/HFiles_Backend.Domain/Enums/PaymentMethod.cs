@@ -7,6 +7,7 @@
         Cash,
         BankTransfer,
         Check,
-        Wallet
+        Wallet,
+        Pending
     }
 }

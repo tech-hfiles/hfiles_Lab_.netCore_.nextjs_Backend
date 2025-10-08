@@ -428,9 +428,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpPut("clinic/{clinicId:int}/appointment/{appointmentId:int}/status")]
         [Authorize]
         public async Task<IActionResult> UpdateAppointmentStatus(
-      [FromRoute] int clinicId,
-      [FromRoute] int appointmentId,
-      [FromBody] AppointmentStatusUpdateDto dto)
+          [FromRoute] int clinicId,
+          [FromRoute] int appointmentId,
+          [FromBody] AppointmentStatusUpdateDto dto)
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
@@ -466,23 +466,23 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 ClinicPatient? clinicPatient = null;
                 ClinicVisit? createdVisit = null;
 
-                if (!string.IsNullOrWhiteSpace(dto.HFID))
+                if (dto.HFID != "Not a registered user" && dto.HFID != null)
                 {
                     // Step 1: Get user by HFID
                     var user = await _userRepository.GetUserByHFIDAsync(dto.HFID);
-                    if (user == null)
-                    {
-                        _logger.LogWarning("No user found for HFID {HFID}", dto.HFID);
-                        return NotFound(ApiResponseFactory.Fail($"No user found for HFID: {dto.HFID}"));
-                    }
+                    //if (user == null)
+                    //{
+                    //    _logger.LogWarning("No user found for HFID {HFID}", dto.HFID);
+                    //    return NotFound(ApiResponseFactory.Fail($"No user found for HFID: {dto.HFID}"));
+                    //}
 
                     // Step 2: Get or create clinic patient
-                    var fullName = $"{user.FirstName} {user.LastName}".Trim();
+                    var fullName = $"{user?.FirstName} {user?.LastName}".Trim();
                     clinicPatient = await _clinicVisitRepository.GetOrCreatePatientAsync(dto.HFID, fullName);
 
                     // Step 3: Update appointment with user details
                     appointment.VisitorUsername = fullName;
-                    appointment.VisitorPhoneNumber = user.PhoneNumber ?? "N/A";
+                    appointment.VisitorPhoneNumber = user?.PhoneNumber ?? "N/A";
 
                     // Step 4: Check if visit already exists for this appointment date/time
                     var existingVisit = await _clinicVisitRepository.GetExistingVisitAsyncWithTime(
@@ -541,9 +541,29 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
                 else if (dto.Status == "Completed")
                 {
-                    if (appointment.AppointmentDate.Date != now.Date || appointmentDateTime > now)
+                    // Calculate 2 hours before current time
+                    var twoHoursAgo = now.AddHours(-2);
+
+                    // Check if appointment is today
+                    if (appointment.AppointmentDate.Date != now.Date)
+                    {
                         return BadRequest(ApiResponseFactory.Fail(
-                            "Can only mark as completed if appointment is today and time has passed."));
+                            "Can only mark as completed if appointment is today."));
+                    }
+
+                    // Check if appointment time is within the last 2 hours or has passed
+                    if (appointmentDateTime > now)
+                    {
+                        return BadRequest(ApiResponseFactory.Fail(
+                            "Cannot mark appointment as completed before it occurs."));
+                    }
+
+                    // Check if appointment was more than 2 hours ago
+                    if (appointmentDateTime < twoHoursAgo)
+                    {
+                        return BadRequest(ApiResponseFactory.Fail(
+                            "Can only mark as completed within 2 hours of the appointment time."));
+                    }
 
                     appointment.Treatment = dto.Treatment;
                 }

@@ -53,7 +53,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         {
             var environment = _configuration["Environment"] ?? "Development";
             return environment.Equals("Production", StringComparison.OrdinalIgnoreCase)
-                ? "https://hfiles.in"
+                ? "https://hfiles.co.in"
                 : "http://localhost:3000";
         }
 

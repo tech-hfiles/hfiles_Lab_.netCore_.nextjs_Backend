@@ -647,10 +647,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         public async Task<IActionResult> DeleteAppointmentById([FromRoute] int appointmentId)
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
-
             var transaction = await _clinicRepository.BeginTransactionAsync();
             var committed = false;
-
             try
             {
                 var appointment = await _appointmentRepository.GetByIdAsync(appointmentId);
@@ -665,6 +663,52 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 {
                     _logger.LogWarning("Unauthorized delete attempt for appointment ID {AppointmentId} in Clinic ID {ClinicId}", appointmentId, appointment.ClinicId);
                     return Unauthorized(ApiResponseFactory.Fail("You are not authorized to delete appointments for this clinic."));
+                }
+
+                // Check and delete corresponding ClinicVisit if exists
+                try
+                {
+                    // Get patient from Patients table using phone number
+                    var patient = await _userRepository.GetByPhoneNumberAsync(appointment.VisitorPhoneNumber);
+
+                    if (patient != null && !string.IsNullOrEmpty(patient.HfId))
+                    {
+                        // Get ClinicPatient using HFID
+                        var clinicPatient = await _clinicVisitRepository.GetPatientAsync(patient.HfId);
+
+                        if (clinicPatient != null)
+                        {
+                            // Find matching visit with clinic ID confirmation
+                            var visit = await _clinicVisitRepository.GetVisitByDetailsAsync(
+                                clinicPatient.Id,
+                                appointment.AppointmentDate,
+                                appointment.AppointmentTime,
+                                appointment.ClinicId
+                            );
+
+                            if (visit != null)
+                            {
+                                await _clinicVisitRepository.DeleteAsync(visit);
+                                _logger.LogInformation("Deleted corresponding visit ID {VisitId} for appointment ID {AppointmentId} in Clinic ID {ClinicId}",
+                                    visit.Id, appointmentId, appointment.ClinicId);
+                            }
+                            else
+                            {
+                                _logger.LogInformation("No matching visit found for appointment ID {AppointmentId} in Clinic ID {ClinicId}",
+                                    appointmentId, appointment.ClinicId);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation("No patient with valid HFID found for phone number {PhoneNumber} for appointment ID {AppointmentId}",
+                            appointment.VisitorPhoneNumber, appointmentId);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error while checking/deleting corresponding visit for appointment ID {AppointmentId}", appointmentId);
+                    // Continue with appointment deletion even if visit deletion fails
                 }
 
                 // Delete from Google Calendar
@@ -688,8 +732,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
                     AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
                     appointment.Status,
-
-                    // Notification section
                     NotificationContext = new
                     {
                         AppointmentId = appointment.Id,

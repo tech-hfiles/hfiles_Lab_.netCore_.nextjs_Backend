@@ -33,6 +33,14 @@ namespace HFiles_Backend.Infrastructure.Repositories
             return patient;
         }
 
+        public async Task<ClinicPatient?> GetPatientAsync(string hfid)
+        {
+            var patient = await _context.ClinicPatients
+                .Include(p => p.Visits)
+                .FirstOrDefaultAsync(p => p.HFID == hfid);
+            return patient;
+        }
+
         public async Task<List<ClinicConsentForm>> GetConsentFormsByTitlesAsync(List<string> titles)
         {
             return await _context.ClinicConsentForms
@@ -91,6 +99,22 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     v.ClinicPatientId == clinicPatientId &&
                     v.AppointmentDate.Date == appointmentDate.Date &&
                      v.AppointmentTime == appointmentTime);
+        }
+        public async Task<ClinicVisit?> GetVisitByDetailsAsync(int clinicPatientId, DateTime appointmentDate, TimeSpan appointmentTime, int clinicId)
+        {
+            return await _context.ClinicVisits
+                .Include(v => v.Patient)
+                .FirstOrDefaultAsync(v =>
+                    v.ClinicPatientId == clinicPatientId &&
+                    v.AppointmentDate.Date == appointmentDate.Date &&
+                    v.AppointmentTime == appointmentTime &&
+                    v.ClinicId == clinicId);
+        }
+
+        public async Task DeleteAsync(ClinicVisit visit)
+        {
+            _context.ClinicVisits.Remove(visit);
+            await _context.SaveChangesAsync();
         }
     }
 }

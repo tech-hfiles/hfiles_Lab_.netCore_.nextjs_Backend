@@ -468,23 +468,24 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 ClinicPatient? clinicPatient = null;
                 ClinicVisit? createdVisit = null;
 
-                if (dto.HFID != "Not a registered user" && dto.HFID != null)
+                if (!string.IsNullOrWhiteSpace(dto.HFID) && dto.HFID != "Not a registered user")
                 {
                     // Step 1: Get user by HFID
                     var user = await _userRepository.GetUserByHFIDAsync(dto.HFID);
-                    //if (user == null)
-                    //{
-                    //    _logger.LogWarning("No user found for HFID {HFID}", dto.HFID);
-                    //    return NotFound(ApiResponseFactory.Fail($"No user found for HFID: {dto.HFID}"));
-                    //}
+
+                    if (user == null)
+                    {
+                        _logger.LogWarning("No user found for HFID {HFID}", dto.HFID);
+                        return NotFound(ApiResponseFactory.Fail($"No user found for HFID: {dto.HFID}"));
+                    }
 
                     // Step 2: Get or create clinic patient
-                    var fullName = $"{user?.FirstName} {user?.LastName}".Trim();
+                    var fullName = $"{user.FirstName} {user.LastName}".Trim();
                     clinicPatient = await _clinicVisitRepository.GetOrCreatePatientAsync(dto.HFID, fullName);
 
                     // Step 3: Update appointment with user details
                     appointment.VisitorUsername = fullName;
-                    appointment.VisitorPhoneNumber = user?.PhoneNumber ?? "N/A";
+                    appointment.VisitorPhoneNumber = user.PhoneNumber ?? "N/A";
 
                     // Step 4: Check if visit already exists for this appointment date/time
                     var existingVisit = await _clinicVisitRepository.GetExistingVisitAsyncWithTime(
@@ -518,6 +519,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                             existingVisit.Id, fullName);
                     }
                 }
+
+
 
                 // Update status logic (existing code)
                 if (!string.IsNullOrWhiteSpace(dto.Status))

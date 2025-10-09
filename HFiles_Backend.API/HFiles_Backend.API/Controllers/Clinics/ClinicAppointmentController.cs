@@ -244,6 +244,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
         // Get Appointments
+        // Get Appointments
         [HttpGet("clinic/{clinicId:int}")]
         [Authorize]
         public async Task<IActionResult> GetAppointmentsByClinicId(

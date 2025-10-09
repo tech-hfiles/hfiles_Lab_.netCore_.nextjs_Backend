@@ -247,9 +247,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpGet("clinic/{clinicId:int}")]
         [Authorize]
         public async Task<IActionResult> GetAppointmentsByClinicId(
-        [FromRoute] int clinicId,
-        [FromQuery] string? startDate,
-        [FromQuery] string? endDate)
+          [FromRoute] int clinicId,
+          [FromQuery] string? startDate,
+          [FromQuery] string? endDate)
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
@@ -271,6 +271,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     Appointments = new List<object>(),
                     TotalAppointmentsToday = 0,
                     MissedAppointmentsToday = 0,
+                    CompletedAppointmentsToday = 0,
                     DailyCounts = new List<object>()
                 }, "No appointments found."));
             }
@@ -306,6 +307,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 .Where(a => a.AppointmentDate.Date >= start.Date && a.AppointmentDate.Date <= end.Date)
                 .ToList();
 
+            // DEBUG: Log the statuses to see what we're getting
+            _logger.LogInformation("Filtered appointments count: {Count}", filteredAppointments.Count);
+            _logger.LogInformation("Status breakdown: {Statuses}",
+                string.Join(", ", filteredAppointments.GroupBy(a => a.Status ?? "NULL")
+                    .Select(g => $"{g.Key}: {g.Count()}")));
+
             var today = DateTime.Today;
 
             // Build lookup from visit to HFID
@@ -328,6 +335,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 var user = await _userRepository.GetUserByHFIDAsync(hfid);
                 userMap[hfid] = user?.ProfilePhoto ?? "Not a registered user";
             }
+
             var response = filteredAppointments.Select(a =>
             {
                 var hfid = visitHfidLookup[new
@@ -403,10 +411,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 })
                 .ToList();
 
-            // Calculate statistics based on the FILTERED date range
+            // Calculate statistics based on the FILTERED date range with case-insensitive comparison
             int totalAppointmentsInRange = filteredAppointments.Count;
-            int missedAppointmentsInRange = filteredAppointments.Count(a => a.Status == "Absent");
-            int completedAppointmentsInRange = filteredAppointments.Count(a => a.Status == "Completed");
+            int missedAppointmentsInRange = filteredAppointments.Count(a =>
+                a.Status != null && a.Status.Equals("Absent", StringComparison.OrdinalIgnoreCase));
+            int completedAppointmentsInRange = filteredAppointments.Count(a =>
+                a.Status != null && a.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase));
+
+            _logger.LogInformation("Statistics - Total: {Total}, Missed: {Missed}, Completed: {Completed}",
+                totalAppointmentsInRange, missedAppointmentsInRange, completedAppointmentsInRange);
 
             _logger.LogInformation("Fetched {Count} appointments for Clinic ID {ClinicId}", response.Count, clinicId);
 

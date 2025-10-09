@@ -59,7 +59,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
 
             // File validation
-            var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg" };
+            var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg", ".xlsx" };
             var extension = Path.GetExtension(request.SymptomDiaryFile.FileName)?.ToLowerInvariant();
             var maxFileSize = 10 * 1024 * 1024; // 10 MB
 
@@ -206,7 +206,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
 
             // File type validation
-            var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg" };
+            var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg", ".xlsx" };
             var extension = Path.GetExtension(request.File.FileName)?.ToLowerInvariant();
             var fileSize = request.File.Length;
 

@@ -244,182 +244,182 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
         // Get Appointments
-        [HttpGet("clinic/{clinicId:int}")]
-        [Authorize]
-        public async Task<IActionResult> GetAppointmentsByClinicId(
-        [FromRoute] int clinicId,
-        [FromQuery] string? startDate,
-        [FromQuery] string? endDate)
-        {
-            HttpContext.Items["Log-Category"] = "Clinic Appointment";
-
-            if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))
+            [HttpGet("clinic/{clinicId:int}")]
+            [Authorize]
+            public async Task<IActionResult> GetAppointmentsByClinicId(
+            [FromRoute] int clinicId,
+            [FromQuery] string? startDate,
+            [FromQuery] string? endDate)
             {
-                _logger.LogWarning("Unauthorized access attempt for Clinic ID {ClinicId}", clinicId);
-                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view appointments for this clinic."));
-            }
+                HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
-            var appointments = await _appointmentRepository.GetAppointmentsByClinicIdAsync(clinicId);
-            var visits = await _clinicVisitRepository.GetVisitsByClinicIdAsync(clinicId);
-            var records = await _clinicPatientRecordRepository.GetTreatmentRecordsByClinicIdAsync(clinicId);
-
-            if (appointments == null || !appointments.Any())
-            {
-                _logger.LogInformation("No appointments found for Clinic ID {ClinicId}", clinicId);
-                return Ok(ApiResponseFactory.Success(new
+                if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))
                 {
-                    Appointments = new List<object>(),
-                    TotalAppointmentsToday = 0,
-                    MissedAppointmentsToday = 0,
-                    DailyCounts = new List<object>()
-                }, "No appointments found."));
-            }
-
-            // Parse date filters
-            DateTime start;
-            DateTime end;
-
-            if (!string.IsNullOrEmpty(startDate))
-            {
-                if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
-                    return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
-                start = parsed;
-            }
-            else
-            {
-                start = DateTime.Today;
-            }
-
-            if (!string.IsNullOrEmpty(endDate))
-            {
-                if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
-                    return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
-                end = parsed;
-            }
-            else
-            {
-                end = DateTime.Today;
-            }
-
-            // Filter appointments by date range
-            var filteredAppointments = appointments
-                .Where(a => a.AppointmentDate.Date >= start.Date && a.AppointmentDate.Date <= end.Date)
-                .ToList();
-
-            var today = DateTime.Today;
-
-            // Build lookup from visit to HFID
-            var visitHfidLookup = visits
-                .Where(v => v.Patient != null)
-                .ToLookup(v => new
-                {
-                    v.ClinicId,
-                    v.AppointmentDate.Date,
-                    v.AppointmentTime
-                }, v => v.Patient.HFID);
-
-            // Extract unique HFIDs
-            var uniqueHfids = visitHfidLookup.SelectMany(g => g).Where(h => !string.IsNullOrWhiteSpace(h)).Distinct().ToList();
-
-            // Batch fetch users
-            var userMap = new Dictionary<string, string>();
-            foreach (var hfid in uniqueHfids)
-            {
-                var user = await _userRepository.GetUserByHFIDAsync(hfid);
-                userMap[hfid] = user?.ProfilePhoto ?? "Not a registered user";
-            }
-
-            // Build response
-            var response = filteredAppointments.Select(a =>
-            {
-                var hfid = visitHfidLookup[new
-                {
-                    a.ClinicId,
-                    a.AppointmentDate.Date,
-                    a.AppointmentTime
-                }].FirstOrDefault();
-
-                var profilePhoto = !string.IsNullOrEmpty(hfid) && userMap.TryGetValue(hfid, out var photo)
-                    ? photo
-                    : "Not a registered user";
-
-                // Try to find matching treatment record
-                var matchingRecord = records.FirstOrDefault(r =>
-                    r.ClinicId == a.ClinicId &&
-                    r.ClinicVisitId == visits.FirstOrDefault(v =>
-                        v.ClinicId == a.ClinicId &&
-                        v.AppointmentDate.Date == a.AppointmentDate.Date &&
-                        v.AppointmentTime == a.AppointmentTime)?.Id &&
-                    r.Type == RecordType.Treatment);
-
-                string treatmentName = a.Treatment ?? "-";
-
-                if (matchingRecord != null)
-                {
-                    try
-                    {
-                        var json = JsonConvert.DeserializeObject<dynamic>(matchingRecord.JsonData);
-                        var treatments = json?.treatments;
-                        if (treatments != null)
-                        {
-                            var names = new List<string>();
-                            foreach (var t in treatments)
-                            {
-                                if (t.name != null)
-                                    names.Add((string)t.name);
-                            }
-
-                            if (names.Any())
-                                treatmentName = string.Join(", ", names);
-                        }
-                    }
-                    catch
-                    {
-                        _logger.LogWarning("Failed to parse treatment JSON for record ID {RecordId}", matchingRecord.Id);
-                    }
+                    _logger.LogWarning("Unauthorized access attempt for Clinic ID {ClinicId}", clinicId);
+                    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view appointments for this clinic."));
                 }
 
-                return new
+                var appointments = await _appointmentRepository.GetAppointmentsByClinicIdAsync(clinicId);
+                var visits = await _clinicVisitRepository.GetVisitsByClinicIdAsync(clinicId);
+                var records = await _clinicPatientRecordRepository.GetTreatmentRecordsByClinicIdAsync(clinicId);
+
+                if (appointments == null || !appointments.Any())
                 {
-                    a.Id,
-                    a.ClinicId,
-                    a.VisitorUsername,
-                    a.VisitorPhoneNumber,
-                    AppointmentDate = a.AppointmentDate.ToString("dd-MM-yyyy"),
-                    AppointmentTime = a.AppointmentTime.ToString(@"hh\:mm"),
-                    Treatment = treatmentName,
-                    a.Status,
-                    HFID = hfid ?? "Not a registered user",
-                    ProfilePhoto = profilePhoto
-                };
-            }).ToList();
+                    _logger.LogInformation("No appointments found for Clinic ID {ClinicId}", clinicId);
+                    return Ok(ApiResponseFactory.Success(new
+                    {
+                        Appointments = new List<object>(),
+                        TotalAppointmentsToday = 0,
+                        MissedAppointmentsToday = 0,
+                        DailyCounts = new List<object>()
+                    }, "No appointments found."));
+                }
 
-            // Group all appointments by date (not filtered)
-            var dailyCounts = appointments
-                .GroupBy(a => a.AppointmentDate.Date)
-                .OrderBy(g => g.Key)
-                .Select(g => new
+                // Parse date filters
+                DateTime start;
+                DateTime end;
+
+                if (!string.IsNullOrEmpty(startDate))
                 {
-                    Date = g.Key.ToString("dd-MM-yyyy"),
-                    TotalAppointments = g.Count()
-                })
-                .ToList();
+                    if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
+                        return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
+                    start = parsed;
+                }
+                else
+                {
+                    start = DateTime.Today;
+                }
 
-            int totalAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today);
-            int missedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Absent");
-            int completedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Completed");
+                if (!string.IsNullOrEmpty(endDate))
+                {
+                    if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
+                        return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
+                    end = parsed;
+                }
+                else
+                {
+                    end = DateTime.Today;
+                }
 
-            _logger.LogInformation("Fetched {Count} appointments for Clinic ID {ClinicId}", response.Count, clinicId);
+                // Filter appointments by date range
+                var filteredAppointments = appointments
+                    .Where(a => a.AppointmentDate.Date >= start.Date && a.AppointmentDate.Date <= end.Date)
+                    .ToList();
 
-            return Ok(ApiResponseFactory.Success(new
-            {
-                Appointments = response,
-                TotalAppointmentsToday = totalAppointmentsToday,
-                MissedAppointmentsToday = missedAppointmentsToday,
-                CompletedAppointmentsToday = completedAppointmentsToday,
-                DailyCounts = dailyCounts
-            }, "Appointments fetched successfully."));
-        }
+                var today = DateTime.Today;
+
+                // Build lookup from visit to HFID
+                var visitHfidLookup = visits
+                    .Where(v => v.Patient != null)
+                    .ToLookup(v => new
+                    {
+                        v.ClinicId,
+                        v.AppointmentDate.Date,
+                        v.AppointmentTime
+                    }, v => v.Patient.HFID);
+
+                // Extract unique HFIDs
+                var uniqueHfids = visitHfidLookup.SelectMany(g => g).Where(h => !string.IsNullOrWhiteSpace(h)).Distinct().ToList();
+
+                // Batch fetch users
+                var userMap = new Dictionary<string, string>();
+                foreach (var hfid in uniqueHfids)
+                {
+                    var user = await _userRepository.GetUserByHFIDAsync(hfid);
+                    userMap[hfid] = user?.ProfilePhoto ?? "Not a registered user";
+                }
+
+                // Build response
+                var response = filteredAppointments.Select(a =>
+                {
+                    var hfid = visitHfidLookup[new
+                    {
+                        a.ClinicId,
+                        a.AppointmentDate.Date,
+                        a.AppointmentTime
+                    }].FirstOrDefault();
+
+                    var profilePhoto = !string.IsNullOrEmpty(hfid) && userMap.TryGetValue(hfid, out var photo)
+                        ? photo
+                        : "Not a registered user";
+
+                    // Try to find matching treatment record
+                    var matchingRecord = records.FirstOrDefault(r =>
+                        r.ClinicId == a.ClinicId &&
+                        r.ClinicVisitId == visits.FirstOrDefault(v =>
+                            v.ClinicId == a.ClinicId &&
+                            v.AppointmentDate.Date == a.AppointmentDate.Date &&
+                            v.AppointmentTime == a.AppointmentTime)?.Id &&
+                        r.Type == RecordType.Treatment);
+
+                    string treatmentName = a.Treatment ?? "-";
+
+                    if (matchingRecord != null)
+                    {
+                        try
+                        {
+                            var json = JsonConvert.DeserializeObject<dynamic>(matchingRecord.JsonData);
+                            var treatments = json?.treatments;
+                            if (treatments != null)
+                            {
+                                var names = new List<string>();
+                                foreach (var t in treatments)
+                                {
+                                    if (t.name != null)
+                                        names.Add((string)t.name);
+                                }
+
+                                if (names.Any())
+                                    treatmentName = string.Join(", ", names);
+                            }
+                        }
+                        catch
+                        {
+                            _logger.LogWarning("Failed to parse treatment JSON for record ID {RecordId}", matchingRecord.Id);
+                        }
+                    }
+
+                    return new
+                    {
+                        a.Id,
+                        a.ClinicId,
+                        a.VisitorUsername,
+                        a.VisitorPhoneNumber,
+                        AppointmentDate = a.AppointmentDate.ToString("dd-MM-yyyy"),
+                        AppointmentTime = a.AppointmentTime.ToString(@"hh\:mm"),
+                        Treatment = treatmentName,
+                        a.Status,
+                        HFID = hfid ?? "Not a registered user",
+                        ProfilePhoto = profilePhoto
+                    };
+                }).ToList();
+
+                // Group all appointments by date (not filtered)
+                var dailyCounts = appointments
+                    .GroupBy(a => a.AppointmentDate.Date)
+                    .OrderBy(g => g.Key)
+                    .Select(g => new
+                    {
+                        Date = g.Key.ToString("dd-MM-yyyy"),
+                        TotalAppointments = g.Count()
+                    })
+                    .ToList();
+
+                int totalAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today);
+                int missedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Absent");
+                int completedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Completed");
+
+                _logger.LogInformation("Fetched {Count} appointments for Clinic ID {ClinicId}", response.Count, clinicId);
+
+                return Ok(ApiResponseFactory.Success(new
+                {
+                    Appointments = response,
+                    TotalAppointmentsToday = totalAppointmentsToday,
+                    MissedAppointmentsToday = missedAppointmentsToday,
+                    CompletedAppointmentsToday = completedAppointmentsToday,
+                    DailyCounts = dailyCounts
+                }, "Appointments fetched successfully."));
+            }
 
 
 

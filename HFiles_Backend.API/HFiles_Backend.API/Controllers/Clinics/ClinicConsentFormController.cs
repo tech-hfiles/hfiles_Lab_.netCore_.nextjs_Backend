@@ -49,7 +49,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 environmentName, isProduction);
 
             var baseUrl = _env.IsProduction()
-                ? "https://api.hfiles.co.in"
+                ? "https://hfiles.co.in"
                 : "http://localhost:3000";
 
             _logger.LogInformation("Selected Base URL: {BaseUrl}", baseUrl);

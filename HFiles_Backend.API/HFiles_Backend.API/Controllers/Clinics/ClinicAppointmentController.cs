@@ -247,9 +247,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpGet("clinic/{clinicId:int}")]
         [Authorize]
         public async Task<IActionResult> GetAppointmentsByClinicId(
-          [FromRoute] int clinicId,
-          [FromQuery] string? startDate,
-          [FromQuery] string? endDate)
+        [FromRoute] int clinicId,
+        [FromQuery] string? startDate,
+        [FromQuery] string? endDate)
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
@@ -271,7 +271,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     Appointments = new List<object>(),
                     TotalAppointmentsToday = 0,
                     MissedAppointmentsToday = 0,
-                    CompletedAppointmentsToday = 0,
                     DailyCounts = new List<object>()
                 }, "No appointments found."));
             }
@@ -307,12 +306,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 .Where(a => a.AppointmentDate.Date >= start.Date && a.AppointmentDate.Date <= end.Date)
                 .ToList();
 
-            // DEBUG: Log the statuses to see what we're getting
-            _logger.LogInformation("Filtered appointments count: {Count}", filteredAppointments.Count);
-            _logger.LogInformation("Status breakdown: {Statuses}",
-                string.Join(", ", filteredAppointments.GroupBy(a => a.Status ?? "NULL")
-                    .Select(g => $"{g.Key}: {g.Count()}")));
-
             var today = DateTime.Today;
 
             // Build lookup from visit to HFID
@@ -336,6 +329,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 userMap[hfid] = user?.ProfilePhoto ?? "Not a registered user";
             }
 
+            // Build response
             var response = filteredAppointments.Select(a =>
             {
                 var hfid = visitHfidLookup[new
@@ -411,30 +405,19 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 })
                 .ToList();
 
-            // Calculate statistics based on the FILTERED date range with case-insensitive comparison
-            int totalAppointmentsInRange = filteredAppointments.Count;
-            int missedAppointmentsInRange = filteredAppointments.Count(a =>
-                a.Status != null && a.Status.Equals("Absent", StringComparison.OrdinalIgnoreCase));
-            int completedAppointmentsInRange = filteredAppointments.Count(a =>
-                a.Status != null && a.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase));
-
-            _logger.LogInformation("Statistics - Total: {Total}, Missed: {Missed}, Completed: {Completed}",
-                totalAppointmentsInRange, missedAppointmentsInRange, completedAppointmentsInRange);
+            int totalAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today);
+            int missedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Absent");
+            int completedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Completed");
 
             _logger.LogInformation("Fetched {Count} appointments for Clinic ID {ClinicId}", response.Count, clinicId);
 
             return Ok(ApiResponseFactory.Success(new
             {
                 Appointments = response,
-                TotalAppointmentsInRange = totalAppointmentsInRange,
-                MissedAppointmentsInRange = missedAppointmentsInRange,
-                CompletedAppointmentsInRange = completedAppointmentsInRange,
-                DailyCounts = dailyCounts,
-                DateRange = new
-                {
-                    StartDate = start.ToString("dd-MM-yyyy"),
-                    EndDate = end.ToString("dd-MM-yyyy")
-                }
+                TotalAppointmentsToday = totalAppointmentsToday,
+                MissedAppointmentsToday = missedAppointmentsToday,
+                CompletedAppointmentsToday = completedAppointmentsToday,
+                DailyCounts = dailyCounts
             }, "Appointments fetched successfully."));
         }
 

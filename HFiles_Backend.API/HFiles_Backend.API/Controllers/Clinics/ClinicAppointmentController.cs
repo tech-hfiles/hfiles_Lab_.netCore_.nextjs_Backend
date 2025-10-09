@@ -328,8 +328,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 var user = await _userRepository.GetUserByHFIDAsync(hfid);
                 userMap[hfid] = user?.ProfilePhoto ?? "Not a registered user";
             }
-
-            // Build response
             var response = filteredAppointments.Select(a =>
             {
                 var hfid = visitHfidLookup[new
@@ -405,20 +403,25 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 })
                 .ToList();
 
-            // FIXED: Calculate today's statistics from ALL appointments, not filtered ones
-            int totalAppointmentsToday = appointments.Count(a => a.AppointmentDate.Date == today);
-            int missedAppointmentsToday = appointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Absent");
-            int completedAppointmentsToday = appointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Completed");
+            // Calculate statistics based on the FILTERED date range
+            int totalAppointmentsInRange = filteredAppointments.Count;
+            int missedAppointmentsInRange = filteredAppointments.Count(a => a.Status == "Absent");
+            int completedAppointmentsInRange = filteredAppointments.Count(a => a.Status == "Completed");
 
             _logger.LogInformation("Fetched {Count} appointments for Clinic ID {ClinicId}", response.Count, clinicId);
 
             return Ok(ApiResponseFactory.Success(new
             {
                 Appointments = response,
-                TotalAppointmentsToday = totalAppointmentsToday,
-                MissedAppointmentsToday = missedAppointmentsToday,
-                CompletedAppointmentsToday = completedAppointmentsToday,
-                DailyCounts = dailyCounts
+                TotalAppointmentsInRange = totalAppointmentsInRange,
+                MissedAppointmentsInRange = missedAppointmentsInRange,
+                CompletedAppointmentsInRange = completedAppointmentsInRange,
+                DailyCounts = dailyCounts,
+                DateRange = new
+                {
+                    StartDate = start.ToString("dd-MM-yyyy"),
+                    EndDate = end.ToString("dd-MM-yyyy")
+                }
             }, "Appointments fetched successfully."));
         }
 

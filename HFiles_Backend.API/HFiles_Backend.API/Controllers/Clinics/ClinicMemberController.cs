@@ -434,11 +434,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 branchIds.Add(mainClinicId);
 
                 var deletedMembers = await clinicMemberRepository.GetDeletedMembersWithDetailsAsync(clinicId, branchIds);
-                //if (!deletedMembers.Any())
-                //{
-                //    _logger.LogWarning("No deleted users found for Clinic ID {ClinicId}.", clinicId);
-                //    return NotFound(ApiResponseFactory.Fail("No deleted users found for this clinic."));
-                //}
+                if (!deletedMembers.Any())
+                {
+                    _logger.LogWarning("No deleted users found for Clinic ID {ClinicId}.", clinicId);
+                    return Ok(ApiResponseFactory.Fail("No deleted users found for this clinic."));
+                }
 
                 await transaction.CommitAsync();
 

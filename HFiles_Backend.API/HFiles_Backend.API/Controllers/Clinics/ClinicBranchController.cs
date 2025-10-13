@@ -570,7 +570,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             if (clinic == null)
             {
                 _logger.LogWarning("Clinic not found for User ID {UserId}", userId);
-                return NotFound(ApiResponseFactory.Fail($"Clinic not found for user ID {userId}."));
+                return Ok(ApiResponseFactory.Fail($"Clinic not found for user ID {userId}."));
             }
 
             int mainClinicId = clinic.ClinicReference == 0 ? clinic.Id : clinic.ClinicReference;

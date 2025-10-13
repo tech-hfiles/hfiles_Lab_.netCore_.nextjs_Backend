@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
@@ -13,5 +8,4 @@ namespace HFiles_Backend.Application.DTOs.Labs
         [MaxLength(20, ErrorMessage = "HFID must not exceed 20 characters.")]
         public string HFID { get; set; } = null!;
     }
-
 }

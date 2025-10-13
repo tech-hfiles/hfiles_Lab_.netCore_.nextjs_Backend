@@ -75,16 +75,18 @@ namespace HFiles_Backend.Infrastructure.Repositories
             }
         }
 
-        public async Task<ClinicPatientMedicalHistory> UpdateAsync(ClinicPatientMedicalHistory history)
+        public Task<ClinicPatientMedicalHistory> UpdateAsync(ClinicPatientMedicalHistory history)
         {
             try
             {
                 if (history == null)
                     throw new ArgumentNullException(nameof(history));
 
-                _context.ClinicPatientMedicalHistories.Update(history);
+                // Mark entity as modified (Entity Framework will track changes)
+                _context.Entry(history).State = EntityState.Modified;
+
                 _logger.LogInformation("Medical history updated for ID: {Id}", history.Id);
-                return await Task.FromResult(history);
+                return Task.FromResult(history);
             }
             catch (Exception ex)
             {

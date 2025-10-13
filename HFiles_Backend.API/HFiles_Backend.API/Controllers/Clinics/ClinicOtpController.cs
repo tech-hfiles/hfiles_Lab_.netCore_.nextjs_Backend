@@ -372,8 +372,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 // Set reset link based on environment
                 string resetLink = _environment.IsDevelopment()
                     ? "http://localhost:3000/forgotPassword"
-                  : "https://clinicdemo.hfiles.co.in/forgotPassword";
-                //: "https://hfiles.co.in/forgotPassword";
+                    : "https://hfiles.co.in/forgotPassword";
+                //: "https://clinicdemo.hfiles.co.in/forgotPassword";
+
+
                 string emailBody = _emailTemplateService.GenerateClinicPasswordResetTemplate(
                     clinicUser.ClinicName, otp, OtpValidityMinutes, resetLink);
 
@@ -483,8 +485,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 // Set reset link based on environment
                 string resetLink = _environment.IsDevelopment()
                     ? "http://localhost:3000/forgotPassword"
-                    : "https://clinicdemo.hfiles.co.in/forgotPassword";
-                    //: "https://hfiles.co.in/forgotPassword";
+                    //: "https://clinicdemo.hfiles.co.in/forgotPassword";
+                    : "https://hfiles.co.in/forgotPassword";
                 string emailBody = _emailTemplateService.GenerateClinicUserPasswordResetTemplate(
                     userDetails.FirstName, clinic.ClinicName, otp, OtpValidityMinutes, resetLink);
 

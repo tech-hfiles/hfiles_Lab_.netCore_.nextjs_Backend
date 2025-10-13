@@ -70,12 +70,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 committed = true;
 
                 _logger.LogInformation("Treatment created for Clinic ID {ClinicId}", request.ClinicId);
-                return Ok(ApiResponseFactory.Success("Package created successfully."));
+                return Ok(ApiResponseFactory.Success("Treatment created successfully."));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating treatment for Clinic ID {ClinicId}", request.ClinicId);
-                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while creating the Package."));
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while creating the Treatment."));
             }
             finally
             {
@@ -128,12 +128,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 committed = true;
 
                 _logger.LogInformation("Treatment updated. ClinicId: {ClinicId}, TreatmentId: {TreatmentId}", clinicId, treatmentId);
-                return Ok(ApiResponseFactory.Success("Package updated successfully."));
+                return Ok(ApiResponseFactory.Success("Treatment updated successfully."));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating treatment. ClinicId: {ClinicId}, TreatmentId: {TreatmentId}", clinicId, treatmentId);
-                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while updating the Package."));
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while updating the Treatment."));
             }
             finally
             {
@@ -172,8 +172,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 if (treatments == null || !treatments.Any())
                 {
-                    _logger.LogInformation("No Packages found for Clinic ID {ClinicId}", clinicId);
-                    return Ok(ApiResponseFactory.Success(new List<ClinicTreatmentResponse>(), "No Packages found."));
+                    _logger.LogInformation("No Treatments found for Clinic ID {ClinicId}", clinicId);
+                    return Ok(ApiResponseFactory.Success(new List<ClinicTreatmentResponse>(), "No Treatments found."));
                 }
 
                 var response = treatments.Select(t => new ClinicTreatmentResponse
@@ -189,12 +189,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }).ToList();
 
                 _logger.LogInformation("Fetched {Count} treatments for Clinic ID {ClinicId}", response.Count, clinicId);
-                return Ok(ApiResponseFactory.Success(response, "Packages fetched successfully."));
+                return Ok(ApiResponseFactory.Success(response, "Treatments fetched successfully."));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching treatments for Clinic ID {ClinicId}", clinicId);
-                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching Packages."));
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching Treatments."));
             }
         }
     }

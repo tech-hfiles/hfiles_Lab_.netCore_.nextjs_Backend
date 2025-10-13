@@ -1,5 +1,6 @@
 ﻿using HFiles_Backend.API.DTOs.Clinics;
 using HFiles_Backend.API.Interfaces;
+using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.PatientRecord;
 using HFiles_Backend.Domain.Entities.Clinics;
@@ -28,7 +29,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         S3StorageService s3StorageService,
         IClinicVisitRepository clinicVisitRepository,
         IUserRepository userRepository,
-        IUniqueIdGeneratorService uniqueIdGenerator
+        IUniqueIdGeneratorService uniqueIdGenerator,
+        IEmailTemplateService emailTemplateService,
+        EmailService emailService
     ) : ControllerBase
     {
         private readonly ILogger<ClinicPatientRecordController> _logger = logger;
@@ -39,6 +42,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IClinicVisitRepository _clinicVisitRepository = clinicVisitRepository;
         private readonly IUserRepository _userRepository = userRepository;
         private readonly IUniqueIdGeneratorService _uniqueIdGenerator = uniqueIdGenerator;
+        private readonly IEmailTemplateService _emailTemplateService = emailTemplateService;
+        private readonly EmailService _emailService = emailService;
 
 
         private const int CLINIC_ID = 8;
@@ -316,7 +321,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             if (user == null)
                 return NotFound(ApiResponseFactory.Fail("User not found for provided HFID."));
 
-            if (string.IsNullOrWhiteSpace(user.Email))
+            if (string.IsNullOrWhiteSpace(user.Email) || user.Email == null)
             {
                 _logger.LogWarning("User email not found for HFID: {HFID}", clinicPatient.HFID);
                 return BadRequest(ApiResponseFactory.Fail($"No email address found for user with HFID {clinicPatient.HFID}."));
@@ -340,6 +345,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             try
             {
                 var uploadedDocumentDetails = new List<string>();
+                var patientDocumentInfoList = new List<PatientDocumentInfo>();
 
                 foreach (var doc in request.Documents)
                 {
@@ -388,7 +394,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                                         await _userRepository.SaveAsync(report);
                                     }
-                                    uploadedDocumentDetails.Add("Images (Lab Report)");
+
+                                    var categoryName = "Lab Reports";
+                                    uploadedDocumentDetails.Add($"Images ({categoryName})");
+                                    patientDocumentInfoList.Add(new PatientDocumentInfo
+                                    {
+                                        DocumentType = "Images",
+                                        Category = categoryName,
+                                        DocumentUrl = imageUrls.FirstOrDefault() ?? ""
+                                    });
                                 }
                             }
                             catch (Exception ex)
@@ -412,6 +426,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                             await doc.PdfFile.CopyToAsync(stream);
 
                         s3Url = await _s3StorageService.UploadFileToS3(tempPath, $"clinic/{fileName}");
+
+                        // Delete temp file immediately after upload
                         System.IO.File.Delete(tempPath);
 
                         if (s3Url == null)
@@ -459,7 +475,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                         await _userRepository.SaveAsync(report);
 
-                        // Add document detail with category for notification
+                        // Add document detail with category and URL for email
                         var categoryName = doc.Type switch
                         {
                             RecordType.Prescription => "Medications/Prescription",
@@ -471,6 +487,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         };
 
                         uploadedDocumentDetails.Add($"{doc.Type} ({categoryName})");
+                        patientDocumentInfoList.Add(new PatientDocumentInfo
+                        {
+                            DocumentType = doc.Type.ToString(),
+                            Category = categoryName,
+                            DocumentUrl = s3Url
+                        });
                     }
                 }
 
@@ -492,6 +514,25 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 var userNotificationMessage = $"{clinicName} has uploaded {uploadedDocumentDetails.Count} document(s) to your account. You can view them in the All Reports section under the following categories:\n\n{documentsFormatted}";
 
+                // Generate email template
+                var patientFirstName = user?.FirstName ?? "Patient";
+                var patientEmail = user?.Email ?? string.Empty;
+
+                var emailTemplate = _emailTemplateService.GeneratePatientDocumentsUploadedEmailTemplate(
+                    patientFirstName,
+                    patientDocumentInfoList,
+                    clinicName,
+                    appointmentDate,
+                    appointmentTime
+                );
+
+                // Send email without attachments (view buttons in email instead)
+                await _emailService.SendEmailAsync(
+                    patientEmail,
+                    $"Documents Uploaded - {clinicName}",
+                    emailTemplate
+                );
+
                 await transaction.CommitAsync();
                 committed = true;
 
@@ -507,6 +548,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     UploadedDocuments = uploadedDocs,
                     DocumentDetails = uploadedDocumentDetails,
                     SentAt = DateTime.UtcNow,
+                    EmailSent = true,
                     NotificationMessage =
                      $"Documents ({string.Join(", ", uploadedDocs)}) uploaded for patient {patientName} on HF account {clinicPatient?.HFID} for {appointmentDate} at {appointmentTime}.",
                     UserNotificationMessage = userNotificationMessage,

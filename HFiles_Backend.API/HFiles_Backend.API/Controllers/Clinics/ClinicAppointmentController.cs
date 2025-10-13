@@ -53,7 +53,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         {
             var environment = _configuration["Environment"] ?? "Development";
             return environment.Equals("Production", StringComparison.OrdinalIgnoreCase)
-                ? "https://hfiles.in"
+                ? "https://hfiles.co.in"
                 : "http://localhost:3000";
         }
 
@@ -244,6 +244,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
         // Get Appointments
+        // Get Appointments
         [HttpGet("clinic/{clinicId:int}")]
         [Authorize]
         public async Task<IActionResult> GetAppointmentsByClinicId(
@@ -407,6 +408,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             int totalAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today);
             int missedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Absent");
+            int completedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Completed");
 
             _logger.LogInformation("Fetched {Count} appointments for Clinic ID {ClinicId}", response.Count, clinicId);
 
@@ -415,6 +417,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 Appointments = response,
                 TotalAppointmentsToday = totalAppointmentsToday,
                 MissedAppointmentsToday = missedAppointmentsToday,
+                CompletedAppointmentsToday = completedAppointmentsToday,
                 DailyCounts = dailyCounts
             }, "Appointments fetched successfully."));
         }
@@ -428,9 +431,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpPut("clinic/{clinicId:int}/appointment/{appointmentId:int}/status")]
         [Authorize]
         public async Task<IActionResult> UpdateAppointmentStatus(
-      [FromRoute] int clinicId,
-      [FromRoute] int appointmentId,
-      [FromBody] AppointmentStatusUpdateDto dto)
+          [FromRoute] int clinicId,
+          [FromRoute] int appointmentId,
+          [FromBody] AppointmentStatusUpdateDto dto)
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
@@ -466,10 +469,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 ClinicPatient? clinicPatient = null;
                 ClinicVisit? createdVisit = null;
 
-                if (!string.IsNullOrWhiteSpace(dto.HFID))
+                if (!string.IsNullOrWhiteSpace(dto.HFID) && dto.HFID != "Not a registered user")
                 {
                     // Step 1: Get user by HFID
                     var user = await _userRepository.GetUserByHFIDAsync(dto.HFID);
+
                     if (user == null)
                     {
                         _logger.LogWarning("No user found for HFID {HFID}", dto.HFID);
@@ -517,6 +521,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     }
                 }
 
+
+
                 // Update status logic (existing code)
                 if (!string.IsNullOrWhiteSpace(dto.Status))
                 {
@@ -541,9 +547,29 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
                 else if (dto.Status == "Completed")
                 {
-                    if (appointment.AppointmentDate.Date != now.Date || appointmentDateTime > now)
+                    // Calculate 2 hours before current time
+                    var twoHoursAgo = now.AddHours(-2);
+
+                    // Check if appointment is today
+                    if (appointment.AppointmentDate.Date != now.Date)
+                    {
                         return BadRequest(ApiResponseFactory.Fail(
-                            "Can only mark as completed if appointment is today and time has passed."));
+                            "Can only mark as completed if appointment is today."));
+                    }
+
+                    // Check if appointment time is within the last 2 hours or has passed
+                    //if (appointmentDateTime > now)
+                    //{
+                    //    return BadRequest(ApiResponseFactory.Fail(
+                    //        "Cannot mark appointment as completed before it occurs."));
+                    //}
+
+                    // Check if appointment was more than 2 hours ago
+                    if (appointmentDateTime < twoHoursAgo)
+                    {
+                        return BadRequest(ApiResponseFactory.Fail(
+                            "Can only mark as completed within 2 hours of the appointment time."));
+                    }
 
                     appointment.Treatment = dto.Treatment;
                 }
@@ -625,10 +651,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         public async Task<IActionResult> DeleteAppointmentById([FromRoute] int appointmentId)
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
-
             var transaction = await _clinicRepository.BeginTransactionAsync();
             var committed = false;
-
             try
             {
                 var appointment = await _appointmentRepository.GetByIdAsync(appointmentId);
@@ -643,6 +667,52 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 {
                     _logger.LogWarning("Unauthorized delete attempt for appointment ID {AppointmentId} in Clinic ID {ClinicId}", appointmentId, appointment.ClinicId);
                     return Unauthorized(ApiResponseFactory.Fail("You are not authorized to delete appointments for this clinic."));
+                }
+
+                // Check and delete corresponding ClinicVisit if exists
+                try
+                {
+                    // Get patient from Patients table using phone number
+                    var patient = await _userRepository.GetByPhoneNumberAsync(appointment.VisitorPhoneNumber);
+
+                    if (patient != null && !string.IsNullOrEmpty(patient.HfId))
+                    {
+                        // Get ClinicPatient using HFID
+                        var clinicPatient = await _clinicVisitRepository.GetPatientAsync(patient.HfId);
+
+                        if (clinicPatient != null)
+                        {
+                            // Find matching visit with clinic ID confirmation
+                            var visit = await _clinicVisitRepository.GetVisitByDetailsAsync(
+                                clinicPatient.Id,
+                                appointment.AppointmentDate,
+                                appointment.AppointmentTime,
+                                appointment.ClinicId
+                            );
+
+                            if (visit != null)
+                            {
+                                await _clinicVisitRepository.DeleteAsync(visit);
+                                _logger.LogInformation("Deleted corresponding visit ID {VisitId} for appointment ID {AppointmentId} in Clinic ID {ClinicId}",
+                                    visit.Id, appointmentId, appointment.ClinicId);
+                            }
+                            else
+                            {
+                                _logger.LogInformation("No matching visit found for appointment ID {AppointmentId} in Clinic ID {ClinicId}",
+                                    appointmentId, appointment.ClinicId);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation("No patient with valid HFID found for phone number {PhoneNumber} for appointment ID {AppointmentId}",
+                            appointment.VisitorPhoneNumber, appointmentId);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error while checking/deleting corresponding visit for appointment ID {AppointmentId}", appointmentId);
+                    // Continue with appointment deletion even if visit deletion fails
                 }
 
                 // Delete from Google Calendar
@@ -666,8 +736,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
                     AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
                     appointment.Status,
-
-                    // Notification section
                     NotificationContext = new
                     {
                         AppointmentId = appointment.Id,
@@ -1281,7 +1349,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         HFID = patient.HFID,
                         ProfilePhoto = profilePhoto,
                         LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
-                        PaymentStatus = Enum.GetName(typeof(PaymentMethod), lastVisit?.PaymentMethod ?? default) ?? "Pending",
+                        PaymentStatus = lastVisit?.PaymentMethod?.ToString() ?? "Pending",
 
                         TreatmentNames = treatmentNames.Any()
                                          ? string.Join(", ", treatmentNames)

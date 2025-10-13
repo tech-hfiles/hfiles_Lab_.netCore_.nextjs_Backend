@@ -241,9 +241,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         // Get Clinic Users
         [HttpGet("clinics/{clinicId}/users")]
         public async Task<IActionResult> GetAllClinicUsers(
-    [FromRoute][Range(1, int.MaxValue, ErrorMessage = "Clinic ID must be greater than zero.")] int clinicId,
-    [FromServices] ClinicSuperAdminRepository clinicSuperAdminRepository,
-    [FromServices] ClinicMemberRepository clinicMemberRepository)
+            [FromRoute][Range(1, int.MaxValue, ErrorMessage = "Clinic ID must be greater than zero.")] int clinicId,
+            [FromServices] ClinicSuperAdminRepository clinicSuperAdminRepository,
+            [FromServices] ClinicMemberRepository clinicMemberRepository)
         {
             HttpContext.Items["Log-Category"] = "User Retrieval";
             _logger.LogInformation("Received request to fetch all users for Clinic ID: {ClinicId}", clinicId);

@@ -5,6 +5,7 @@ namespace HFiles_Backend.Domain.Interfaces
     public interface IClinicVisitRepository
     {
         Task<ClinicPatient> GetOrCreatePatientAsync(string hfid, string fullName);
+        Task<ClinicPatient?> GetPatientAsync(string hfid);
         Task<List<ClinicConsentForm>> GetConsentFormsByTitlesAsync(List<string> titles);
         Task SaveVisitAsync(ClinicVisit visit);
         Task<bool> HasVisitInClinicAsync(string hfid, int clinicId);
@@ -14,5 +15,7 @@ namespace HFiles_Backend.Domain.Interfaces
         Task UpdateAsync(ClinicVisit visit);
         Task<ClinicVisit?> GetExistingVisitAsync(int clinicPatientId, DateTime appointmentDate);
         Task<ClinicVisit?> GetExistingVisitAsyncWithTime(int clinicPatientId, DateTime appointmentDate, TimeSpan appointmentTime);
+        Task<ClinicVisit?> GetVisitByDetailsAsync(int clinicPatientId, DateTime appointmentDate, TimeSpan appointmentTime, int clinicId);
+        Task DeleteAsync(ClinicVisit visit);
     }
 }

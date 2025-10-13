@@ -24,7 +24,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
     IConfiguration configuration,
     IEmailTemplateService emailTemplateService,
     IUserRepository userRepository,
-    EmailService emailService
+    EmailService emailService,
+    IWebHostEnvironment env
     ) : ControllerBase
     {
         private readonly IClinicVisitRepository _clinicVisitRepository = clinicVisitRepository;
@@ -35,15 +36,25 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IEmailTemplateService _emailTemplateService = emailTemplateService;
         private readonly IUserRepository _userRepository = userRepository;
         private readonly EmailService _emailService = emailService;
+        private readonly IWebHostEnvironment _env = env;
 
 
 
         private string GetBaseUrl()
         {
-            var environment = _configuration["Environment"] ?? "Development";
-            return environment.Equals("Production", StringComparison.OrdinalIgnoreCase)
-                ? "https://hfiles.in"
+            var environmentName = _env.EnvironmentName;
+            var isProduction = _env.IsProduction();
+
+            _logger.LogInformation("Environment Name: {EnvironmentName}, IsProduction: {IsProduction}",
+                environmentName, isProduction);
+
+            var baseUrl = _env.IsProduction()
+                ? "https://hfiles.co.in"
                 : "http://localhost:3000";
+
+            _logger.LogInformation("Selected Base URL: {BaseUrl}", baseUrl);
+
+            return baseUrl;
         }
 
 
@@ -256,9 +267,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpPost("clinics/{clinicId}/patients/{patientId}/consent-forms/send")]
         [Authorize]
         public async Task<IActionResult> SendConsentFormsToPatient(
-            [FromRoute] int clinicId,
-            [FromRoute] int patientId,
-            [FromBody] SendConsentFormsRequest request)
+         [FromRoute] int clinicId,
+         [FromRoute] int patientId,
+         [FromBody] SendConsentFormsRequest request)
         {
             HttpContext.Items["Log-Category"] = "Clinic Consent Form";
 
@@ -288,7 +299,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
 
             var transaction = await _clinicRepository.BeginTransactionAsync();
-            var committed = false;
 
             try
             {
@@ -396,7 +406,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         // Default fallback
                         formUrl = "PublicTMDConsentForm";
                     }
-                  
+
                     var consentFormLink = $"{baseUrl}/{formUrl}?ConsentId={entry.Id}&ConsentName={encodedConsentName}&hfid={targetPatient.HFID}";
 
                     consentFormLinks.Add(new ConsentFormLinkInfo
@@ -421,8 +431,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     emailTemplate
                 );
 
+                // Commit transaction BEFORE building response
                 await transaction.CommitAsync();
-                committed = true;
 
                 var consentFormLinksFormatted = string.Join("\n", consentFormLinks.Select((link, index) =>
                 $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"));
@@ -470,12 +480,30 @@ namespace HFiles_Backend.API.Controllers.Clinics
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error while sending consent forms to Patient ID {PatientId} in Clinic ID {ClinicId}", patientId, clinicId);
+
+                // Safely rollback transaction
+                try
+                {
+                    await transaction.RollbackAsync();
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError(rollbackEx, "Error during transaction rollback");
+                }
+
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while sending the consent forms."));
             }
             finally
             {
-                if (!committed && transaction.GetDbTransaction().Connection != null)
-                    await transaction.RollbackAsync();
+                // Safely dispose transaction
+                try
+                {
+                    await transaction.DisposeAsync();
+                }
+                catch (Exception disposeEx)
+                {
+                    _logger.LogError(disposeEx, "Error disposing transaction");
+                }
             }
         }
     }

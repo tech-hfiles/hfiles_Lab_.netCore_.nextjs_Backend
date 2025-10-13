@@ -63,6 +63,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
             return null;
         }
 
+
+
+
+
         // CREATE or UPDATE Medical History
         [HttpPost("patient/medical-history")]
         [Authorize]
@@ -86,7 +90,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
 
             var transaction = await _clinicRepository.BeginTransactionAsync();
-            bool committed = false;
 
             try
             {
@@ -95,12 +98,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (string.IsNullOrWhiteSpace(actionByName))
                 {
                     _logger.LogWarning("Unable to resolve user identity for medical history.");
+                    await transaction.RollbackAsync();
                     return Unauthorized(ApiResponseFactory.Fail("Unable to resolve user identity."));
                 }
 
                 var adminIdStr = User.FindFirst("ClinicAdminId")?.Value;
                 if (!int.TryParse(adminIdStr, out int adminId))
                 {
+                    await transaction.RollbackAsync();
                     return Unauthorized(ApiResponseFactory.Fail("Invalid admin ID in token."));
                 }
 
@@ -109,6 +114,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (user == null)
                 {
                     _logger.LogWarning("User not found for HFID: {HFID}", request.HFID);
+                    await transaction.RollbackAsync();
                     return NotFound(ApiResponseFactory.Fail($"User with HFID {request.HFID} not found."));
                 }
 
@@ -116,9 +122,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 var fullName = $"{user.FirstName} {user.LastName}".Trim();
                 var clinicPatient = await _clinicVisitRepository.GetOrCreatePatientAsync(request.HFID, fullName);
 
-                // Check if medical history already exists
+                // Check if medical history already exists using ClinicPatientId
                 var existingHistory = await _medicalHistoryRepository.GetByClinicPatientIdAsync(
-                    clinicPatient.Id,
+                    user.Id,  // This is the ClinicPatient ID
                     request.ClinicId
                 );
 
@@ -127,8 +133,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 if (existingHistory != null)
                 {
-                    // UPDATE existing history
+                    // UPDATE existing history ONLY
+                    // The entity is already tracked by EF from GetByClinicPatientIdAsync
                     isUpdate = true;
+
                     existingHistory.Medical = request.Medical;
                     existingHistory.Surgical = request.Surgical;
                     existingHistory.Drugs = request.Drugs;
@@ -143,11 +151,16 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     existingHistory.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                     existingHistory.UpdatedBy = adminId;
 
-                    history = await _medicalHistoryRepository.UpdateAsync(existingHistory);
+                    // Entity is already tracked, so we just assign it
+                    // No need to call UpdateAsync since EF is tracking changes
+                    history = existingHistory;
+
+                    _logger.LogInformation("Updating existing medical history ID: {HistoryId} for ClinicPatient ID: {ClinicPatientId}",
+                        existingHistory.Id, clinicPatient.Id);
                 }
                 else
                 {
-                    // CREATE new history
+                    // CREATE new history ONLY
                     history = new ClinicPatientMedicalHistory
                     {
                         ClinicPatientId = clinicPatient.Id,
@@ -167,15 +180,17 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         CreatedBy = adminId
                     };
 
-                    history = await _medicalHistoryRepository.CreateAsync(history);
+                    await _medicalHistoryRepository.CreateAsync(history);
+
+                    _logger.LogInformation("Creating new medical history for ClinicPatient ID: {ClinicPatientId}", clinicPatient.Id);
                 }
 
+                // Save all changes - this will either INSERT (create) or UPDATE (modify tracked entity)
                 await _medicalHistoryRepository.SaveChangesAsync();
                 await transaction.CommitAsync();
-                committed = true;
 
                 _logger.LogInformation(
-                    "{Action} medical history for Patient ID: {PatientId}, Clinic ID: {ClinicId} by {ActionBy}",
+                    "{Action} medical history for ClinicPatient ID: {ClinicPatientId}, Clinic ID: {ClinicId} by {ActionBy}",
                     isUpdate ? "Updated" : "Created", clinicPatient.Id, request.ClinicId, actionByName
                 );
 
@@ -211,16 +226,34 @@ namespace HFiles_Backend.API.Controllers.Clinics
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating/updating medical history for HFID: {HFID}", request.HFID);
+
+                try
+                {
+                    await transaction.RollbackAsync();
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError(rollbackEx, "Error during transaction rollback");
+                }
+
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while saving medical history."));
             }
             finally
             {
-                if (!committed && transaction.GetDbTransaction().Connection != null)
+                try
                 {
-                    await transaction.RollbackAsync();
+                    await transaction.DisposeAsync();
+                }
+                catch (Exception disposeEx)
+                {
+                    _logger.LogError(disposeEx, "Error disposing transaction");
                 }
             }
         }
+
+
+
+
 
         // GET Medical History by Patient ID
         [HttpGet("{clinicId}/patient/{patientId}/medical-history")]
@@ -258,7 +291,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (history == null)
                 {
                     _logger.LogInformation("No medical history found for Patient ID: {PatientId}, Clinic ID: {ClinicId}", patientId, clinicId);
-                    return NotFound(ApiResponseFactory.Fail("Medical history not found for this patient."));
+                    return Ok(ApiResponseFactory.Success("No medical history found for this patient."));
                 }
 
                 // Get creator and updater names

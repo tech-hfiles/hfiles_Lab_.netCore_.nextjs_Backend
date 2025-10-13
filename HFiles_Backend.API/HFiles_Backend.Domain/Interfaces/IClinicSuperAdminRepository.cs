@@ -15,5 +15,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<ClinicSuperAdmin?> GetMainSuperAdminAsync(int userId, int clinicId);
         void Update(ClinicSuperAdmin admin);
         void Add(ClinicSuperAdmin admin);
+        Task<ClinicSuperAdmin?> GetSuperAdminByIdAsync(int superAdminId);
     }
 }

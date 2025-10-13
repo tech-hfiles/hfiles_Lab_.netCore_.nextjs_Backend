@@ -114,7 +114,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your clinic or its branches."));
 
                 var createdByClaim = User.FindFirst("ClinicAdminId")?.Value;
-                if (createdByClaim == null || !int.TryParse(createdByClaim, out int createdBy))
+                if (createdByClaim == null || !int.TryParse(createdByClaim, out int createdByAdminId))
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing ClinicAdminId in token."));
 
                 string? createdByName = await ResolveUsernameFromClaims(HttpContext, _context);
@@ -138,16 +138,23 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return BadRequest(ApiResponseFactory.Fail($"{fullName}'s HFID {dto.HFID} already exists as Member in Branch {dto.BranchId}."));
                 }
 
-                var superAdmin = await _clinicSuperAdminRepository.GetSuperAdminAsync(userDetails.Id, clinicId, clinicEntry.ClinicReference);
-                if (superAdmin != null)
+                // Check if the new user is already a Super Admin
+                var existingSuperAdmin = await _clinicSuperAdminRepository.GetSuperAdminAsync(userDetails.Id, clinicId, clinicEntry.ClinicReference);
+                if (existingSuperAdmin != null)
                     return BadRequest(ApiResponseFactory.Fail("User is already a registered Super Admin."));
 
+                // Get the creator's SuperAdmin record by their ClinicAdminId (which is the Id in SuperAdmin table)
+                var creatorSuperAdmin = await _clinicSuperAdminRepository.GetSuperAdminByIdAsync(createdByAdminId);
+                if (creatorSuperAdmin == null)
+                    return Unauthorized(ApiResponseFactory.Fail("Creator Super Admin record not found."));
+
+                // Use the UserId from the creator's SuperAdmin record
                 var newMember = new ClinicMember
                 {
                     UserId = userDetails.Id,
                     ClinicId = clinicEntry.Id,
                     PasswordHash = _passwordHasher.HashPassword(null!, dto.Password),
-                    CreatedBy = createdBy,
+                    CreatedBy = creatorSuperAdmin.UserId, 
                     DeletedBy = 0
                 };
 
@@ -174,11 +181,17 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 _logger.LogInformation("New clinic member created successfully. User ID: {UserId}, Clinic ID: {ClinicId}.", newMember.UserId, newMember.ClinicId);
                 return Ok(ApiResponseFactory.Success(responseData, "Member added successfully."));
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating clinic member for HFID {HFID}", dto.HFID);
+                await transaction.RollbackAsync();
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while creating the clinic member."));
+            }
             finally
             {
                 if (transaction.GetDbTransaction().Connection != null)
                 {
-                    await transaction.RollbackAsync();
+                    await transaction.DisposeAsync();
                 }
             }
         }
@@ -247,8 +260,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         continue;
                     }
 
+                    // Get the creator's SuperAdmin record by their ClinicAdminId (which is the Id in SuperAdmin table)
+                    var creatorSuperAdmin = await _clinicSuperAdminRepository.GetSuperAdminByIdAsync(promoterId);
+                    if (creatorSuperAdmin == null)
+                        return Unauthorized(ApiResponseFactory.Fail("Creator Super Admin record not found."));
+
                     member.Role = "Admin";
-                    member.PromotedBy = promoterId;
+                    member.PromotedBy = creatorSuperAdmin.UserId;
                     await _clinicMemberRepository.UpdateAsync(member);
 
                     var memberUser = await _userRepository.GetByIdAsync(member.UserId);
@@ -258,12 +276,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     if (member.ClinicId != clinicId)
                         branchIdForAudit = member.ClinicId;
 
+                   
+
                     promoteResults.Add(new
                     {
                         member.Id,
                         Status = "Success",
                         NewRole = "Admin",
-                        PromotedBy = promoterId,
+                        PromotedBy = creatorSuperAdmin.UserId,
                         PromotedByName = promoterName,
                         MemberName = memberName,
                         BranchClinicId = branchIdForAudit

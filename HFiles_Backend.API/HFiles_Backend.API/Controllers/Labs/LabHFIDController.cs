@@ -78,7 +78,14 @@ namespace HFiles_Backend.API.Controllers.Labs
         public async Task<IActionResult> GetUserDetails([FromBody] HFIDRequest dto)
         {
             HttpContext.Items["Log-Category"] = "Identity Verification";
-            _logger.LogInformation("Received request to fetch user details for HFID: {HFID}", dto.HFID);
+            _logger.LogInformation("Received request to fetch user details for HFID: {HFID}", dto?.HFID);
+
+            // Check if dto is null
+            if (dto == null || string.IsNullOrWhiteSpace(dto.HFID))
+            {
+                _logger.LogWarning("Invalid request: HFID is required");
+                return BadRequest(ApiResponseFactory.Fail("HFID is required"));
+            }
 
             if (!ModelState.IsValid)
             {
@@ -89,25 +96,24 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
-                await using var transaction = await _context.Database.BeginTransactionAsync().ConfigureAwait(false);
-
                 var userDetails = await _context.Users
                     .Where(u => u.HfId == dto.HFID)
                     .Select(u => new
                     {
                         Username = $"{u.FirstName} {u.LastName}",
-                        UserEmail = u.Email
+                        UserEmail = u.Email,
+                        UserProfile = u.ProfilePhoto,
+                        DOB = u.DOB,
+                        Gender = u.Gender,
+                        Phone = u.PhoneNumber
                     })
-                    .FirstOrDefaultAsync()
-                    .ConfigureAwait(false);
+                    .FirstOrDefaultAsync();
 
                 if (userDetails == null)
                 {
                     _logger.LogWarning("User details retrieval failed: No user found with HFID {HFID}", dto.HFID);
                     return NotFound(ApiResponseFactory.Fail($"No user found with HFID '{dto.HFID}'"));
                 }
-
-                await transaction.CommitAsync().ConfigureAwait(false);
 
                 _logger.LogInformation("Successfully fetched user details for HFID {HFID}.", dto.HFID);
                 return Ok(ApiResponseFactory.Success(userDetails, "User details retrieved successfully."));

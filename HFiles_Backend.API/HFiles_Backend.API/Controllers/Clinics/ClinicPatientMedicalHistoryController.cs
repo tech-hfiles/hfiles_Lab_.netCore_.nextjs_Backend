@@ -9,7 +9,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using OfficeOpenXml;
 using System.Security.Claims;
+using System.Text;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -355,5 +357,358 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             return null;
         }
+
+
+
+
+
+        //[HttpPost("import-clinical-notes")]
+        //[Authorize]
+        //public async Task<IActionResult> ImportClinicalNotesFromExcel([FromForm] ClinicalNotesImportRequest request)
+        //{
+        //    HttpContext.Items["Log-Category"] = "Clinical Notes Import";
+
+        //    if (request.ExcelFile == null || request.ExcelFile.Length == 0)
+        //        return BadRequest(ApiResponseFactory.Fail("Excel file is required."));
+
+        //    var extension = Path.GetExtension(request.ExcelFile.FileName).ToLowerInvariant();
+        //    if (extension != ".csv" && extension != ".xlsx")
+        //        return BadRequest(ApiResponseFactory.Fail("Only .csv and .xlsx files are supported."));
+
+        //    const int CLINIC_ID = 8;
+
+        //    bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(CLINIC_ID, User);
+        //    if (!isAuthorized)
+        //    {
+        //        _logger.LogWarning("Unauthorized clinical notes import attempt for Clinic ID {ClinicId}", CLINIC_ID);
+        //        return Unauthorized(ApiResponseFactory.Fail("You are not authorized to import clinical notes for this clinic."));
+        //    }
+
+        //    var response = new ClinicalNotesImportResponse();
+        //    var transaction = await _clinicRepository.BeginTransactionAsync();
+        //    bool committed = false;
+
+        //    try
+        //    {
+        //        var adminIdStr = User.FindFirst("ClinicAdminId")?.Value;
+        //        if (!int.TryParse(adminIdStr, out int adminId))
+        //        {
+        //            return Unauthorized(ApiResponseFactory.Fail("Invalid admin ID in token."));
+        //        }
+
+        //        // Parse Excel/CSV file
+        //        List<ExcelClinicalNoteRow> noteRows = extension == ".csv"
+        //            ? await ProcessClinicalNotesCsvFile(request.ExcelFile)
+        //            : await ProcessClinicalNotesExcelFile(request.ExcelFile);
+
+        //        if (!noteRows.Any())
+        //        {
+        //            return BadRequest(ApiResponseFactory.Fail("No valid clinical notes data found in the file."));
+        //        }
+
+        //        // Group by patient
+        //        var groupedByPatient = noteRows.GroupBy(n => n.PatientId).ToList();
+
+        //        foreach (var patientGroup in groupedByPatient)
+        //        {
+        //            response.TotalProcessed++;
+
+        //            try
+        //            {
+        //                var success = await ProcessPatientClinicalNotes(
+        //                    patientGroup.Key,
+        //                    patientGroup.ToList(),
+        //                    CLINIC_ID,
+        //                    adminId,
+        //                    response);
+
+        //                if (success)
+        //                {
+        //                    response.Successful++;
+        //                    response.PatientsProcessed++;
+        //                }
+        //                else
+        //                {
+        //                    response.Failed++;
+        //                }
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                _logger.LogError(ex, "Error processing clinical notes for Patient {PatientId}", patientGroup.Key);
+        //                response.Failed++;
+        //                response.SkippedReasons.Add($"Patient {patientGroup.Key}: Processing error - {ex.Message}");
+        //            }
+        //        }
+
+        //        // Commit transaction
+        //        await transaction.CommitAsync();
+        //        committed = true;
+
+        //        response.Message = $"Clinical notes import completed: {response.Successful} successful, " +
+        //                          $"{response.Failed} failed out of {response.TotalProcessed} total patients processed.";
+
+        //        _logger.LogInformation("Clinical notes import completed: {Added} added, {Failed} failed",
+        //            response.Successful, response.Failed);
+
+        //        return Ok(ApiResponseFactory.Success(response, response.Message));
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Failed to import clinical notes from Excel");
+        //        return StatusCode(500, ApiResponseFactory.Fail("Failed to process Excel file: " + ex.Message));
+        //    }
+        //    finally
+        //    {
+        //        if (!committed && transaction.GetDbTransaction().Connection != null)
+        //            await transaction.RollbackAsync();
+        //    }
+        //}
+
+        //private async Task<List<ExcelClinicalNoteRow>> ProcessClinicalNotesCsvFile(IFormFile file)
+        //{
+        //    var notes = new List<ExcelClinicalNoteRow>();
+
+        //    using var reader = new StreamReader(file.OpenReadStream());
+
+        //    // Skip header line
+        //    await reader.ReadLineAsync();
+
+        //    string? line;
+        //    while ((line = await reader.ReadLineAsync()) != null)
+        //    {
+        //        if (string.IsNullOrWhiteSpace(line)) continue;
+
+        //        var columns = ParseCsvLine(line);
+        //        if (columns.Count >= 7)
+        //        {
+        //            var note = new ExcelClinicalNoteRow
+        //            {
+        //                DoctorName = CleanField(columns[0]),
+        //                PatientName = CleanField(columns[1]),
+        //                PatientId = CleanField(columns[2]),
+        //                DateString = CleanField(columns[3]),
+        //                Investigation = CleanField(columns[4]),
+        //                Diagnosis = CleanField(columns[5]),
+        //                Note = CleanField(columns[6])
+        //            };
+
+        //            if (DateTime.TryParseExact(note.DateString, "dd-MM-yyyy", null,
+        //                System.Globalization.DateTimeStyles.None, out var parsedDate))
+        //            {
+        //                note.ParsedDate = parsedDate;
+        //                notes.Add(note);
+        //            }
+        //        }
+        //    }
+
+        //    return notes;
+        //}
+
+        //// Helper method to parse CSV line handling quoted fields
+        //private List<string> ParseCsvLine(string line)
+        //{
+        //    var fields = new List<string>();
+        //    var currentField = new StringBuilder();
+        //    bool inQuotes = false;
+
+        //    for (int i = 0; i < line.Length; i++)
+        //    {
+        //        char c = line[i];
+
+        //        if (c == '"')
+        //        {
+        //            if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
+        //            {
+        //                // Double quote "" means literal quote
+        //                currentField.Append('"');
+        //                i++; // Skip next quote
+        //            }
+        //            else
+        //            {
+        //                // Toggle quote mode
+        //                inQuotes = !inQuotes;
+        //            }
+        //        }
+        //        else if (c == ',' && !inQuotes)
+        //        {
+        //            // End of field
+        //            fields.Add(currentField.ToString());
+        //            currentField.Clear();
+        //        }
+        //        else
+        //        {
+        //            currentField.Append(c);
+        //        }
+        //    }
+
+        //    // Add last field
+        //    fields.Add(currentField.ToString());
+
+        //    return fields;
+        //}
+
+        //// Helper method to clean field - remove quotes and trim
+        //private string CleanField(string field)
+        //{
+        //    if (string.IsNullOrEmpty(field))
+        //        return string.Empty;
+
+        //    // Remove leading/trailing quotes and whitespace
+        //    field = field.Trim();
+
+        //    // Remove surrounding quotes if present
+        //    if (field.StartsWith("\"") && field.EndsWith("\""))
+        //    {
+        //        field = field.Substring(1, field.Length - 2);
+        //    }
+
+        //    // Replace double quotes with single quotes
+        //    field = field.Replace("\"\"", "\"");
+
+        //    // Final trim
+        //    return field.Trim();
+        //}
+
+        //private async Task<List<ExcelClinicalNoteRow>> ProcessClinicalNotesExcelFile(IFormFile file)
+        //{
+        //    var notes = new List<ExcelClinicalNoteRow>();
+
+        //    using var stream = new MemoryStream();
+        //    await file.CopyToAsync(stream);
+
+        //    ExcelPackage.License.SetNonCommercialPersonal("HFiles");
+        //    using var package = new ExcelPackage(stream);
+        //    var worksheet = package.Workbook.Worksheets[0];
+
+        //    if (worksheet.Dimension == null) return notes;
+
+        //    var rowCount = worksheet.Dimension.End.Row;
+
+        //    for (int row = 2; row <= rowCount; row++)
+        //    {
+        //        var note = new ExcelClinicalNoteRow
+        //        {
+        //            DoctorName = worksheet.Cells[row, 1].Text.Trim(),
+        //            PatientName = worksheet.Cells[row, 2].Text.Trim(),
+        //            PatientId = worksheet.Cells[row, 3].Text.Trim(),
+        //            DateString = worksheet.Cells[row, 4].Text.Trim(),
+        //            Investigation = worksheet.Cells[row, 5].Text.Trim(),
+        //            Diagnosis = worksheet.Cells[row, 6].Text.Trim(),
+        //            Note = worksheet.Cells[row, 7].Text.Trim()
+        //        };
+
+        //        if (DateTime.TryParseExact(note.DateString, "dd-MM-yyyy", null,
+        //            System.Globalization.DateTimeStyles.None, out var parsedDate))
+        //        {
+        //            note.ParsedDate = parsedDate;
+        //            notes.Add(note);
+        //        }
+        //    }
+
+        //    return notes;
+        //}
+
+        //private async Task<bool> ProcessPatientClinicalNotes(
+        //    string patientId,
+        //    List<ExcelClinicalNoteRow> notes,
+        //    int clinicId,
+        //    int adminId,
+        //    ClinicalNotesImportResponse response)
+        //{
+        //    // 1. Find user by patientId
+        //    var user = await _userRepository.GetUserByPatientIdAsync(patientId);
+        //    if (user == null)
+        //    {
+        //        response.SkippedReasons.Add($"Patient {patientId}: User not found in database");
+        //        return false;
+        //    }
+
+        //    // 2. Get HFID
+        //    if (string.IsNullOrWhiteSpace(user.HfId))
+        //    {
+        //        response.SkippedReasons.Add($"Patient {patientId}: HFID not found for user");
+        //        return false;
+        //    }
+
+        //    // 3. Get or create clinic patient
+        //    var fullName = $"{user.FirstName} {user.LastName}".Trim();
+        //    var clinicPatient = await _clinicVisitRepository.GetOrCreatePatientAsync(user.HfId, fullName);
+
+        //    // 4. Sort notes by date
+        //    var sortedNotes = notes.OrderBy(n => n.ParsedDate).ToList();
+
+        //    // 5. Build date-wise formatted strings
+        //    var investigationsText = new StringBuilder();
+        //    var diagnosesText = new StringBuilder();
+        //    var notesText = new StringBuilder();
+
+        //    foreach (var note in sortedNotes)
+        //    {
+        //        var dateHeader = note.ParsedDate.ToString("dd-MM-yyyy");
+
+        //        if (!string.IsNullOrWhiteSpace(note.Investigation))
+        //        {
+        //            investigationsText.AppendLine(dateHeader);
+        //            investigationsText.AppendLine(note.Investigation);
+        //            investigationsText.AppendLine();
+        //        }
+
+        //        if (!string.IsNullOrWhiteSpace(note.Diagnosis))
+        //        {
+        //            diagnosesText.AppendLine(dateHeader);
+        //            diagnosesText.AppendLine(note.Diagnosis);
+        //            diagnosesText.AppendLine();
+        //        }
+
+        //        if (!string.IsNullOrWhiteSpace(note.Note))
+        //        {
+        //            notesText.AppendLine(dateHeader);
+        //            notesText.AppendLine(note.Note);
+        //            notesText.AppendLine();
+        //        }
+        //    }
+
+        //    // 6. ALWAYS CREATE NEW RECORD - NO UPDATE CHECK
+        //    var newHistory = new ClinicPatientMedicalHistory
+        //    {
+        //        ClinicPatientId = clinicPatient.Id,
+        //        ClinicId = clinicId,
+        //        Investigations = investigationsText.ToString().Trim(),
+        //        Diagnoses = diagnosesText.ToString().Trim(),
+        //        Notes = notesText.ToString().Trim(),
+        //        CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+        //        CreatedBy = adminId,
+        //        DeletedBy = 0,
+        //        Medical = null,
+        //        Surgical = null,
+        //        Drugs = null,
+        //        Allergies = null,
+        //        GeneralExamination = null,
+        //        ProvisionalDiagnosis = null,
+        //        PresentComplaints = null,
+        //        PastHistory = null
+        //    };
+
+        //    // Use repository CreateAsync method
+        //    await _medicalHistoryRepository.CreateAsync(newHistory);
+
+        //    // CRITICAL: Save changes immediately
+        //    await _medicalHistoryRepository.SaveChangesAsync();
+
+        //    _logger.LogInformation("Created new medical history for ClinicPatient ID: {ClinicPatientId}, Clinic ID: {ClinicId}",
+        //        clinicPatient.Id, clinicId);
+
+        //    // 7. Add to success summary
+        //    response.AddedNotes.Add(new AddedClinicalNotesSummary
+        //    {
+        //        PatientId = patientId,
+        //        PatientName = fullName,
+        //        HFID = user.HfId,
+        //        TotalVisitNotes = sortedNotes.Count,
+        //        VisitDates = sortedNotes.Select(n => n.ParsedDate.ToString("dd-MM-yyyy")).Distinct().ToList()
+        //    });
+
+        //    return true;
+        //}
     }
 }

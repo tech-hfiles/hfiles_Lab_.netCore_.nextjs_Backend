@@ -16,5 +16,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<ClinicPatientMedicalHistory> UpdateAsync(ClinicPatientMedicalHistory history);
         Task<bool> ExistsAsync(int patientId, int clinicId);
         Task SaveChangesAsync();
+        Task<ClinicPatientMedicalHistory?> GetByClinicPatientIdDirectAsync(int clinicPatientId, int clinicId);
     }
 }

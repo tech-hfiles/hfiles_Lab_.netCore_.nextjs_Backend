@@ -133,5 +133,16 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 throw;
             }
         }
+
+        public async Task<ClinicPatientMedicalHistory?> GetByClinicPatientIdDirectAsync(int clinicPatientId, int clinicId)
+        {
+            return await _context.ClinicPatientMedicalHistories
+                .Include(h => h.ClinicPatient)
+                .Include(h => h.Clinic)
+                .FirstOrDefaultAsync(h =>
+                    h.ClinicPatientId == clinicPatientId
+                    && h.ClinicId == clinicId
+                    && h.DeletedBy == 0);
+        }
     }
 }

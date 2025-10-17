@@ -207,6 +207,8 @@ try
     builder.Services.AddScoped<IClinicPatientMedicalHistoryRepository, ClinicPatientMedicalHistoryRepository>();
     builder.Services.AddScoped<ClinicPatientMedicalHistoryRepository, ClinicPatientMedicalHistoryRepository>();
     builder.Services.AddScoped<IUniqueIdGeneratorService, UniqueIdGeneratorService>();
+    builder.Services.AddScoped<IClinicStatisticsRepository, ClinicStatisticsRepository>();
+    builder.Services.AddScoped<ClinicStatisticsRepository, ClinicStatisticsRepository>();
 
 
     // DbContext

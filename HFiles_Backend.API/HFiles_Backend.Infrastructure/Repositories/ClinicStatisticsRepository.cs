@@ -94,9 +94,9 @@ namespace HFiles_Backend.Infrastructure.Repositories
         }
 
         public async Task<IncomeStats> GetIncomeStatsAsync(
-            int clinicId,
-            DateTime? startDate,
-            DateTime? endDate)
+      int clinicId,
+      DateTime? startDate,
+      DateTime? endDate)
         {
             var receiptsQuery = _context.ClinicPatientRecords
                 .Where(r => r.ClinicId == clinicId && r.Type == RecordType.Receipt)
@@ -122,13 +122,23 @@ namespace HFiles_Backend.Infrastructure.Repositories
             {
                 try
                 {
-                    var jsonData = JObject.Parse(receipt.JsonData);
+                    // FIRST: Check if this receipt is paid
+                    bool isPaid = receipt.Visit.PaymentMethod.HasValue &&
+                                 receipt.Visit.PaymentMethod.Value != PaymentMethod.Pending;
 
-                    // Try to get amount from receipt object
+                    // ONLY process paid receipts for income calculation
+                    if (!isPaid)
+                    {
+                        continue; // Skip unpaid receipts
+                    }
+
+                    var jsonData = JObject.Parse(receipt.JsonData);
                     var amountPaid = jsonData["receipt"]?["amountPaid"]?.Value<decimal>() ?? 0;
 
+                    // Add to total income
                     totalIncome += amountPaid;
 
+                    // Add to monthly breakdown
                     var visitDate = receipt.Visit.AppointmentDate;
                     var key = (visitDate.Year, visitDate.Month);
 
@@ -161,6 +171,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 MonthlyBreakdown = monthlyBreakdown
             };
         }
+
 
         public async Task<InvoiceStats> GetInvoiceStatsAsync(
             int clinicId,

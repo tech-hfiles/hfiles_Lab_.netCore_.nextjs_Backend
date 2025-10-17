@@ -693,11 +693,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await transaction.CommitAsync();
                 committed = true;
 
+                var userProfile = await _userRepository.GetUserByHFIDAsync(history.HfId);
+
                 var response = new
                 {
                     history.PatientName,
                     history.HfId,
+                    userProfile?.ProfilePhoto,
                     history.Email,
+                    
                     TotalVisits = history.Visits.Count,
                     DateRange = new
                     {

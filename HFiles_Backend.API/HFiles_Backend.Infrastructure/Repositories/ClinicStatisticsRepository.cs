@@ -212,16 +212,51 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .ToListAsync();
 
             var totalReceipts = receipts.Count;
+            decimal totalAmount = 0;
+            decimal paidAmount = 0;
+            decimal unpaidAmount = 0;
+            int paidCount = 0;
+            int unpaidCount = 0;
 
-            // Count paid receipts - those where visit has a payment method set
-            var paidReceipts = receipts.Count(r => r.Visit.PaymentMethod.HasValue &&
-                                                   r.Visit.PaymentMethod.Value != PaymentMethod.Pending);
+            foreach (var receipt in receipts)
+            {
+                try
+                {
+                    var jsonData = JObject.Parse(receipt.JsonData);
+                    var amountPaid = jsonData["receipt"]?["amountPaid"]?.Value<decimal>() ?? 0;
+
+                    // Add to total amount
+                    totalAmount += amountPaid;
+
+                    // Check if receipt is paid or unpaid based on visit's payment method
+                    bool isPaid = receipt.Visit.PaymentMethod.HasValue &&
+                                 receipt.Visit.PaymentMethod.Value != PaymentMethod.Pending;
+
+                    if (isPaid)
+                    {
+                        paidCount++;
+                        paidAmount += amountPaid;
+                    }
+                    else
+                    {
+                        unpaidCount++;
+                        unpaidAmount += amountPaid;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error parsing receipt JSON for record ID {RecordId}", receipt.Id);
+                }
+            }
 
             return new ReceiptStats
             {
                 TotalReceipts = totalReceipts,
-                PaidReceipts = paidReceipts,
-                UnpaidReceipts = totalReceipts - paidReceipts
+                TotalAmount = totalAmount,
+                PaidReceipts = paidCount,
+                PaidAmount = paidAmount,
+                UnpaidReceipts = unpaidCount,
+                UnpaidAmount = unpaidAmount
             };
         }
 

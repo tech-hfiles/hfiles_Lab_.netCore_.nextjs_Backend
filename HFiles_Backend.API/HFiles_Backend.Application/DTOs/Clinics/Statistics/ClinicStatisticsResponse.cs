@@ -33,8 +33,13 @@
     public class ReceiptStats
     {
         public int TotalReceipts { get; set; }
+        public decimal TotalAmount { get; set; }
+
         public int PaidReceipts { get; set; }
+        public decimal PaidAmount { get; set; }
+
         public int UnpaidReceipts { get; set; }
+        public decimal UnpaidAmount { get; set; }
     }
 
     public class RevenueByPackage

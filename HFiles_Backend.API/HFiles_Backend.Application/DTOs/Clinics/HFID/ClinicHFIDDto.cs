@@ -16,5 +16,7 @@ namespace HFiles_Backend.Application.DTOs.Clinics.HFID
         [Required(ErrorMessage = "HFID is required.")]
         [MaxLength(20, ErrorMessage = "HFID must not exceed 20 characters.")]
         public string HFID { get; set; } = null!;
+
+        public string? ProfilePhoto { get; set; } 
     }
 }

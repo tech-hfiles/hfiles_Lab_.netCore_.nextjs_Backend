@@ -71,7 +71,8 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 {
                     Email = u.Email,
                     ClinicName = u.ClinicName,
-                    HFID = u.HFID
+                    HFID = u.HFID,
+                    ProfilePhoto = u.ProfilePhoto
                 })
                 .FirstOrDefaultAsync();
         }

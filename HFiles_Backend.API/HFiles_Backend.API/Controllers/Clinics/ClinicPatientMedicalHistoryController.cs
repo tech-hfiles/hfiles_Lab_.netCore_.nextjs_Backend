@@ -302,12 +302,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     ? await GetUserNameByAdminId(history.UpdatedBy.Value)
                     : null;
 
+                var userProfile = await _userRepository.GetUserByHFIDAsync(history.ClinicPatient.HFID);
+
                 var response = new PatientMedicalHistoryResponse
                 {
                     Id = history.Id,
                     ClinicPatientId = history.ClinicPatientId,
                     ClinicId = history.ClinicId,
                     HFID = history.ClinicPatient.HFID,
+                    ProfilePhoto = userProfile?.ProfilePhoto,
                     PatientName = history.ClinicPatient.PatientName,
                     Medical = history.Medical,
                     Surgical = history.Surgical,

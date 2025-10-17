@@ -9,6 +9,7 @@
         public int ClinicPatientId { get; set; }
         public int ClinicId { get; set; }
         public string HFID { get; set; } = string.Empty;
+        public string? ProfilePhoto { get; set; }
         public string PatientName { get; set; } = string.Empty;
         public string? Medical { get; set; }
         public string? Surgical { get; set; }

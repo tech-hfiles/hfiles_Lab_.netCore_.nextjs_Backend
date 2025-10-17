@@ -1,4 +1,5 @@
 ﻿using HFiles_Backend.API.Interfaces;
+using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
@@ -15,12 +16,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
         ClinicStatisticsRepository statisticsRepository,
         IClinicAuthorizationService clinicAuthorizationService,
         ILogger<ClinicStatisticsController> logger,
-        IMemoryCache cache) : ControllerBase
+        IMemoryCache cache,
+        IClinicStatisticsCacheService cacheService) : ControllerBase
     {
         private readonly ClinicStatisticsRepository _statisticsRepository = statisticsRepository;
         private readonly IClinicAuthorizationService _clinicAuthorizationService = clinicAuthorizationService;
         private readonly ILogger<ClinicStatisticsController> _logger = logger;
         private readonly IMemoryCache _cache = cache;
+        private readonly IClinicStatisticsCacheService _cacheService = cacheService;
 
 
 
@@ -35,20 +38,18 @@ namespace HFiles_Backend.API.Controllers.Clinics
         /// <returns>Complete statistics dashboard data</returns>
         [HttpGet("{clinicId:int}/statistics")]
         public async Task<IActionResult> GetClinicStatistics(
-            [FromRoute] int clinicId,
-            [FromQuery] string? startDate,
-            [FromQuery] string? endDate)
+             [FromRoute] int clinicId,
+             [FromQuery] string? startDate,
+             [FromQuery] string? endDate)
         {
             HttpContext.Items["Log-Category"] = "Clinic Statistics";
 
-            // Input validation
             if (clinicId <= 0)
             {
                 _logger.LogWarning("Invalid clinic ID provided: {ClinicId}", clinicId);
                 return BadRequest(ApiResponseFactory.Fail("Clinic ID must be a positive integer."));
             }
 
-            // Authorization check
             bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
             if (!isAuthorized)
             {
@@ -56,7 +57,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view statistics for this clinic."));
             }
 
-            // Parse date filters
             DateTime? start = null;
             DateTime? end = null;
 
@@ -82,25 +82,21 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             try
             {
-                // Create cache key
                 var cacheKey = $"clinic_stats_{clinicId}_{startDate}_{endDate}";
 
-                // Try to get from cache
                 if (!_cache.TryGetValue(cacheKey, out var statistics))
                 {
-                    // Fetch statistics
                     statistics = await _statisticsRepository.GetClinicStatisticsAsync(clinicId, start, end);
 
-                    // Cache for 5 minutes
                     var cacheOptions = new MemoryCacheEntryOptions()
                         .SetSlidingExpiration(TimeSpan.FromMinutes(5))
                         .SetAbsoluteExpiration(TimeSpan.FromMinutes(15));
 
                     _cache.Set(cacheKey, statistics, cacheOptions);
+                    _cacheService.TrackCacheKey(cacheKey);
                 }
 
                 _logger.LogInformation("Successfully fetched statistics for Clinic ID {ClinicId}", clinicId);
-
                 return Ok(ApiResponseFactory.Success(statistics, "Statistics fetched successfully."));
             }
             catch (Exception ex)
@@ -114,21 +110,23 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-        /// <summary>
-        /// Clear statistics cache for a specific clinic (useful after data updates)
-        /// </summary>
+
         [HttpPost("{clinicId:int}/statistics/clear-cache")]
-        public IActionResult ClearStatisticsCache([FromRoute] int clinicId)
+        [Authorize]
+        public async Task<IActionResult> ClearStatisticsCache([FromRoute] int clinicId)
         {
             HttpContext.Items["Log-Category"] = "Clinic Statistics Cache";
 
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to clear cache for this clinic."));
+            }
+
             try
             {
-                // Remove all cache entries for this clinic
-                var cacheKeyPattern = $"clinic_stats_{clinicId}_";
-
+                _cacheService.InvalidateClinicStatistics(clinicId);
                 _logger.LogInformation("Cache cleared for Clinic ID {ClinicId}", clinicId);
-
                 return Ok(ApiResponseFactory.Success("Cache cleared successfully."));
             }
             catch (Exception ex)

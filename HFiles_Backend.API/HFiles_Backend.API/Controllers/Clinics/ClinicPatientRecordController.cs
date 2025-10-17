@@ -31,7 +31,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         IUserRepository userRepository,
         IUniqueIdGeneratorService uniqueIdGenerator,
         IEmailTemplateService emailTemplateService,
-        EmailService emailService
+        EmailService emailService,
+        IClinicStatisticsCacheService cacheService
     ) : ControllerBase
     {
         private readonly ILogger<ClinicPatientRecordController> _logger = logger;
@@ -44,6 +45,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IUniqueIdGeneratorService _uniqueIdGenerator = uniqueIdGenerator;
         private readonly IEmailTemplateService _emailTemplateService = emailTemplateService;
         private readonly EmailService _emailService = emailService;
+        private readonly IClinicStatisticsCacheService _cacheService = cacheService;
 
 
         private const int CLINIC_ID = 8;
@@ -127,6 +129,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 await transaction.CommitAsync();
                 committed = true;
+
+                // INVALIDATE CACHE AFTER SUCCESSFUL SAVE - ADD THIS
+                _cacheService.InvalidateClinicStatistics(request.ClinicId);
 
                 return Ok(ApiResponseFactory.Success("Patient record saved successfully."));
             }
@@ -273,6 +278,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await _clinicPatientRecordRepository.SaveAsync(record);
                 await transaction.CommitAsync();
                 committed = true;
+
+                // INVALIDATE CACHE AFTER SUCCESSFUL UPLOAD - ADD THIS
+                _cacheService.InvalidateClinicStatistics(request.ClinicId);
 
                 _logger.LogInformation("Uploaded {Count} files for Clinic ID {ClinicId}, Patient ID {PatientId}", s3Urls.Count, request.ClinicId, request.PatientId);
                 return Ok(ApiResponseFactory.Success("Files saved successfully."));
@@ -535,6 +543,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 await transaction.CommitAsync();
                 committed = true;
+
+                // INVALIDATE CACHE AFTER SUCCESSFUL UPLOAD - ADD THIS
+                _cacheService.InvalidateClinicStatistics(request.ClinicId);
 
                 // Response + Notification
                 var response = new

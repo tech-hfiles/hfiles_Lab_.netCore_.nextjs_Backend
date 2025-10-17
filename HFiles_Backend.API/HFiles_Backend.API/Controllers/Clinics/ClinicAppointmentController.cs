@@ -11,6 +11,7 @@ using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Repositories;
+using Humanizer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -32,7 +33,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
      IConfiguration configuration,
      IEmailTemplateService emailTemplateService,
      EmailService emailService,
-     IGoogleCalendarService googleCalendarService
+     IGoogleCalendarService googleCalendarService,
+     IClinicStatisticsCacheService cacheService
     ) : ControllerBase
     {
         private readonly IAppointmentRepository _appointmentRepository = appointmentRepository;
@@ -46,6 +48,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IEmailTemplateService _emailTemplateService = emailTemplateService;
         private readonly EmailService _emailService = emailService;
         private readonly IGoogleCalendarService _googleCalendarService = googleCalendarService;
+        private readonly IClinicStatisticsCacheService _cacheService = cacheService;
 
 
 
@@ -198,6 +201,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 await transaction.CommitAsync();
                 committed = true;
+
+                // INVALIDATE CACHE AFTER SUCCESSFUL CREATION
+                _cacheService.InvalidateClinicStatistics(dto.ClinicId);
 
                 // Response + Notification
                 var response = new
@@ -726,6 +732,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 await transaction.CommitAsync();
                 committed = true;
 
+                // INVALIDATE CACHE AFTER SUCCESSFUL CREATION
+                _cacheService.InvalidateClinicStatistics(appointment.ClinicId);
+
                 // Response + Notification
                 var response = new
                 {
@@ -955,6 +964,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 var appointmentDateFormatted = date.ToString("dd-MM-yyyy");
                 var appointmentTimeFormatted = time.ToString(@"hh\:mm");
                 var userNotificationMessage = $"{clinic?.ClinicName} has scheduled an appointment for you on {appointmentDateFormatted} at {appointmentTimeFormatted}. Please arrive on time.{consentFormsInfo}";
+
+                // INVALIDATE CACHE AFTER SUCCESSFUL CREATION
+                _cacheService.InvalidateClinicStatistics(clinicId);
+
                 // Response + Notification
                 var response = new
                 {
@@ -1196,6 +1209,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     : "";
 
                 var userNotificationMessage = $"{clinic?.ClinicName} has scheduled a follow-up appointment for you on {appointmentDateFormatted} at {appointmentTimeFormatted}. Please arrive on time.{consentFormsInfo}";
+
+                // INVALIDATE CACHE AFTER SUCCESSFUL CREATION
+                _cacheService.InvalidateClinicStatistics(clinicId);
+
                 // Response + Notification
                 var response = new
                 {

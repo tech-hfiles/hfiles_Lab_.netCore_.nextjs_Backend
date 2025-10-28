@@ -7,6 +7,7 @@ using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.Appointment;
 using HFiles_Backend.Application.DTOs.Clinics.ConsentForm;
 using HFiles_Backend.Application.DTOs.Clinics.Treatment;
+using HFiles_Backend.Application.Models.Filters;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
@@ -16,6 +17,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
 using Newtonsoft.Json;
+using HFiles_Backend.Application.Extensions;
 using System.Globalization;
 
 namespace HFiles_Backend.API.Controllers.Clinics
@@ -959,8 +961,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     }
                 }
                 var consentFormsInfo = consentFormLinks.Any()
-          ? $"\n\nConsent Forms to Complete:\n{string.Join("\n", consentFormLinks.Select((link, index) => $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"))}"
-          : "";
+                  ? $"\n\nConsent Forms to Complete:\n{string.Join("\n", consentFormLinks.Select((link, index) => $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"))}"
+                  : "";
                 var appointmentDateFormatted = date.ToString("dd-MM-yyyy");
                 var appointmentTimeFormatted = time.ToString(@"hh\:mm");
                 var userNotificationMessage = $"{clinic?.ClinicName} has scheduled an appointment for you on {appointmentDateFormatted} at {appointmentTimeFormatted}. Please arrive on time.{consentFormsInfo}";
@@ -1273,12 +1275,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpGet("clinics/{clinicId}/patients")]
         [Authorize]
         public async Task<IActionResult> GetClinicPatients(
-         [FromRoute] int clinicId,
-         [FromQuery] string? startDate,
-         [FromQuery] string? endDate,
-         [FromServices] ClinicRepository clinicRepository,
-         [FromServices] ClinicPatientRecordRepository recordRepository,
-         [FromServices] IUserRepository userRepository)
+      [FromRoute] int clinicId,
+      [FromQuery] string? startDate,
+      [FromQuery] string? endDate,
+      [FromQuery] string? paymentStatus,
+      [FromServices] ClinicRepository clinicRepository,
+      [FromServices] ClinicPatientRecordRepository recordRepository,
+      [FromServices] IUserRepository userRepository)
         {
             HttpContext.Items["Log-Category"] = "Clinic Patient Overview";
 
@@ -1292,6 +1295,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 DateTime? start = null;
                 DateTime? end = null;
+                PaymentStatusFilter? paymentFilter = null;
 
                 if (!string.IsNullOrEmpty(startDate))
                 {
@@ -1307,6 +1311,19 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     end = parsed;
                 }
 
+                if (!string.IsNullOrEmpty(paymentStatus))
+                {
+                    paymentFilter = paymentStatus.ToLowerInvariant() switch
+                    {
+                        "paid" => PaymentStatusFilter.Paid,
+                        "unpaid" => PaymentStatusFilter.Unpaid,
+                        "all" => PaymentStatusFilter.All,
+                        _ => (PaymentStatusFilter?)null
+                    };
+
+                    if (!paymentFilter.HasValue)
+                        return BadRequest(ApiResponseFactory.Fail("Invalid paymentStatus. Expected 'paid', 'unpaid', or 'all'."));
+                }
 
                 var patients = await clinicRepository.GetClinicPatientsWithVisitsAsync(clinicId);
 
@@ -1334,7 +1351,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     if ((start.HasValue && lastVisit.AppointmentDate.Date < start.Value.Date) ||
                          (end.HasValue && lastVisit.AppointmentDate.Date > end.Value.Date))
                         continue;
-
 
                     var treatmentRecords = await recordRepository.GetTreatmentRecordsAsync(clinicId, patient.Id, lastVisit.Id);
 
@@ -1366,8 +1382,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         HFID = patient.HFID,
                         ProfilePhoto = profilePhoto,
                         LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
+                        PaymentMethod = lastVisit?.PaymentMethod,
                         PaymentStatus = lastVisit?.PaymentMethod?.ToString() ?? "Pending",
-
                         TreatmentNames = treatmentNames.Any()
                                          ? string.Join(", ", treatmentNames)
                                          : "-",
@@ -1386,10 +1402,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     filteredPatients.Add(dto);
                 }
 
+                // Apply payment status filter using extension method
+                var finalPatients = filteredPatients.ApplyPaymentStatusFilter(paymentFilter).ToList();
+
                 var response = new ClinicPatientResponseDto
                 {
-                    TotalPatients = filteredPatients.Count,
-                    Patients = filteredPatients
+                    TotalPatients = finalPatients.Count,
+                    Patients = finalPatients
                 };
 
                 return Ok(ApiResponseFactory.Success(response, "Filtered clinic patient data retrieved successfully."));

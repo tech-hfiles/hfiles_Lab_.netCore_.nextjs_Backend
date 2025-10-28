@@ -1,4 +1,6 @@
-﻿namespace HFiles_Backend.Application.DTOs.Clinics.Appointment
+﻿using HFiles_Backend.Domain.Enums;
+
+namespace HFiles_Backend.Application.DTOs.Clinics.Appointment
 {
     public class ClinicPatientResponseDto
     {
@@ -13,6 +15,7 @@
         public string? HFID { get; set; }
         public string? ProfilePhoto { get; set; }
         public string? LastVisitDate { get; set; }
+        public PaymentMethod? PaymentMethod { get; set; }
         public string? TreatmentNames { get; set; }
         public string? PaymentStatus { get; set; }
         public List<VisitDto>? Visits { get; set; }

@@ -50,6 +50,9 @@ try
                                                                  $"User={Environment.GetEnvironmentVariable("DB_USER")};" +
                                                                  $"Password={Environment.GetEnvironmentVariable("DB_PASSWORD")};";
 
+    builder.Configuration["InternalAPI:ApiKey"] = Environment.GetEnvironmentVariable("INTERNAL_API_KEY");
+    builder.Configuration["UserBackend:BaseUrl"] = Environment.GetEnvironmentVariable("USER_BACKEND_URL");
+
     builder.Configuration["Smtp:Host"] = Environment.GetEnvironmentVariable("SMTP_HOST");
     builder.Configuration["Smtp:Port"] = Environment.GetEnvironmentVariable("SMTP_PORT");
     builder.Configuration["Smtp:Username"] = Environment.GetEnvironmentVariable("SMTP_USER");

@@ -252,7 +252,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
         // Get Appointments
-        // Get Appointments
         [HttpGet("clinic/{clinicId:int}")]
         [Authorize]
         public async Task<IActionResult> GetAppointmentsByClinicId(
@@ -529,18 +528,49 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     }
                 }
 
-
-
-                // Update status logic (existing code)
+                // Update status logic
                 if (!string.IsNullOrWhiteSpace(dto.Status))
                 {
                     appointment.Status = dto.Status;
 
-                    if (dto.Status == "Canceled" && !string.IsNullOrEmpty(appointment.GoogleCalendarEventId))
+                    // Update Google Calendar for ALL status changes
+                    if (!string.IsNullOrEmpty(appointment.GoogleCalendarEventId))
                     {
-                        await _googleCalendarService.CancelAppointmentAsync(
-                            appointment.ClinicId,
-                            appointment.GoogleCalendarEventId);
+                        if (dto.Status == "Canceled")
+                        {
+                            // Cancel the event in Google Calendar
+                            await _googleCalendarService.CancelAppointmentAsync(
+                                appointment.ClinicId,
+                                appointment.GoogleCalendarEventId);
+                        }
+                        else if (dto.Status == "Completed")
+                        {
+                            // Update the event to show it's completed
+                            var clinic = await _clinicRepository.GetClinicByIdAsync(appointment.ClinicId);
+                            await _googleCalendarService.UpdateAppointmentAsync(
+                                appointment.ClinicId,
+                                appointment.GoogleCalendarEventId,
+                                appointment.VisitorUsername,
+                                clinic?.ClinicName ?? "Clinic",
+                                appointment.AppointmentDate,
+                                appointment.AppointmentTime,
+                                appointment.VisitorPhoneNumber
+                            );
+                        }
+                        else if (!string.IsNullOrWhiteSpace(dto.HFID) && dto.HFID != "Not a registered user")
+                        {
+                            // Update event with new patient info when HFID is linked
+                            var clinic = await _clinicRepository.GetClinicByIdAsync(appointment.ClinicId);
+                            await _googleCalendarService.UpdateAppointmentAsync(
+                                appointment.ClinicId,
+                                appointment.GoogleCalendarEventId,
+                                appointment.VisitorUsername,
+                                clinic?.ClinicName ?? "Clinic",
+                                appointment.AppointmentDate,
+                                appointment.AppointmentTime,
+                                appointment.VisitorPhoneNumber
+                            );
+                        }
                     }
                 }
 

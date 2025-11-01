@@ -1,7 +1,9 @@
 ﻿using Google.Apis.Auth.OAuth2;
+using Google.Apis.Auth.OAuth2.Flows;
 using Google.Apis.Calendar.v3;
 using Google.Apis.Calendar.v3.Data;
 using Google.Apis.Services;
+using Google.Apis.Util.Store;
 using HFiles_Backend.Domain.Interfaces;
 
 namespace HFiles_Backend.API.Services
@@ -42,8 +44,13 @@ namespace HFiles_Backend.API.Services
                     return null;
                 }
 
-                var appointmentDateTime = appointmentDate.Date.Add(appointmentTime);
-                var appointmentEndTime = appointmentDateTime.AddMinutes(30); // Default 30-minute slots
+                // ⭐ TIMEZONE FIX: Create DateTimeOffset in India timezone
+                var istTimeZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+                var localDateTime = appointmentDate.Date.Add(appointmentTime);
+
+                // Convert to DateTimeOffset with IST offset
+                var appointmentDateTimeOffset = new DateTimeOffset(localDateTime, istTimeZone.GetUtcOffset(localDateTime));
+                var appointmentEndTimeOffset = appointmentDateTimeOffset.AddMinutes(30);
 
                 var newEvent = new Event
                 {
@@ -51,12 +58,12 @@ namespace HFiles_Backend.API.Services
                     Description = $"Clinic: {clinicName}\nPatient: {patientName}\nPhone: {phoneNumber}",
                     Start = new EventDateTime
                     {
-                        DateTime = appointmentDateTime,
-                        TimeZone = "Asia/Kolkata" // Use appropriate timezone
+                        DateTimeDateTimeOffset = appointmentDateTimeOffset, // ✅ Fixed: Use DateTimeDateTimeOffset
+                        TimeZone = "Asia/Kolkata"
                     },
                     End = new EventDateTime
                     {
-                        DateTime = appointmentEndTime,
+                        DateTimeDateTimeOffset = appointmentEndTimeOffset, // ✅ Fixed: Use DateTimeDateTimeOffset
                         TimeZone = "Asia/Kolkata"
                     },
                     ColorId = "9", // Blue color
@@ -65,8 +72,8 @@ namespace HFiles_Backend.API.Services
                         UseDefault = false,
                         Overrides = new[]
                         {
-                            new EventReminder { Method = "email", Minutes = 24 * 60 }, // 1 day before
-                            new EventReminder { Method = "popup", Minutes = 30 }       // 30 mins before
+                            new EventReminder { Method = "email", Minutes = 24 * 60 },
+                            new EventReminder { Method = "popup", Minutes = 30 }
                         }
                     }
                 };
@@ -113,7 +120,6 @@ namespace HFiles_Backend.API.Services
                 var token = await _tokenRepository.GetActiveTokenByClinicIdAsync(clinicId);
                 var calendarId = token?.CalendarId ?? "primary";
 
-                // Get existing event
                 var existingEvent = await service.Events.Get(calendarId, eventId).ExecuteAsync();
                 if (existingEvent == null)
                 {
@@ -121,20 +127,23 @@ namespace HFiles_Backend.API.Services
                     return false;
                 }
 
-                var appointmentDateTime = appointmentDate.Date.Add(appointmentTime);
-                var appointmentEndTime = appointmentDateTime.AddMinutes(30);
+                // ⭐ TIMEZONE FIX: Create DateTimeOffset in India timezone
+                var istTimeZone = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+                var localDateTime = appointmentDate.Date.Add(appointmentTime);
 
-                // Update event details
+                var appointmentDateTimeOffset = new DateTimeOffset(localDateTime, istTimeZone.GetUtcOffset(localDateTime));
+                var appointmentEndTimeOffset = appointmentDateTimeOffset.AddMinutes(30);
+
                 existingEvent.Summary = $"Appointment: {patientName}";
                 existingEvent.Description = $"Clinic: {clinicName}\nPatient: {patientName}\nPhone: {phoneNumber}";
                 existingEvent.Start = new EventDateTime
                 {
-                    DateTime = appointmentDateTime,
+                    DateTimeDateTimeOffset = appointmentDateTimeOffset, // ✅ Fixed
                     TimeZone = "Asia/Kolkata"
                 };
                 existingEvent.End = new EventDateTime
                 {
-                    DateTime = appointmentEndTime,
+                    DateTimeDateTimeOffset = appointmentEndTimeOffset, // ✅ Fixed
                     TimeZone = "Asia/Kolkata"
                 };
 
@@ -202,7 +211,6 @@ namespace HFiles_Backend.API.Services
                 var token = await _tokenRepository.GetActiveTokenByClinicIdAsync(clinicId);
                 var calendarId = token?.CalendarId ?? "primary";
 
-                // Get existing event
                 var existingEvent = await service.Events.Get(calendarId, eventId).ExecuteAsync();
                 if (existingEvent == null)
                 {
@@ -255,8 +263,8 @@ namespace HFiles_Backend.API.Services
                     eventData.Id,
                     eventData.Summary,
                     eventData.Description,
-                    Start = eventData.Start?.DateTime,
-                    End = eventData.End?.DateTime,
+                    Start = eventData.Start?.DateTimeDateTimeOffset, // ✅ Fixed
+                    End = eventData.End?.DateTimeDateTimeOffset, // ✅ Fixed
                     eventData.Status,
                     eventData.HtmlLink
                 };
@@ -274,11 +282,20 @@ namespace HFiles_Backend.API.Services
 
         /// <summary>
         /// Get authenticated Google Calendar service for a clinic
+        /// ✅ FIXED: Using modern UserCredential approach instead of obsolete GoogleCredential
         /// </summary>
         private async Task<CalendarService?> GetCalendarServiceAsync(int clinicId)
         {
             try
             {
+                // Get the stored token
+                var storedToken = await _tokenRepository.GetActiveTokenByClinicIdAsync(clinicId);
+                if (storedToken == null)
+                {
+                    _logger.LogWarning("No stored token for Clinic ID {ClinicId}", clinicId);
+                    return null;
+                }
+
                 // Get valid access token (auto-refreshes if needed)
                 var accessToken = await _googleAuthService.GetValidAccessTokenAsync(clinicId);
                 if (string.IsNullOrEmpty(accessToken))
@@ -287,8 +304,27 @@ namespace HFiles_Backend.API.Services
                     return null;
                 }
 
-                // Create credential from access token
-                var credential = GoogleCredential.FromAccessToken(accessToken);
+                // ✅ FIXED: Create UserCredential with proper token response
+                var tokenResponse = new Google.Apis.Auth.OAuth2.Responses.TokenResponse
+                {
+                    AccessToken = accessToken,
+                    RefreshToken = storedToken.RefreshToken,
+                    ExpiresInSeconds = (long)(storedToken.TokenExpiry - DateTime.UtcNow).TotalSeconds,
+                    TokenType = "Bearer",
+                    Scope = storedToken.Scope
+                };
+
+                var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
+                {
+                    ClientSecrets = new ClientSecrets
+                    {
+                        ClientId = _configuration["GoogleOAuth:ClientId"],
+                        ClientSecret = _configuration["GoogleOAuth:ClientSecret"]
+                    },
+                    Scopes = new[] { CalendarService.Scope.Calendar }
+                });
+
+                var credential = new UserCredential(flow, clinicId.ToString(), tokenResponse);
 
                 // Create Calendar service
                 var service = new CalendarService(new BaseClientService.Initializer
@@ -317,13 +353,10 @@ namespace HFiles_Backend.API.Services
                     return null;
                 }
 
-                // Get the calendar ID (usually "primary" for the user's main calendar)
                 var calendarId = token.CalendarId ?? "primary";
 
-                // If it's the primary calendar, we need to get the actual email
                 if (calendarId == "primary")
                 {
-                    // Get the calendar service to fetch calendar details
                     var service = await GetCalendarServiceAsync(clinicId);
                     if (service == null)
                     {
@@ -331,7 +364,6 @@ namespace HFiles_Backend.API.Services
                         return null;
                     }
 
-                    // Get calendar list to find the primary calendar email
                     var calendarListRequest = service.CalendarList.List();
                     var calendarList = await calendarListRequest.ExecuteAsync();
 
@@ -342,11 +374,7 @@ namespace HFiles_Backend.API.Services
                     }
                 }
 
-                // URL encode the calendar ID
                 var encodedCalendarId = Uri.EscapeDataString(calendarId);
-
-                // Generate embeddable Google Calendar URL
-                // This URL can be used in an iframe or opened directly
                 var embedUrl = $"https://calendar.google.com/calendar/embed?src={encodedCalendarId}&ctz=Asia/Kolkata";
 
                 _logger.LogInformation("Generated calendar embed URL for Clinic ID {ClinicId}", clinicId);
@@ -359,6 +387,7 @@ namespace HFiles_Backend.API.Services
                 return null;
             }
         }
+
         #endregion
     }
 }

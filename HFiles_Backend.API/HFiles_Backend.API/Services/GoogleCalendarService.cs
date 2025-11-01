@@ -5,6 +5,8 @@ using Google.Apis.Calendar.v3.Data;
 using Google.Apis.Services;
 using Google.Apis.Util.Store;
 using HFiles_Backend.Domain.Interfaces;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace HFiles_Backend.API.Services
 {
@@ -288,7 +290,6 @@ namespace HFiles_Backend.API.Services
         {
             try
             {
-                // Get the stored token
                 var storedToken = await _tokenRepository.GetActiveTokenByClinicIdAsync(clinicId);
                 if (storedToken == null)
                 {
@@ -296,7 +297,6 @@ namespace HFiles_Backend.API.Services
                     return null;
                 }
 
-                // Get valid access token (auto-refreshes if needed)
                 var accessToken = await _googleAuthService.GetValidAccessTokenAsync(clinicId);
                 if (string.IsNullOrEmpty(accessToken))
                 {
@@ -304,16 +304,19 @@ namespace HFiles_Backend.API.Services
                     return null;
                 }
 
-                // ✅ FIXED: Create UserCredential with proper token response
-                var tokenResponse = new Google.Apis.Auth.OAuth2.Responses.TokenResponse
-                {
-                    AccessToken = accessToken,
-                    RefreshToken = storedToken.RefreshToken,
-                    ExpiresInSeconds = (long)(storedToken.TokenExpiry - DateTime.UtcNow).TotalSeconds,
-                    TokenType = "Bearer",
-                    Scope = storedToken.Scope
-                };
+                // DECRYPT REFRESH TOKEN
+                var decryptedRefreshToken = DecryptToken(storedToken.RefreshToken);
 
+                // ⭐ FIX: Check if refresh token is NULL/empty
+                if (string.IsNullOrEmpty(decryptedRefreshToken))
+                {
+                    _logger.LogError("❌ CRITICAL: Refresh token is NULL/empty for Clinic ID {ClinicId}. User must reconnect calendar!", clinicId);
+                    return null;
+                }
+
+                _logger.LogInformation("✅ RefreshToken exists for Clinic {ClinicId} (length: {Length})", clinicId, decryptedRefreshToken.Length);
+
+                // BUILD FLOW WITH CLIENT SECRETS
                 var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
                 {
                     ClientSecrets = new ClientSecrets
@@ -324,9 +327,20 @@ namespace HFiles_Backend.API.Services
                     Scopes = new[] { CalendarService.Scope.Calendar }
                 });
 
-                var credential = new UserCredential(flow, clinicId.ToString(), tokenResponse);
+                // BUILD TOKEN RESPONSE
+                var token = new Google.Apis.Auth.OAuth2.Responses.TokenResponse
+                {
+                    AccessToken = accessToken,
+                    RefreshToken = decryptedRefreshToken, // ✅ This must NOT be null
+                    ExpiresInSeconds = (long)(storedToken.TokenExpiry - DateTime.UtcNow).TotalSeconds,
+                    IssuedUtc = DateTime.UtcNow.AddHours(-1),
+                    TokenType = "Bearer",
+                    Scope = storedToken.Scope
+                };
 
-                // Create Calendar service
+                // CREATE CREDENTIAL
+                var credential = new UserCredential(flow, clinicId.ToString(), token);
+
                 var service = new CalendarService(new BaseClientService.Initializer
                 {
                     HttpClientInitializer = credential,
@@ -337,9 +351,25 @@ namespace HFiles_Backend.API.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating Calendar service for Clinic ID {ClinicId}", clinicId);
+                _logger.LogError(ex, "❌ Error creating Calendar service for Clinic ID {ClinicId}", clinicId);
                 return null;
             }
+        }
+
+        private string DecryptToken(string cipherText)
+        {
+            var encryptionKey = _configuration["Security:EncryptionKey"]
+                ?? throw new InvalidOperationException("Encryption key not configured");
+
+            using var aes = Aes.Create();
+            aes.Key = Encoding.UTF8.GetBytes(encryptionKey.PadRight(32)[..32]);
+            aes.IV = new byte[16]; // Use same IV as encryption
+
+            using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+            using var ms = new MemoryStream(Convert.FromBase64String(cipherText));
+            using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
+            using var sr = new StreamReader(cs);
+            return sr.ReadToEnd();
         }
 
         public async Task<string?> GetCalendarEmbedUrlAsync(int clinicId)

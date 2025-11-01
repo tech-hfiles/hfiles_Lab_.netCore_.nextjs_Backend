@@ -2,67 +2,27 @@
 using Google.Apis.Calendar.v3;
 using Google.Apis.Calendar.v3.Data;
 using Google.Apis.Services;
-using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.Domain.Interfaces;
 
 namespace HFiles_Backend.API.Services
 {
-    public class GoogleCalendarService(
-        ILogger<GoogleCalendarService> logger,
-        IClinicRepository clinicRepository) : IGoogleCalendarService
+    public class GoogleCalendarService : IGoogleCalendarService
     {
-        private readonly ILogger<GoogleCalendarService> _logger = logger;
-        private readonly IClinicRepository _clinicRepository = clinicRepository;
-        private readonly Dictionary<int, CalendarService> _calendarServices = new();
+        private readonly IGoogleAuthService _googleAuthService;
+        private readonly IClinicGoogleTokenRepository _tokenRepository;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<GoogleCalendarService> _logger;
 
-        private async Task<CalendarService?> GetCalendarServiceForClinic(int clinicId)
+        public GoogleCalendarService(
+            IGoogleAuthService googleAuthService,
+            IClinicGoogleTokenRepository tokenRepository,
+            IConfiguration configuration,
+            ILogger<GoogleCalendarService> logger)
         {
-            // Return cached service if available
-            if (_calendarServices.ContainsKey(clinicId))
-                return _calendarServices[clinicId];
-
-            try
-            {
-                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
-
-                if (clinic == null || string.IsNullOrEmpty(clinic.GoogleCredentialsPath))
-                {
-                    _logger.LogWarning("Clinic {ClinicId} has no Google Calendar configured", clinicId);
-                    return null;
-                }
-
-                // Check if credentials file exists
-                if (!File.Exists(clinic.GoogleCredentialsPath))
-                {
-                    _logger.LogWarning("Credentials file not found for Clinic {ClinicId}: {Path}",
-                        clinicId, clinic.GoogleCredentialsPath);
-                    return null;
-                }
-
-                GoogleCredential credential;
-                using (var stream = new FileStream(clinic.GoogleCredentialsPath, FileMode.Open, FileAccess.Read))
-                {
-                    credential = GoogleCredential.FromStream(stream)
-                        .CreateScoped(CalendarService.Scope.Calendar);
-                }
-
-                var calendarService = new CalendarService(new BaseClientService.Initializer()
-                {
-                    HttpClientInitializer = credential,
-                    ApplicationName = $"HFiles Clinic - {clinic.ClinicName}",
-                });
-
-                // Cache the service
-                _calendarServices[clinicId] = calendarService;
-
-                _logger.LogInformation("Google Calendar Service initialized for Clinic {ClinicId}", clinicId);
-                return calendarService;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to initialize Google Calendar Service for Clinic {ClinicId}", clinicId);
-                return null;
-            }
+            _googleAuthService = googleAuthService;
+            _tokenRepository = tokenRepository;
+            _configuration = configuration;
+            _logger = logger;
         }
 
         public async Task<string?> CreateAppointmentAsync(
@@ -71,65 +31,62 @@ namespace HFiles_Backend.API.Services
             string clinicName,
             DateTime appointmentDate,
             TimeSpan appointmentTime,
-            string? phoneNumber = null,
-            int durationMinutes = 30)
+            string phoneNumber)
         {
             try
             {
-                var calendarService = await GetCalendarServiceForClinic(clinicId);
-                if (calendarService == null)
+                var service = await GetCalendarServiceAsync(clinicId);
+                if (service == null)
+                {
+                    _logger.LogWarning("Cannot create appointment - Clinic ID {ClinicId} not connected to Google Calendar", clinicId);
                     return null;
+                }
 
-                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
-                var calendarId = clinic?.GoogleCalendarId ?? "primary";
+                var appointmentDateTime = appointmentDate.Date.Add(appointmentTime);
+                var appointmentEndTime = appointmentDateTime.AddMinutes(30); // Default 30-minute slots
 
-                var startDateTime = appointmentDate.Date.Add(appointmentTime);
-                var endDateTime = startDateTime.AddMinutes(durationMinutes);
-                var istOffset = TimeSpan.FromHours(5.5);
-
-                var description = $"Patient: {patientName}";
-                if (!string.IsNullOrEmpty(phoneNumber))
-                    description += $"\nPhone: {phoneNumber}";
-
-                var calendarEvent = new Event
+                var newEvent = new Event
                 {
                     Summary = $"Appointment: {patientName}",
-                    Location = clinicName,
-                    Description = description,
+                    Description = $"Clinic: {clinicName}\nPatient: {patientName}\nPhone: {phoneNumber}",
                     Start = new EventDateTime
                     {
-                        DateTimeDateTimeOffset = new DateTimeOffset(startDateTime, istOffset),
-                        TimeZone = "Asia/Kolkata"
+                        DateTime = appointmentDateTime,
+                        TimeZone = "Asia/Kolkata" // Use appropriate timezone
                     },
                     End = new EventDateTime
                     {
-                        DateTimeDateTimeOffset = new DateTimeOffset(endDateTime, istOffset),
+                        DateTime = appointmentEndTime,
                         TimeZone = "Asia/Kolkata"
                     },
+                    ColorId = "9", // Blue color
                     Reminders = new Event.RemindersData
                     {
                         UseDefault = false,
                         Overrides = new[]
                         {
-                            new EventReminder { Method = "email", Minutes = 24 * 60 },
-                            new EventReminder { Method = "popup", Minutes = 60 }
+                            new EventReminder { Method = "email", Minutes = 24 * 60 }, // 1 day before
+                            new EventReminder { Method = "popup", Minutes = 30 }       // 30 mins before
                         }
-                    },
-                    ColorId = "9"
+                    }
                 };
 
-                var request = calendarService.Events.Insert(calendarEvent, calendarId);
+                var token = await _tokenRepository.GetActiveTokenByClinicIdAsync(clinicId);
+                var calendarId = token?.CalendarId ?? "primary";
+
+                var request = service.Events.Insert(newEvent, calendarId);
                 var createdEvent = await request.ExecuteAsync();
 
                 _logger.LogInformation(
-                    "Google Calendar event created for Clinic {ClinicId}. EventId: {EventId}, Patient: {PatientName}",
-                    clinicId, createdEvent.Id, patientName);
+                    "Created Google Calendar event {EventId} for Clinic ID {ClinicId}, Patient: {PatientName}",
+                    createdEvent.Id, clinicId, patientName);
 
                 return createdEvent.Id;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to create Google Calendar event for Clinic {ClinicId}, Patient: {PatientName}",
+                _logger.LogError(ex,
+                    "Error creating Google Calendar event for Clinic ID {ClinicId}, Patient: {PatientName}",
                     clinicId, patientName);
                 return null;
             }
@@ -138,92 +95,63 @@ namespace HFiles_Backend.API.Services
         public async Task<bool> UpdateAppointmentAsync(
             int clinicId,
             string eventId,
-            DateTime newDate,
-            TimeSpan newTime,
-            int durationMinutes = 30)
+            string patientName,
+            string clinicName,
+            DateTime appointmentDate,
+            TimeSpan appointmentTime,
+            string phoneNumber)
         {
             try
             {
-                var calendarService = await GetCalendarServiceForClinic(clinicId);
-                if (calendarService == null)
-                    return false;
-
-                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
-                var calendarId = clinic?.GoogleCalendarId ?? "primary";
-
-                var existingEvent = await calendarService.Events
-                    .Get(calendarId, eventId)
-                    .ExecuteAsync();
-
-                if (existingEvent == null)
+                var service = await GetCalendarServiceAsync(clinicId);
+                if (service == null)
                 {
-                    _logger.LogWarning("Event not found: {EventId} for Clinic {ClinicId}", eventId, clinicId);
+                    _logger.LogWarning("Cannot update appointment - Clinic ID {ClinicId} not connected to Google Calendar", clinicId);
                     return false;
                 }
 
-                var startDateTime = newDate.Date.Add(newTime);
-                var endDateTime = startDateTime.AddMinutes(durationMinutes);
-                var istOffset = TimeSpan.FromHours(5.5);
+                var token = await _tokenRepository.GetActiveTokenByClinicIdAsync(clinicId);
+                var calendarId = token?.CalendarId ?? "primary";
 
+                // Get existing event
+                var existingEvent = await service.Events.Get(calendarId, eventId).ExecuteAsync();
+                if (existingEvent == null)
+                {
+                    _logger.LogWarning("Event {EventId} not found", eventId);
+                    return false;
+                }
+
+                var appointmentDateTime = appointmentDate.Date.Add(appointmentTime);
+                var appointmentEndTime = appointmentDateTime.AddMinutes(30);
+
+                // Update event details
+                existingEvent.Summary = $"Appointment: {patientName}";
+                existingEvent.Description = $"Clinic: {clinicName}\nPatient: {patientName}\nPhone: {phoneNumber}";
                 existingEvent.Start = new EventDateTime
                 {
-                    DateTimeDateTimeOffset = new DateTimeOffset(startDateTime, istOffset),
+                    DateTime = appointmentDateTime,
                     TimeZone = "Asia/Kolkata"
                 };
-
                 existingEvent.End = new EventDateTime
                 {
-                    DateTimeDateTimeOffset = new DateTimeOffset(endDateTime, istOffset),
+                    DateTime = appointmentEndTime,
                     TimeZone = "Asia/Kolkata"
                 };
 
-                var request = calendarService.Events.Update(existingEvent, calendarId, eventId);
+                var request = service.Events.Update(existingEvent, calendarId, eventId);
                 await request.ExecuteAsync();
 
-                _logger.LogInformation("Google Calendar event updated for Clinic {ClinicId}. EventId: {EventId}",
-                    clinicId, eventId);
+                _logger.LogInformation(
+                    "Updated Google Calendar event {EventId} for Clinic ID {ClinicId}",
+                    eventId, clinicId);
+
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to update Google Calendar event for Clinic {ClinicId}: {EventId}",
-                    clinicId, eventId);
-                return false;
-            }
-        }
-
-        public async Task<bool> CancelAppointmentAsync(int clinicId, string eventId)
-        {
-            try
-            {
-                var calendarService = await GetCalendarServiceForClinic(clinicId);
-                if (calendarService == null)
-                    return false;
-
-                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
-                var calendarId = clinic?.GoogleCalendarId ?? "primary";
-
-                var existingEvent = await calendarService.Events
-                    .Get(calendarId, eventId)
-                    .ExecuteAsync();
-
-                if (existingEvent == null)
-                    return false;
-
-                existingEvent.Status = "cancelled";
-                existingEvent.Summary = $"[CANCELLED] {existingEvent.Summary}";
-
-                var request = calendarService.Events.Update(existingEvent, calendarId, eventId);
-                await request.ExecuteAsync();
-
-                _logger.LogInformation("Google Calendar event cancelled for Clinic {ClinicId}. EventId: {EventId}",
-                    clinicId, eventId);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to cancel Google Calendar event for Clinic {ClinicId}: {EventId}",
-                    clinicId, eventId);
+                _logger.LogError(ex,
+                    "Error updating Google Calendar event {EventId} for Clinic ID {ClinicId}",
+                    eventId, clinicId);
                 return false;
             }
         }
@@ -232,25 +160,149 @@ namespace HFiles_Backend.API.Services
         {
             try
             {
-                var calendarService = await GetCalendarServiceForClinic(clinicId);
-                if (calendarService == null)
+                var service = await GetCalendarServiceAsync(clinicId);
+                if (service == null)
+                {
+                    _logger.LogWarning("Cannot delete appointment - Clinic ID {ClinicId} not connected to Google Calendar", clinicId);
                     return false;
+                }
 
-                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
-                var calendarId = clinic?.GoogleCalendarId ?? "primary";
+                var token = await _tokenRepository.GetActiveTokenByClinicIdAsync(clinicId);
+                var calendarId = token?.CalendarId ?? "primary";
 
-                var request = calendarService.Events.Delete(calendarId, eventId);
+                var request = service.Events.Delete(calendarId, eventId);
                 await request.ExecuteAsync();
 
-                _logger.LogInformation("Google Calendar event deleted for Clinic {ClinicId}. EventId: {EventId}",
-                    clinicId, eventId);
+                _logger.LogInformation(
+                    "Deleted Google Calendar event {EventId} for Clinic ID {ClinicId}",
+                    eventId, clinicId);
+
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to delete Google Calendar event for Clinic {ClinicId}: {EventId}",
-                    clinicId, eventId);
+                _logger.LogError(ex,
+                    "Error deleting Google Calendar event {EventId} for Clinic ID {ClinicId}",
+                    eventId, clinicId);
                 return false;
+            }
+        }
+
+        public async Task<bool> CancelAppointmentAsync(int clinicId, string eventId)
+        {
+            try
+            {
+                var service = await GetCalendarServiceAsync(clinicId);
+                if (service == null)
+                {
+                    _logger.LogWarning("Cannot cancel appointment - Clinic ID {ClinicId} not connected to Google Calendar", clinicId);
+                    return false;
+                }
+
+                var token = await _tokenRepository.GetActiveTokenByClinicIdAsync(clinicId);
+                var calendarId = token?.CalendarId ?? "primary";
+
+                // Get existing event
+                var existingEvent = await service.Events.Get(calendarId, eventId).ExecuteAsync();
+                if (existingEvent == null)
+                {
+                    _logger.LogWarning("Event {EventId} not found", eventId);
+                    return false;
+                }
+
+                // Mark as cancelled
+                existingEvent.Status = "cancelled";
+                existingEvent.Summary = "[CANCELLED] " + existingEvent.Summary;
+                existingEvent.ColorId = "11"; // Red color for cancelled
+
+                var request = service.Events.Update(existingEvent, calendarId, eventId);
+                await request.ExecuteAsync();
+
+                _logger.LogInformation(
+                    "Cancelled Google Calendar event {EventId} for Clinic ID {ClinicId}",
+                    eventId, clinicId);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error cancelling Google Calendar event {EventId} for Clinic ID {ClinicId}",
+                    eventId, clinicId);
+                return false;
+            }
+        }
+
+        public async Task<object?> GetAppointmentAsync(int clinicId, string eventId)
+        {
+            try
+            {
+                var service = await GetCalendarServiceAsync(clinicId);
+                if (service == null)
+                {
+                    _logger.LogWarning("Cannot get appointment - Clinic ID {ClinicId} not connected to Google Calendar", clinicId);
+                    return null;
+                }
+
+                var token = await _tokenRepository.GetActiveTokenByClinicIdAsync(clinicId);
+                var calendarId = token?.CalendarId ?? "primary";
+
+                var request = service.Events.Get(calendarId, eventId);
+                var eventData = await request.ExecuteAsync();
+
+                return new
+                {
+                    eventData.Id,
+                    eventData.Summary,
+                    eventData.Description,
+                    Start = eventData.Start?.DateTime,
+                    End = eventData.End?.DateTime,
+                    eventData.Status,
+                    eventData.HtmlLink
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error getting Google Calendar event {EventId} for Clinic ID {ClinicId}",
+                    eventId, clinicId);
+                return null;
+            }
+        }
+
+        #region Private Helper Methods
+
+        /// <summary>
+        /// Get authenticated Google Calendar service for a clinic
+        /// </summary>
+        private async Task<CalendarService?> GetCalendarServiceAsync(int clinicId)
+        {
+            try
+            {
+                // Get valid access token (auto-refreshes if needed)
+                var accessToken = await _googleAuthService.GetValidAccessTokenAsync(clinicId);
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    _logger.LogWarning("No valid access token for Clinic ID {ClinicId}", clinicId);
+                    return null;
+                }
+
+                // Create credential from access token
+                var credential = GoogleCredential.FromAccessToken(accessToken);
+
+                // Create Calendar service
+                var service = new CalendarService(new BaseClientService.Initializer
+                {
+                    HttpClientInitializer = credential,
+                    ApplicationName = "HFiles Clinic Portal"
+                });
+
+                return service;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating Calendar service for Clinic ID {ClinicId}", clinicId);
+                return null;
             }
         }
 
@@ -258,22 +310,55 @@ namespace HFiles_Backend.API.Services
         {
             try
             {
-                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
-
-                if (clinic == null || string.IsNullOrEmpty(clinic.GoogleCalendarId))
+                var token = await _tokenRepository.GetActiveTokenByClinicIdAsync(clinicId);
+                if (token == null || !token.IsActive)
+                {
+                    _logger.LogWarning("No active Google Calendar connection for Clinic ID {ClinicId}", clinicId);
                     return null;
+                }
 
-                // Generate URL that adds calendar to user's Google Calendar
-                var encodedCalendarId = Uri.EscapeDataString(clinic.GoogleCalendarId);
+                // Get the calendar ID (usually "primary" for the user's main calendar)
+                var calendarId = token.CalendarId ?? "primary";
 
-                // This URL will prompt them to add the calendar to their account
-                return $"https://calendar.google.com/calendar/u/0/r?cid={encodedCalendarId}";
+                // If it's the primary calendar, we need to get the actual email
+                if (calendarId == "primary")
+                {
+                    // Get the calendar service to fetch calendar details
+                    var service = await GetCalendarServiceAsync(clinicId);
+                    if (service == null)
+                    {
+                        _logger.LogWarning("Cannot get calendar service for Clinic ID {ClinicId}", clinicId);
+                        return null;
+                    }
+
+                    // Get calendar list to find the primary calendar email
+                    var calendarListRequest = service.CalendarList.List();
+                    var calendarList = await calendarListRequest.ExecuteAsync();
+
+                    var primaryCalendar = calendarList.Items.FirstOrDefault(c => c.Primary == true);
+                    if (primaryCalendar != null)
+                    {
+                        calendarId = primaryCalendar.Id;
+                    }
+                }
+
+                // URL encode the calendar ID
+                var encodedCalendarId = Uri.EscapeDataString(calendarId);
+
+                // Generate embeddable Google Calendar URL
+                // This URL can be used in an iframe or opened directly
+                var embedUrl = $"https://calendar.google.com/calendar/embed?src={encodedCalendarId}&ctz=Asia/Kolkata";
+
+                _logger.LogInformation("Generated calendar embed URL for Clinic ID {ClinicId}", clinicId);
+
+                return embedUrl;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to get calendar URL for Clinic {ClinicId}", clinicId);
+                _logger.LogError(ex, "Error generating calendar embed URL for Clinic ID {ClinicId}", clinicId);
                 return null;
             }
         }
+        #endregion
     }
 }

@@ -5,7 +5,6 @@ using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.API.Middleware;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.API.Settings;
-using HFiles_Backend.API.Settings.HFiles_Backend.Application.Settings;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Domain.Interfaces;
@@ -58,6 +57,23 @@ try
     builder.Configuration["Smtp:Username"] = Environment.GetEnvironmentVariable("SMTP_USER");
     builder.Configuration["Smtp:Password"] = Environment.GetEnvironmentVariable("SMTP_PASS");
     builder.Configuration["Smtp:From"] = Environment.GetEnvironmentVariable("SMTP_FROM");
+
+    builder.Configuration["Google:ClientId"] = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID")
+    ?? throw new Exception("GOOGLE_CLIENT_ID missing");
+    builder.Configuration["Google:ClientSecret"] = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_SECRET")
+        ?? throw new Exception("GOOGLE_CLIENT_SECRET missing");
+    builder.Configuration["Security:EncryptionKey"] = Environment.GetEnvironmentVariable("SECURITY_ENCRYPTION_KEY")
+        ?? throw new Exception("SECURITY_ENCRYPTION_KEY missing");
+    builder.Configuration["AppSettings:BaseUrl"] = Environment.GetEnvironmentVariable("APP_BASE_URL")
+        ?? throw new Exception("APP_BASE_URL missing");
+    builder.Configuration["AppSettings:FrontendUrl"] = Environment.GetEnvironmentVariable("APP_FRONTEND_URL")
+        ?? throw new Exception("APP_FRONTEND_URL missing");
+
+    Log.Information("Google OAuth Configuration Loaded: ClientId Present={ClientIdPresent}",
+        !string.IsNullOrEmpty(builder.Configuration["Google:ClientId"]));
+    Log.Information("Security Encryption Key Present: {KeyPresent}",
+        !string.IsNullOrEmpty(builder.Configuration["Security:EncryptionKey"]));
+    Log.Information("App Base URL: {BaseUrl}", builder.Configuration["AppSettings:BaseUrl"]);
 
     builder.Configuration["Interakt:ApiUrl"] = Environment.GetEnvironmentVariable("INTERAKT_API_URL");
     builder.Configuration["Interakt:ApiKey"] = Environment.GetEnvironmentVariable("INTERAKT_API_KEY");
@@ -214,6 +230,16 @@ try
     builder.Services.AddScoped<ClinicStatisticsRepository, ClinicStatisticsRepository>();
     builder.Services.AddScoped<IClinicStatisticsCacheService, ClinicStatisticsCacheService>();
 
+    // Register Repository
+    builder.Services.AddScoped<IClinicGoogleTokenRepository, ClinicGoogleTokenRepository>();
+
+    // Register Services
+    builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
+    builder.Services.AddScoped<IGoogleCalendarService, GoogleCalendarService>();
+
+    // Register Background Service for automatic token refresh
+    builder.Services.AddHostedService<GoogleTokenRefreshService>();
+
 
     // DbContext
     builder.Services.AddDbContext<AppDbContext>(options =>
@@ -251,9 +277,6 @@ try
 
 
     builder.Services.AddHangfireServer();
-
-    builder.Services.Configure<GoogleCalendarSettings>(
-    builder.Configuration.GetSection("GoogleCalendar"));
 
     builder.Services.AddScoped<IGoogleCalendarService, GoogleCalendarService>();
 

@@ -342,6 +342,59 @@ namespace HFiles_Backend.Infrastructure.Data
             modelBuilder.Entity<ClinicAppointment>()
                 .HasIndex(a => new { a.AppointmentDate, a.AppointmentTime })
                 .HasDatabaseName("idx_clinicappointments_date_time");
+
+
+
+
+
+            // Configure ClinicGoogleToken
+            modelBuilder.Entity<ClinicGoogleToken>(entity =>
+            {
+                entity.ToTable("clinic_google_tokens");
+
+                entity.HasKey(e => e.Id);
+
+                entity.Property(e => e.CalendarId)
+                    .HasMaxLength(255)
+                    .HasDefaultValue("primary");
+
+                entity.Property(e => e.AccessToken)
+                    .IsRequired();
+
+                entity.Property(e => e.RefreshToken)
+                    .IsRequired();
+
+                entity.Property(e => e.TokenExpiry)
+                    .IsRequired();
+
+                entity.Property(e => e.Scope)
+                    .HasMaxLength(500)
+                    .HasDefaultValue("https://www.googleapis.com/auth/calendar");
+
+                entity.Property(e => e.TokenType)
+                    .HasMaxLength(50)
+                    .HasDefaultValue("Bearer");
+
+                entity.Property(e => e.IsActive)
+                    .HasDefaultValue(true);
+
+                entity.Property(e => e.CreatedAt)
+                    .HasDefaultValueSql("GETUTCDATE()");
+
+                entity.Property(e => e.UpdatedAt)
+                    .HasDefaultValueSql("GETUTCDATE()");
+
+                // Foreign key relationship
+                entity.HasOne(e => e.Clinic)
+                    .WithMany()
+                    .HasForeignKey(e => e.ClinicId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // Indexes
+                entity.HasIndex(e => e.ClinicId);
+                entity.HasIndex(e => new { e.ClinicId, e.IsActive });
+                entity.HasIndex(e => new { e.IsActive, e.TokenExpiry });
+            });
         }
 
         //public DbSet<UserReports> UserReports { get; set; }
@@ -385,5 +438,6 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<ClinicPatientMedicalHistory> ClinicPatientMedicalHistories { get; set; }
         public DbSet<ClinicRecordCounter> ClinicRecordCounters { get; set; }
         //public DbSet<NotificationAuditLog> NotificationAuditLogs { get; set; }
+        public DbSet<ClinicGoogleToken> ClinicGoogleTokens { get; set; }
     }
 }

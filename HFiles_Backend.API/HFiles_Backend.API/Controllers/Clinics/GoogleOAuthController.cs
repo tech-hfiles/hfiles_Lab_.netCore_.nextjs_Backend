@@ -116,7 +116,7 @@ namespace HFiles_Backend.API.Controllers
                 _logger.LogInformation("Successfully connected Google Calendar for Clinic ID {ClinicId}", clinicId);
 
                 // In production, redirect to a success page in your frontend
-                var frontendSuccessUrl = $"{_configuration["AppSettings:FrontendUrl"]}/calendar-connected?success=true&clinicId={clinicId}";
+                var frontendSuccessUrl = $"{_configuration["AppSettings:FrontendUrl"]}/dashboard";
                 return Redirect(frontendSuccessUrl);
             }
             catch (Exception ex)

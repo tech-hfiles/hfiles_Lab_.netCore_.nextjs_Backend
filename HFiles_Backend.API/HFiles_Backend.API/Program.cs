@@ -58,9 +58,10 @@ try
     builder.Configuration["Smtp:Password"] = Environment.GetEnvironmentVariable("SMTP_PASS");
     builder.Configuration["Smtp:From"] = Environment.GetEnvironmentVariable("SMTP_FROM");
 
-    builder.Configuration["Google:ClientId"] = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID")
-    ?? throw new Exception("GOOGLE_CLIENT_ID missing");
-    builder.Configuration["Google:ClientSecret"] = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_SECRET")
+    // Google OAuth Configuration
+    builder.Configuration["GoogleOAuth:ClientId"] = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID")
+        ?? throw new Exception("GOOGLE_CLIENT_ID missing");
+    builder.Configuration["GoogleOAuth:ClientSecret"] = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_SECRET")
         ?? throw new Exception("GOOGLE_CLIENT_SECRET missing");
     builder.Configuration["Security:EncryptionKey"] = Environment.GetEnvironmentVariable("SECURITY_ENCRYPTION_KEY")
         ?? throw new Exception("SECURITY_ENCRYPTION_KEY missing");
@@ -69,8 +70,9 @@ try
     builder.Configuration["AppSettings:FrontendUrl"] = Environment.GetEnvironmentVariable("APP_FRONTEND_URL")
         ?? throw new Exception("APP_FRONTEND_URL missing");
 
+    // Log configuration status
     Log.Information("Google OAuth Configuration Loaded: ClientId Present={ClientIdPresent}",
-        !string.IsNullOrEmpty(builder.Configuration["Google:ClientId"]));
+        !string.IsNullOrEmpty(builder.Configuration["GoogleOAuth:ClientId"]));
     Log.Information("Security Encryption Key Present: {KeyPresent}",
         !string.IsNullOrEmpty(builder.Configuration["Security:EncryptionKey"]));
     Log.Information("App Base URL: {BaseUrl}", builder.Configuration["AppSettings:BaseUrl"]);

@@ -17,17 +17,18 @@ namespace HFiles_Backend.API.Services
         private readonly string[] _scopes = { "https://www.googleapis.com/auth/calendar" };
 
         public GoogleAuthService(
-            IConfiguration configuration,
-            IClinicGoogleTokenRepository tokenRepository,
-            ILogger<GoogleAuthService> logger)
+         IConfiguration configuration,
+         IClinicGoogleTokenRepository tokenRepository,
+         ILogger<GoogleAuthService> logger)
         {
             _configuration = configuration;
             _tokenRepository = tokenRepository;
             _logger = logger;
 
-            _clientId = _configuration["Google:ClientId"]
+            // ⭐ FIX: Use correct configuration path
+            _clientId = _configuration["GoogleOAuth:ClientId"]  // Changed from Google: to GoogleOAuth
                 ?? throw new InvalidOperationException("Google ClientId not configured");
-            _clientSecret = _configuration["Google:ClientSecret"]
+            _clientSecret = _configuration["GoogleOAuth:ClientSecret"]  // Changed from Google: to GoogleOAuth
                 ?? throw new InvalidOperationException("Google ClientSecret not configured");
         }
 

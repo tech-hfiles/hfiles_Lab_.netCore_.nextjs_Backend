@@ -15,6 +15,7 @@ namespace HFiles_Backend.API.Services
         /// Generates a unique HFID string using first name, last name, date of birth, and current epoch time.
         /// The format is: HF{DOB_MMddyy}{NamePart}{Last4Epoch}
         /// Example: HF062795JOH1234
+        /// Spaces in names are removed before processing (e.g., "Dr Ayush" becomes "DRAYUSH")
         /// </summary>
         /// <param name="firstName">User's first name</param>
         /// <param name="lastName">User's last name</param>
@@ -24,7 +25,8 @@ namespace HFiles_Backend.API.Services
         public string GenerateHfid(string firstName, string lastName, DateTime dob)
         {
             // Log the incoming parameters for traceability
-            _logger.LogInformation("Generating HFID for {FirstName} {LastName} with DOB: {DOB}", firstName, lastName, dob);
+            _logger.LogInformation("Generating HFID for {FirstName} {LastName} with DOB: {DOB}",
+                firstName, lastName, dob);
 
             // Validate that first name is not null or empty
             if (string.IsNullOrWhiteSpace(firstName))
@@ -38,12 +40,19 @@ namespace HFiles_Backend.API.Services
             if (dob > DateTime.Today)
                 throw new ArgumentException("Date of birth cannot be in the future");
 
-            // Combine trimmed first and last name for length calculation
-            string fullName = firstName.Trim() + lastName.Trim();
+            // Remove all spaces and special characters from names
+            string cleanFirstName = RemoveSpacesAndSpecialChars(firstName.Trim());
+            string cleanLastName = RemoveSpacesAndSpecialChars(lastName.Trim());
 
-            // Extract up to 3 characters from uppercase name for uniqueness
-            string namePart = (firstName.Trim().ToUpper() + lastName.Trim().ToUpper())
-                .Substring(0, Math.Min(3, fullName.Length));
+            // Combine cleaned names
+            string fullName = cleanFirstName + cleanLastName;
+
+            // Validate that we have some characters to work with after cleaning
+            if (string.IsNullOrWhiteSpace(fullName))
+                throw new ArgumentException("Names must contain at least one valid character");
+
+            // Extract up to 3 characters from uppercase combined name for uniqueness
+            string namePart = fullName.ToUpper().Substring(0, Math.Min(3, fullName.Length));
 
             // Format date of birth as MMddyy string
             string dobPart = dob.ToString("MMddyy");
@@ -58,10 +67,27 @@ namespace HFiles_Backend.API.Services
             string hfid = $"HF{dobPart}{namePart}{last4Epoch}";
 
             // Log the generated HFID
-            _logger.LogInformation("Generated HFID: {Hfid}", hfid);
+            _logger.LogInformation("Generated HFID: {Hfid} from cleaned names: {FirstName} + {LastName}",
+                hfid, cleanFirstName, cleanLastName);
 
             // Return the final result
             return hfid;
+        }
+
+        /// <summary>
+        /// Removes spaces, dots, and other common special characters from a name string.
+        /// Preserves alphabetic characters only.
+        /// </summary>
+        /// <param name="input">The input string to clean</param>
+        /// <returns>Cleaned string with only alphabetic characters</returns>
+        private static string RemoveSpacesAndSpecialChars(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input))
+                return string.Empty;
+
+            // Remove spaces, dots, commas, hyphens, and other common special characters
+            // Keep only letters (supports international characters)
+            return new string(input.Where(c => char.IsLetter(c)).ToArray());
         }
     }
 }

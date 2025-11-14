@@ -1,74 +1,482 @@
-﻿using HFiles_Backend.Domain.Entities.Users;
+﻿using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Entities.Users;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace HFiles_Backend.Infrastructure.Repositories
 {
-    public class UserRepository(AppDbContext context) : IUserRepository
+    /// <summary>
+    /// Repository implementation for managing user-related operations including
+    /// user retrieval, creation, and clinic-related operations.
+    /// </summary>
+    public class UserRepository : IUserRepository
     {
-        private readonly AppDbContext _context = context;
+        private readonly AppDbContext _context;
+        private readonly ILogger<UserRepository> _logger;
 
+        public UserRepository(AppDbContext context, ILogger<UserRepository> logger)
+        {
+            _context = context;
+            _logger = logger;
+        }
+
+        // ==================== USER RETRIEVAL METHODS ====================
+
+        /// <summary>
+        /// Retrieves all users as a dictionary with user ID as the key.
+        /// </summary>
         public async Task<Dictionary<int, User>> GetAllUsersAsync()
         {
-            return await _context.Users.ToDictionaryAsync(u => u.Id);
+            try
+            {
+                return await _context.Users.ToDictionaryAsync(u => u.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving all users as dictionary");
+                throw;
+            }
         }
 
+        /// <summary>
+        /// Retrieves a user by their ID.
+        /// </summary>
         public async Task<User?> GetByIdAsync(int id)
         {
-            return await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+            try
+            {
+                return await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user by ID: {UserId}", id);
+                throw;
+            }
         }
 
+        /// <summary>
+        /// Retrieves a verified user by email address.
+        /// </summary>
         public async Task<User?> GetVerifiedUserByEmailAsync(string email)
         {
-            return await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsEmailVerified && u.UserReference == 0);
+            try
+            {
+                return await _context.Users
+                    .FirstOrDefaultAsync(u =>
+                        u.Email == email &&
+                        u.IsEmailVerified &&
+                        u.UserReference == 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving verified user by email: {Email}", email);
+                throw;
+            }
         }
+
+        /// <summary>
+        /// Retrieves full name of a super admin by their ID.
+        /// </summary>
         public async Task<string?> GetFullNameBySuperAdminIdAsync(int superAdminId)
         {
-            return await (from sa in _context.ClinicSuperAdmins
-                          join u in _context.Users on sa.UserId equals u.Id
-                          where sa.Id == superAdminId
-                          select u.FirstName + " " + u.LastName)
-                          .FirstOrDefaultAsync();
+            try
+            {
+                return await (from sa in _context.ClinicSuperAdmins
+                              join u in _context.Users on sa.UserId equals u.Id
+                              where sa.Id == superAdminId
+                              select u.FirstName + " " + u.LastName)
+                              .FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving full name for super admin ID: {SuperAdminId}", superAdminId);
+                throw;
+            }
         }
 
+        /// <summary>
+        /// Retrieves a user by their Health File ID (HFID).
+        /// </summary>
         public async Task<User?> GetUserByHFIDAsync(string hfid)
         {
-            return await _context.Users
-                .Where(u => u.HfId == hfid && u.DeletedBy == 0)
-                .FirstOrDefaultAsync();
+            try
+            {
+                return await _context.Users
+                    .Where(u => u.HfId == hfid && u.DeletedBy == 0)
+                    .FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user by HFID: {HFID}", hfid);
+                throw;
+            }
         }
 
+        /// <summary>
+        /// Retrieves all users from the database.
+        /// </summary>
         public async Task<List<User>> GetAllAsync()
         {
-            return await _context.Users.ToListAsync();
+            try
+            {
+                return await _context.Users.ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving all users");
+                throw;
+            }
         }
 
+        /// <summary>
+        /// Retrieves a user by phone number.
+        /// </summary>
         public async Task<User?> GetByPhoneNumberAsync(string phoneNumber)
         {
-            return await _context.Users
-                .FirstOrDefaultAsync(u => u.PhoneNumber == phoneNumber && u.UserReference == 0);
+            try
+            {
+                return await _context.Users
+                    .FirstOrDefaultAsync(u =>
+                        u.PhoneNumber == phoneNumber &&
+                        u.UserReference == 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user by phone number: {PhoneNumber}", phoneNumber);
+                throw;
+            }
         }
 
-        public async Task SaveAsync(UserReport report)
-        {
-            _context.UserReports.Add(report);
-            await _context.SaveChangesAsync();
-        }
-
+        /// <summary>
+        /// Retrieves a user by patient ID.
+        /// </summary>
         public async Task<User?> GetUserByPatientIdAsync(string patientId)
         {
-            return await _context.Users
-                .FirstOrDefaultAsync(u => u.PatientId == patientId && u.DeletedBy == 0);
+            try
+            {
+                return await _context.Users
+                    .FirstOrDefaultAsync(u =>
+                        u.PatientId == patientId &&
+                        u.DeletedBy == 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user by patient ID: {PatientId}", patientId);
+                throw;
+            }
         }
 
+        /// <summary>
+        /// Retrieves a user by email for lookup purposes (no tracking).
+        /// </summary>
         public async Task<User?> GetUserByEmailForLookupAsync(string email)
         {
-            return await _context.Users
-                .AsNoTracking()
-                .FirstOrDefaultAsync(u =>
-                    u.Email == email &&
-                    u.DeletedBy == 0);
+            try
+            {
+                return await _context.Users
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u =>
+                        u.Email == email &&
+                        u.DeletedBy == 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user by email for lookup: {Email}", email);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Retrieves a user by phone number with optional country code filtering.
+        /// </summary>
+        public async Task<User?> GetUserByPhoneNumberAsync(string phoneNumber, string? countryCode = null)
+        {
+            try
+            {
+                var query = _context.Users
+                    .Where(u => u.PhoneNumber == phoneNumber && u.DeletedBy == 0);
+
+                if (!string.IsNullOrWhiteSpace(countryCode))
+                {
+                    query = query.Where(u => u.CountryCallingCode == countryCode);
+                }
+
+                return await query.FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user by phone number: {PhoneNumber}", phoneNumber);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Retrieves a user by email address.
+        /// </summary>
+        public async Task<User?> GetUserByEmailAsync(string email)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(email))
+                    return null;
+
+                return await _context.Users
+                    .Where(u => u.Email == email && u.DeletedBy == 0)
+                    .FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user by email: {Email}", email);
+                throw;
+            }
+        }
+
+        // ==================== VALIDATION METHODS ====================
+
+        /// <summary>
+        /// Checks if a phone number already exists in the system.
+        /// </summary>
+        public async Task<bool> IsPhoneNumberExistsAsync(string phoneNumber, string? countryCode = null)
+        {
+            try
+            {
+                var query = _context.Users
+                    .Where(u => u.PhoneNumber == phoneNumber && u.DeletedBy == 0);
+
+                if (!string.IsNullOrWhiteSpace(countryCode))
+                {
+                    query = query.Where(u => u.CountryCallingCode == countryCode);
+                }
+
+                return await query.AnyAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking phone number existence: {PhoneNumber}", phoneNumber);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Checks if an email already exists in the system.
+        /// </summary>
+        public async Task<bool> IsEmailExistsAsync(string email)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(email))
+                    return false;
+
+                return await _context.Users
+                    .AnyAsync(u => u.Email == email && u.DeletedBy == 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking email existence: {Email}", email);
+                throw;
+            }
+        }
+
+        // ==================== USER CREATION METHODS ====================
+
+        /// <summary>
+        /// Creates a new patient user and immediately saves to database.
+        /// </summary>
+        public async Task<User> CreatePatientUserAsync(User user)
+        {
+            try
+            {
+                await _context.Users.AddAsync(user);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation(
+                    "Patient user created successfully. UserId: {UserId}, HFID: {HFID}",
+                    user.Id, user.HfId);
+
+                return user;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating patient user for Email: {Email}", user.Email);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Adds a new user entity to the database context without immediately saving.
+        /// Use CommitAsync() to persist the changes.
+        /// </summary>
+        public async Task AddUserAsync(User user)
+        {
+            try
+            {
+                await _context.Users.AddAsync(user);
+
+                _logger.LogDebug("User added to context. Email: {Email}", user.Email);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding user to context");
+                throw;
+            }
+        }
+
+        // ==================== SAVE/COMMIT METHODS ====================
+
+        /// <summary>
+        /// Saves a user report to the database.
+        /// </summary>
+        public async Task SaveAsync(UserReport report)
+        {
+            try
+            {
+                _context.UserReports.Add(report);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("User report saved successfully. ReportId: {ReportId}", report.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving user report");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Persists all pending changes in the current context to the database.
+        /// </summary>
+        public async Task<int> SaveChangesAsync()
+        {
+            try
+            {
+                var entriesWritten = await _context.SaveChangesAsync();
+
+                _logger.LogDebug("Successfully saved {Count} entries to database", entriesWritten);
+
+                return entriesWritten;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving changes to database");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Commits all pending changes in the current context to the database.
+        /// This is an alias for SaveChangesAsync() to maintain consistency with transaction patterns.
+        /// </summary>
+        public async Task CommitAsync()
+        {
+            try
+            {
+                await SaveChangesAsync();
+
+                _logger.LogDebug("Changes committed successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error committing changes");
+                throw;
+            }
+        }
+
+        // ==================== TRANSACTION METHODS ====================
+
+        /// <summary>
+        /// Begins a new database transaction scope for atomic operations.
+        /// </summary>
+        public async Task<IDbContextTransaction> BeginTransactionAsync()
+        {
+            try
+            {
+                var transaction = await _context.Database.BeginTransactionAsync();
+
+                _logger.LogDebug("Database transaction started");
+
+                return transaction;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error beginning database transaction");
+                throw;
+            }
+        }
+
+        // ==================== CLINIC METHODS ====================
+
+        /// <summary>
+        /// Checks whether a clinic exists in the system by its ID.
+        /// Only returns true for non-deleted clinics.
+        /// </summary>
+        public async Task<bool> ExistsAsync(int clinicId)
+        {
+            try
+            {
+                return await _context.ClinicSignups
+                    .AsNoTracking()
+                    .AnyAsync(c => c.Id == clinicId && c.DeletedBy == 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking clinic existence for ClinicId: {ClinicId}", clinicId);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Retrieves comprehensive clinic information by clinic ID.
+        /// Returns null if the clinic doesn't exist or has been deleted.
+        /// </summary>
+        public async Task<ClinicSignup?> GetClinicByIdAsync(int clinicId)
+        {
+            try
+            {
+                var clinic = await _context.ClinicSignups
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => c.Id == clinicId && c.DeletedBy == 0);
+
+                if (clinic == null)
+                {
+                    _logger.LogWarning("Clinic not found for ClinicId: {ClinicId}", clinicId);
+                }
+
+                return clinic;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving clinic by ID: {ClinicId}", clinicId);
+                throw;
+            }
+        }
+
+        // ==================== SUBSCRIPTION METHODS ====================
+
+        /// <summary>
+        /// Adds a new subscription record to the database.
+        /// The subscription is associated with a user and defines their access level.
+        /// </summary>
+        public async Task AddSubscriptionAsync(UserSubscription subscription)
+        {
+            try
+            {
+                await _context.UserSubscriptions.AddAsync(subscription);
+
+                _logger.LogInformation(
+                    "Subscription added for UserId: {UserId}, Plan: {Plan}",
+                    subscription.UserId,
+                    subscription.SubscriptionPlan);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error adding subscription for UserId: {UserId}",
+                    subscription.UserId);
+                throw;
+            }
         }
     }
 }

@@ -128,6 +128,7 @@ namespace HFiles_Backend.Infrastructure.Data
             modelBuilder.Entity<UserDynamicDiseaseRecord>().ToTable("userdynamicdiseaserecords", t => t.ExcludeFromMigrations());
             modelBuilder.Entity<UserSocialHistory>().ToTable("usersocialhistories", t => t.ExcludeFromMigrations());
             modelBuilder.Entity<UserNotification>().ToTable("usernotifications", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<UserSubscription>().ToTable("usersubscriptions", t => t.ExcludeFromMigrations());
 
 
 
@@ -419,6 +420,7 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<UserDynamicDiseaseType> UserDynamicDiseaseTypes { get; set; }
         public DbSet<UserSocialHistory> UserSocialHistories { get; set; }
         public DbSet<UserNotification> UserNotifications { get; set; }
+        public DbSet<UserSubscription> UserSubscriptions { get; set; }
 
 
         // Clinics

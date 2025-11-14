@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Newtonsoft.Json;
 using OfficeOpenXml;
 using System.Globalization;
+using System.Text;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -213,7 +214,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         }
 
 
-
+        // ********************************************************************************************************************
 
 
         // Arthrose Prescription Data
@@ -525,5 +526,433 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return (false, default, $"Error parsing date '{dateString}': {ex.Message}");
             }
         }
+
+
+
+
+
+        // Historical Prescription Import API (2020-2024)
+        // Add this to your existing controller
+        // Uses existing ClinicPatientRecord table - NO NEW TABLES NEEDED
+
+        [HttpPost("prescription/import-historical-excel")]
+        public async Task<IActionResult> ImportHistoricalPrescriptionsFromExcel([FromForm] HistoricalPrescriptionImportRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Historical Prescription Import";
+
+            // Basic validation
+            if (request.ExcelFile == null || request.ExcelFile.Length == 0)
+                return BadRequest(ApiResponseFactory.Fail("Excel file is required."));
+
+            var fileExtension = Path.GetExtension(request.ExcelFile.FileName).ToLower();
+            if (!fileExtension.Equals(".xlsx") && !fileExtension.Equals(".csv"))
+                return BadRequest(ApiResponseFactory.Fail("Only .xlsx and .csv files are supported."));
+
+            var response = new HistoricalPrescriptionImportResponse();
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+            var committed = false;
+
+            try
+            {
+                using var stream = new MemoryStream();
+                await request.ExcelFile.CopyToAsync(stream);
+
+                List<ExcelHistoricalPrescriptionRow> allRows;
+
+                if (fileExtension.Equals(".csv"))
+                {
+                    allRows = ProcessHistoricalCsvFile(stream, response);
+                }
+                else
+                {
+                    allRows = ProcessHistoricalExcelFile(stream, response);
+                }
+
+                // Group data by patient and date (same as current 2025 API)
+                var groupedData = allRows
+                    .GroupBy(r => $"{r.PatientId}_{r.ParsedDate:yyyy-MM-dd}")
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                _logger.LogInformation("Processing {GroupCount} patient-date combinations", groupedData.Count);
+
+                // Process each patient-date group
+                foreach (var group in groupedData)
+                {
+                    await ProcessHistoricalPatientGroup(group.Key, group.Value, response);
+                }
+
+                await _clinicRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+                committed = true;
+
+                response.Message = $"Import completed successfully: {response.SuccessfullyAdded} prescriptions added, " +
+                                  $"{response.Skipped} entries skipped (including {response.SkippedEmptyDrugName} with empty drug names) " +
+                                  $"out of {response.TotalProcessed} total entries. " +
+                                  $"Processed {response.PatientsProcessed} patients with {response.VisitsCreated} visits.";
+
+                _logger.LogInformation("Historical prescription import completed: {Added} added, {Skipped} skipped",
+                    response.SuccessfullyAdded, response.Skipped);
+
+                return Ok(ApiResponseFactory.Success(response, response.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to import historical prescriptions");
+                return StatusCode(500, ApiResponseFactory.Fail("Failed to process file: " + ex.Message));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+            }
+        }
+
+        private List<ExcelHistoricalPrescriptionRow> ProcessHistoricalCsvFile(MemoryStream stream, HistoricalPrescriptionImportResponse response)
+        {
+            var rows = new List<ExcelHistoricalPrescriptionRow>();
+            stream.Position = 0;
+
+            using var reader = new StreamReader(stream);
+            string? line;
+            int rowNumber = 0;
+            bool isHeader = true;
+
+            while ((line = reader.ReadLine()) != null)
+            {
+                rowNumber++;
+
+                if (isHeader)
+                {
+                    isHeader = false;
+                    continue;
+                }
+
+                try
+                {
+                    var values = ParseCsvLine(line);
+
+                    if (values.Length < 8)
+                    {
+                        response.SkippedReasons.Add($"Row {rowNumber}: Insufficient columns");
+                        response.Skipped++;
+                        response.TotalProcessed++;
+                        continue;
+                    }
+
+                    var row = new ExcelHistoricalPrescriptionRow
+                    {
+                        PatientId = values[0].Trim(),
+                        PatientName = values[1].Trim(),
+                        DrugName = values[2].Trim(),
+                        Duration = values[3].Trim(),
+                        Dosage = values[4].Trim(),
+                        Direction = values[5].Trim(),
+                        Advice = values[6].Trim(),
+                        DateString = values[7].Trim()
+                    };
+
+                    response.TotalProcessed++;
+
+                    // Skip if drug name is empty - CRITICAL FOR YOUR USE CASE
+                    if (string.IsNullOrWhiteSpace(row.DrugName))
+                    {
+                        response.SkippedReasons.Add($"Row {rowNumber}: Empty drug name");
+                        response.Skipped++;
+                        response.SkippedEmptyDrugName++;
+                        continue;
+                    }
+
+                    // Validate required fields
+                    if (string.IsNullOrWhiteSpace(row.PatientId))
+                    {
+                        response.SkippedReasons.Add($"Row {rowNumber}: Patient ID is required");
+                        response.Skipped++;
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(row.PatientName))
+                    {
+                        response.SkippedReasons.Add($"Row {rowNumber}: Patient name is required");
+                        response.Skipped++;
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(row.DateString))
+                    {
+                        response.SkippedReasons.Add($"Row {rowNumber}: Date is required");
+                        response.Skipped++;
+                        continue;
+                    }
+
+                    // Parse date
+                    var dateResult = ParseDateFromExcel(row.DateString);
+                    if (!dateResult.IsValid)
+                    {
+                        response.SkippedReasons.Add($"Row {rowNumber}: {dateResult.ErrorMessage}");
+                        response.Skipped++;
+                        continue;
+                    }
+
+                    row.ParsedDate = dateResult.Date;
+                    rows.Add(row);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error processing CSV row {Row}", rowNumber);
+                    response.SkippedReasons.Add($"Row {rowNumber}: Processing error - {ex.Message}");
+                    response.Skipped++;
+                }
+            }
+
+            return rows;
+        }
+
+        private List<ExcelHistoricalPrescriptionRow> ProcessHistoricalExcelFile(MemoryStream stream, HistoricalPrescriptionImportResponse response)
+        {
+            var rows = new List<ExcelHistoricalPrescriptionRow>();
+
+            ExcelPackage.License.SetNonCommercialPersonal("HFiles");
+            using var package = new ExcelPackage(stream);
+            var worksheet = package.Workbook.Worksheets[0];
+
+            if (worksheet.Dimension == null)
+                return rows;
+
+            var rowCount = worksheet.Dimension.End.Row;
+            _logger.LogInformation("Processing {RowCount} rows from Excel", rowCount - 1);
+
+            for (int rowNumber = 2; rowNumber <= rowCount; rowNumber++)
+            {
+                try
+                {
+                    var row = new ExcelHistoricalPrescriptionRow
+                    {
+                        PatientId = worksheet.Cells[rowNumber, 1].Text.Trim(),
+                        PatientName = worksheet.Cells[rowNumber, 2].Text.Trim(),
+                        DrugName = worksheet.Cells[rowNumber, 3].Text.Trim(),
+                        Duration = worksheet.Cells[rowNumber, 4].Text.Trim(),
+                        Dosage = worksheet.Cells[rowNumber, 5].Text.Trim(),
+                        Direction = worksheet.Cells[rowNumber, 6].Text.Trim(),
+                        Advice = worksheet.Cells[rowNumber, 7].Text.Trim(),
+                        DateString = worksheet.Cells[rowNumber, 8].Text.Trim()
+                    };
+
+                    response.TotalProcessed++;
+
+                    // Skip if drug name is empty - CRITICAL FOR YOUR USE CASE
+                    if (string.IsNullOrWhiteSpace(row.DrugName))
+                    {
+                        response.SkippedReasons.Add($"Row {rowNumber}: Empty drug name");
+                        response.Skipped++;
+                        response.SkippedEmptyDrugName++;
+                        continue;
+                    }
+
+                    // Validate required fields
+                    if (string.IsNullOrWhiteSpace(row.PatientId))
+                    {
+                        response.SkippedReasons.Add($"Row {rowNumber}: Patient ID is required");
+                        response.Skipped++;
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(row.PatientName))
+                    {
+                        response.SkippedReasons.Add($"Row {rowNumber}: Patient name is required");
+                        response.Skipped++;
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(row.DateString))
+                    {
+                        response.SkippedReasons.Add($"Row {rowNumber}: Date is required");
+                        response.Skipped++;
+                        continue;
+                    }
+
+                    // Parse date
+                    var dateResult = ParseDateFromExcel(row.DateString);
+                    if (!dateResult.IsValid)
+                    {
+                        response.SkippedReasons.Add($"Row {rowNumber}: {dateResult.ErrorMessage}");
+                        response.Skipped++;
+                        continue;
+                    }
+
+                    row.ParsedDate = dateResult.Date;
+                    rows.Add(row);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error processing Excel row {Row}", rowNumber);
+                    response.SkippedReasons.Add($"Row {rowNumber}: Processing error - {ex.Message}");
+                    response.Skipped++;
+                }
+            }
+
+            return rows;
+        }
+
+        private async Task ProcessHistoricalPatientGroup(string groupKey, List<ExcelHistoricalPrescriptionRow> prescriptions, HistoricalPrescriptionImportResponse response)
+        {
+            var firstPrescription = prescriptions.First();
+
+            // Step 1: Get or create clinic patient (uses PatientId as HFID for historical data)
+            var clinicPatient = await _clinicVisitRepository.GetOrCreatePatientAsync(
+                firstPrescription.PatientId,
+                firstPrescription.PatientName
+            );
+
+            // Step 2: Check if visit already exists for this patient-date combination
+            var existingVisit = await _clinicVisitRepository.GetExistingVisitAsync(
+                clinicPatient.Id,
+                firstPrescription.ParsedDate
+            );
+
+            ClinicVisit visit;
+
+            if (existingVisit == null)
+            {
+                // Create new visit for historical data
+                visit = new ClinicVisit
+                {
+                    ClinicPatientId = clinicPatient.Id,
+                    ClinicId = CLINIC_ID,
+                    AppointmentDate = firstPrescription.ParsedDate.Date,
+                    AppointmentTime = new TimeSpan(0, 0, 0), // Midnight for historical data
+                    PaymentMethod = null,
+                    //Notes = "Historical import (2020-2024)"
+                };
+
+                await _clinicVisitRepository.SaveVisitAsync(visit);
+                response.VisitsCreated++;
+            }
+            else
+            {
+                visit = existingVisit;
+            }
+
+            // Step 3: Check if prescription record already exists for this visit
+            var existingRecord = await _clinicPatientRecordRepository.GetByCompositeKeyAsync(
+                CLINIC_ID,
+                clinicPatient.Id,
+                visit.Id,
+                RecordType.Prescription
+            );
+
+            if (existingRecord != null)
+            {
+                response.SkippedReasons.Add(
+                    $"Patient {firstPrescription.PatientId} on {firstPrescription.ParsedDate:yyyy-MM-dd}: Prescription already exists"
+                );
+                response.Skipped += prescriptions.Count;
+                return;
+            }
+
+            // Step 4: Create prescription record with JSON data (SAME FORMAT AS YOUR CURRENT API)
+            var jsonData = CreateHistoricalPrescriptionJsonData(firstPrescription, prescriptions);
+
+            var prescriptionRecord = new ClinicPatientRecord
+            {
+                ClinicId = CLINIC_ID,
+                PatientId = clinicPatient.Id,
+                ClinicVisitId = visit.Id,
+                Type = RecordType.Prescription,
+                JsonData = jsonData,
+                SendToPatient = false,
+                UniqueRecordId = null
+            };
+
+            await _clinicPatientRecordRepository.SaveAsync(prescriptionRecord);
+
+            response.SuccessfullyAdded++;
+            response.PatientsProcessed++;
+
+            var summary = new AddedHistoricalPrescriptionSummary
+            {
+                PatientId = firstPrescription.PatientId,
+                PatientName = firstPrescription.PatientName,
+                Date = firstPrescription.ParsedDate.ToString("yyyy-MM-dd"),
+                MedicationCount = prescriptions.Count,
+                Medications = prescriptions.Select(p => p.DrugName).ToList()
+            };
+
+            response.AddedPrescriptions.Add(summary);
+        }
+
+        private string CreateHistoricalPrescriptionJsonData(ExcelHistoricalPrescriptionRow firstPrescription, List<ExcelHistoricalPrescriptionRow> prescriptions)
+        {
+            // Create medications array - SAME FORMAT AS YOUR CURRENT 2025 API
+            var medications = prescriptions.Select(p => new
+            {
+                name = p.DrugName,
+                dosage = p.Dosage,
+                frequency = p.Duration,
+                timing = p.Direction,
+                instruction = p.Advice
+            }).ToArray();
+
+            // Create prescription data - SAME FORMAT AS YOUR CURRENT 2025 API
+            var prescriptionData = new
+            {
+                patient = new
+                {
+                    name = firstPrescription.PatientName,
+                    hfid = firstPrescription.PatientId, // Using PatientId as HFID for historical data
+                    gender = "",
+                    prfid = firstPrescription.PatientId,
+                    dob = "",
+                    mobile = "",
+                    doctor = DOCTOR_NAME,
+                    city = "",
+                    isHistoricalData = true // Flag to identify historical imports
+                },
+                medications = medications,
+                additionalNotes = "Historical data import (2020-2024)",
+                clinicInfo = new
+                {
+                    name = "Arthrose",
+                    subtitle = "CRANIOFACIAL PAIN & TMJ CENTRE",
+                    website = "www.arthrosetmjindia.com"
+                },
+                timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            };
+
+            return JsonConvert.SerializeObject(prescriptionData, Formatting.None);
+        }
+
+        private string[] ParseCsvLine(string line)
+        {
+            var values = new List<string>();
+            var current = new StringBuilder();
+            bool inQuotes = false;
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+
+                if (c == '"')
+                {
+                    inQuotes = !inQuotes;
+                }
+                else if (c == ',' && !inQuotes)
+                {
+                    values.Add(current.ToString());
+                    current.Clear();
+                }
+                else
+                {
+                    current.Append(c);
+                }
+            }
+
+            values.Add(current.ToString());
+            return values.ToArray();
+        }
+
+        // Note: Use your existing ParseDateFromExcel method from current prescription API
+
     }
 }

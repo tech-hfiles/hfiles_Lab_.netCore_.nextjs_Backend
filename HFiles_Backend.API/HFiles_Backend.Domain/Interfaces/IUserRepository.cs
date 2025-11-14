@@ -12,6 +12,7 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<List<User>> GetAllAsync();
         Task<User?> GetByPhoneNumberAsync(string phoneNumber);
         Task SaveAsync(UserReport report);
-        Task<User?> GetUserByPatientIdAsync(string patientId);  
+        Task<User?> GetUserByPatientIdAsync(string patientId);
+        Task<User?> GetUserByEmailForLookupAsync(string email);
     }
 }

@@ -1,14 +1,17 @@
 ﻿using Google.Apis.Auth.OAuth2;
 using Google.Apis.Calendar.v3;
 using Google.Apis.Services;
+using HFiles_Backend.API.DTOs.Clinics;
 using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.Appointment;
 using HFiles_Backend.Application.DTOs.Clinics.ConsentForm;
 using HFiles_Backend.Application.DTOs.Clinics.Treatment;
+using HFiles_Backend.Application.Extensions;
 using HFiles_Backend.Application.Models.Filters;
 using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Entities.Users;
 using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Repositories;
@@ -17,8 +20,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
 using Newtonsoft.Json;
-using HFiles_Backend.Application.Extensions;
 using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+using Microsoft.VisualBasic.FileIO;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -245,7 +250,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     await transaction.RollbackAsync();
                 }
             }
-        }
+        }                                     
 
 
 
@@ -1988,6 +1993,720 @@ namespace HFiles_Backend.API.Controllers.Clinics
         //        return StatusCode(500, ApiResponseFactory.Fail("Failed to retrieve import statistics."));
         //    }
         //}
+
+
+
+
+        // *******************************************************************************************************************************
+
+
+
+
+        /// <summary>
+        /// Imports 2019 patient appointments from CSV file and creates appointment entries with clinic visits.
+        /// CSV structure: date, patientId, localPatientName, mobileNumber, emailAddress, secMobile, gender...
+        /// Only processes patients with 2019 dates. Creates appointments and clinic visits for existing users.
+        /// </summary>
+        /// <param name="request">The CSV file and clinic ID</param>
+        /// <returns>Summary of import results including added, not found, and skipped appointments</returns>
+        /// <summary>
+        /// Imports 2019 patient appointments from CSV file and creates appointment entries with clinic visits.
+        /// CSV structure: date, patientId, localPatientName, mobileNumber, emailAddress, secMobile, gender...
+        /// Date format: "Tue Apr 01 19:54:27 IST 2019"
+        /// Only processes patients with 2019 dates. Creates appointments and clinic visits for existing users.
+        /// </summary>
+        /// <param name="request">The CSV file and clinic ID</param>
+        /// <returns>Summary of import results including added, not found, and skipped appointments</returns>
+        /// <summary>
+        /// Imports 2019 patient appointments from CSV file and creates appointment entries with clinic visits.
+        /// CSV structure: doctorName, patientName, patientId, date, startTime, endTime, status, explanation
+        /// Date format: "Fri Aug 16 14:00:00 IST 2019"
+        /// Only processes patients with 2019 dates. Creates appointments and clinic visits for existing users.
+        /// </summary>
+        [HttpPost("import-2019-appointments-csv")]
+        //[Authorize]
+        public async Task<IActionResult> Import2019AppointmentsFromCsv([FromForm] Appointment2019ImportRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "2019 Appointment Import";
+
+            _logger.LogInformation("Starting 2019 appointment import from CSV file for Clinic ID {ClinicId}", request.ClinicId);
+
+            // Validate clinic exists
+            var clinicExists = await _clinicRepository.ExistsAsync(request.ClinicId);
+            if (!clinicExists)
+            {
+                _logger.LogWarning("Clinic ID {ClinicId} does not exist", request.ClinicId);
+                return BadRequest(ApiResponseFactory.Fail("Invalid Clinic ID."));
+            }
+
+            // Validate file upload
+            if (request.CsvFile == null || request.CsvFile.Length == 0)
+                return BadRequest(ApiResponseFactory.Fail("CSV file is required."));
+
+            var extension = Path.GetExtension(request.CsvFile.FileName).ToLower();
+            if (extension != ".csv")
+                return BadRequest(ApiResponseFactory.Fail("Only .csv files are supported."));
+
+            var response = new Appointment2019ImportResponse();
+            var appointmentsToAdd = new List<ClinicAppointment>();
+            var visitsToAdd = new List<ClinicVisit>();
+            var skippedReasons = new List<string>();
+            var patientNotFoundList = new List<string>();
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+            var committed = false;
+
+            try
+            {
+                using var stream = new MemoryStream();
+                await request.CsvFile.CopyToAsync(stream);
+                stream.Position = 0;
+
+                using var reader = new StreamReader(stream);
+                using var parser = new TextFieldParser(reader);
+
+                parser.TextFieldType = FieldType.Delimited;
+                parser.SetDelimiters(",");
+                parser.HasFieldsEnclosedInQuotes = true;
+                parser.TrimWhiteSpace = true;
+
+                // Skip header row
+                if (!parser.EndOfData)
+                    parser.ReadFields();
+
+                int rowNumber = 1;
+
+                while (!parser.EndOfData)
+                {
+                    rowNumber++;
+
+                    try
+                    {
+                        string[]? fields = parser.ReadFields();
+
+                        if (fields == null || fields.Length == 0)
+                            continue;
+
+                        response.TotalProcessed++;
+
+                        // Check minimum columns (8 columns expected)
+                        if (fields.Length < 7)
+                        {
+                            skippedReasons.Add($"Row {rowNumber}: Insufficient columns ({fields.Length})");
+                            response.Skipped++;
+                            continue;
+                        }
+
+                        // Extract data from CSV columns
+                        // Column 0: doctorName (skip)
+                        // Column 1: patientName
+                        // Column 2: patientId
+                        // Column 3: date (format: "Fri Aug 16 14:00:00 IST 2019")
+                        // Column 4: startTime (minutes)
+                        // Column 5: endTime (minutes)
+                        // Column 6: status (CONFIRM/CANCEL)
+                        // Column 7: explanation (optional)
+
+                        var patientName = fields[1].Trim();
+                        var patientId = fields[2].Trim();
+                        var dateString = fields[3].Trim();
+                        var status = fields[6].Trim();
+                        var explanation = fields.Length > 7 ? fields[7].Trim() : "";
+
+                        // Parse date using the complex date string parser
+                        var dateTimeResult = ParseDateTimeString(dateString);
+                        if (!dateTimeResult.IsValid)
+                        {
+                            skippedReasons.Add($"Row {rowNumber}: {dateTimeResult.ErrorMessage}");
+                            response.Skipped++;
+                            continue;
+                        }
+
+                        // Filter: Only process 2019 appointments
+                        if (dateTimeResult.Date.Year != 2019)
+                        {
+                            _logger.LogDebug("Skipping row {Row}: Date is not from 2019 ({Date})",
+                                rowNumber, dateTimeResult.Date.ToString("yyyy-MM-dd"));
+                            continue;
+                        }
+
+                        // Validate required fields
+                        if (string.IsNullOrWhiteSpace(patientName))
+                        {
+                            skippedReasons.Add($"Row {rowNumber}: Patient name is required");
+                            response.Skipped++;
+                            continue;
+                        }
+
+                        if (string.IsNullOrWhiteSpace(patientId))
+                        {
+                            skippedReasons.Add($"Row {rowNumber}: Patient ID is required");
+                            response.Skipped++;
+                            continue;
+                        }
+
+                        if (!status.Equals("CONFIRM", StringComparison.OrdinalIgnoreCase) &&
+                            !status.Equals("CANCEL", StringComparison.OrdinalIgnoreCase))
+                        {
+                            skippedReasons.Add($"Row {rowNumber}: Invalid status '{status}'. Expected CONFIRM or CANCEL");
+                            response.Skipped++;
+                            continue;
+                        }
+
+                        // Try to find user by PatientId only (CSV doesn't have mobile/email)
+                        var user = await _userRepository.GetUserByPatientIdAsync(patientId);
+
+                        if (user == null)
+                        {
+                            patientNotFoundList.Add($"Row {rowNumber}: Patient '{patientName}' (ID: {patientId}) not found in system");
+                            response.PatientNotFound++;
+                            _logger.LogInformation("Patient not found for row {Row}: {PatientId}", rowNumber, patientId);
+                            continue;
+                        }
+
+                        // Null-safe access to user properties
+                        var userPhoneNumber = user.PhoneNumber ?? "";
+                        var userFirstName = user.FirstName ?? "Unknown";
+                        var userLastName = user.LastName ?? "User";
+                        var userHfId = user.HfId ?? "";
+
+                        // Check if appointment already exists for this date/time
+                        var existingAppointment = await CheckExistingAppointment(
+                            request.ClinicId,
+                            userPhoneNumber,
+                            dateTimeResult.Date,
+                            dateTimeResult.Time);
+
+                        if (existingAppointment != null)
+                        {
+                            skippedReasons.Add($"Row {rowNumber}: Appointment already exists for {userFirstName} {userLastName} on {dateTimeResult.Date:dd-MM-yyyy} at {dateTimeResult.Time:hh\\:mm}");
+                            response.AlreadyHasAppointment++;
+                            continue;
+                        }
+
+                        // Create full name
+                        var fullName = $"{userFirstName} {userLastName}".Trim();
+
+                        // Get or create clinic patient
+                        var clinicPatient = await _clinicVisitRepository.GetOrCreatePatientAsync(
+                            userHfId,
+                            fullName);
+
+                        // Convert status: CONFIRM -> Completed, CANCEL -> Canceled
+                        string appointmentStatus = status.Equals("CONFIRM", StringComparison.OrdinalIgnoreCase)
+                            ? "Completed"
+                            : "Canceled";
+
+                        // Create appointment
+                        var appointment = new ClinicAppointment
+                        {
+                            VisitorUsername = fullName,
+                            VisitorPhoneNumber = userPhoneNumber,
+                            AppointmentDate = dateTimeResult.Date.Date,
+                            AppointmentTime = dateTimeResult.Time,
+                            ClinicId = request.ClinicId,
+                            Status = appointmentStatus,
+                            Treatment = string.IsNullOrWhiteSpace(explanation) ? null : explanation
+                        };
+
+                        appointmentsToAdd.Add(appointment);
+
+                        // Only create visit if appointment was confirmed
+                        if (appointmentStatus == "Completed")
+                        {
+                            // Check if visit already exists for this date AND time
+                            var existingVisit = await _clinicVisitRepository.GetExistingVisitAsyncWithTime(
+                                clinicPatient.Id,
+                                dateTimeResult.Date.Date,
+                                dateTimeResult.Time);
+
+                            if (existingVisit == null)
+                            {
+                                // Create clinic visit
+                                var visit = new ClinicVisit
+                                {
+                                    ClinicPatientId = clinicPatient.Id,
+                                    ClinicId = request.ClinicId,
+                                    AppointmentDate = dateTimeResult.Date.Date,
+                                    AppointmentTime = dateTimeResult.Time,
+                                    PaymentMethod = null
+                                };
+
+                                visitsToAdd.Add(visit);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error processing row {Row}", rowNumber);
+                        skippedReasons.Add($"Row {rowNumber}: Processing error - {ex.Message}");
+                        response.Skipped++;
+                    }
+                }
+
+                // Bulk insert appointments and visits
+                if (appointmentsToAdd.Any())
+                {
+                    await _appointmentRepository.AddRangeAsync(appointmentsToAdd);
+                    await _appointmentRepository.SaveChangesAsync();
+
+                    // Save visits after appointments
+                    foreach (var visit in visitsToAdd)
+                    {
+                        await _clinicVisitRepository.SaveVisitAsync(visit);
+                    }
+
+                    response.SuccessfullyAdded = appointmentsToAdd.Count;
+
+                    // Build summary list
+                    response.AddedAppointments = new List<ImportedAppointmentSummary>();
+                    for (int i = 0; i < appointmentsToAdd.Count; i++)
+                    {
+                        var appointment = appointmentsToAdd[i];
+                        var visit = visitsToAdd.FirstOrDefault(v =>
+                            v.AppointmentDate == appointment.AppointmentDate &&
+                            v.AppointmentTime == appointment.AppointmentTime);
+
+                        response.AddedAppointments.Add(new ImportedAppointmentSummary
+                        {
+                            AppointmentId = appointment.Id,
+                            VisitId = visit?.Id,
+                            PatientName = appointment.VisitorUsername,
+                            PatientId = "",
+                            HFID = "",
+                            PhoneNumber = appointment.VisitorPhoneNumber,
+                            AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
+                            AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
+                            Status = appointment.Status
+                        });
+                    }
+                }
+
+                await transaction.CommitAsync();
+                committed = true;
+
+                response.PatientNotFoundList = patientNotFoundList;
+                response.SkippedReasons = skippedReasons;
+                response.Message = $"Import completed: {response.SuccessfullyAdded} appointments added, " +
+                                  $"{response.PatientNotFound} patients not found, " +
+                                  $"{response.AlreadyHasAppointment} already have appointments, " +
+                                  $"{response.Skipped} skipped out of {response.TotalProcessed} total 2019 records.";
+
+                _logger.LogInformation("2019 Appointment import completed for Clinic {ClinicId}: {Added} added, {NotFound} not found, {Skipped} skipped",
+                    request.ClinicId, response.SuccessfullyAdded, response.PatientNotFound, response.Skipped);
+
+                // Invalidate cache
+                _cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+                return Ok(ApiResponseFactory.Success(response, response.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to import 2019 appointments from CSV for Clinic {ClinicId}", request.ClinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("Failed to process CSV file: " + ex.Message));
+            }
+            finally
+            {
+                if (!committed && transaction?.GetDbTransaction()?.Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Parses date/time string in format: "Fri Aug 16 14:00:00 IST 2019"
+        /// </summary>
+        private (bool IsValid, DateTime Date, TimeSpan Time, string ErrorMessage) ParseDateTimeString(string dateString)
+        {
+            try
+            {
+                // Pattern: "Fri Aug 16 14:00:00 IST 2019"
+                // Format: {weekday} {month} {dd} {hh:mm:ss} IST {yyyy}
+                var regex = new Regex(@"^\w{3}\s+(\w{3})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+IST\s+(\d{4})$");
+                var match = regex.Match(dateString);
+
+                if (!match.Success)
+                    return (false, default, default, $"Invalid date format: {dateString}");
+
+                var monthStr = match.Groups[1].Value;
+                var day = int.Parse(match.Groups[2].Value);
+                var hour = int.Parse(match.Groups[3].Value);
+                var minute = int.Parse(match.Groups[4].Value);
+                var second = int.Parse(match.Groups[5].Value);
+                var year = int.Parse(match.Groups[6].Value);
+
+                // Convert month name to number
+                var month = monthStr switch
+                {
+                    "Jan" => 1,
+                    "Feb" => 2,
+                    "Mar" => 3,
+                    "Apr" => 4,
+                    "May" => 5,
+                    "Jun" => 6,
+                    "Jul" => 7,
+                    "Aug" => 8,
+                    "Sep" => 9,
+                    "Oct" => 10,
+                    "Nov" => 11,
+                    "Dec" => 12,
+                    _ => throw new ArgumentException($"Invalid month: {monthStr}")
+                };
+
+                var date = new DateTime(year, month, day);
+                var time = new TimeSpan(hour, minute, second);
+
+                return (true, date, time, "");
+            }
+            catch (Exception ex)
+            {
+                return (false, default, default, $"Error parsing date '{dateString}': {ex.Message}");
+            }
+        }
+
+        private async Task<ClinicAppointment?> CheckExistingAppointment(int clinicId, string phoneNumber, DateTime date, TimeSpan time)
+        {
+            var appointments = await _appointmentRepository.GetAppointmentsByClinicIdAsync(clinicId);
+
+            return appointments.FirstOrDefault(a =>
+                a.VisitorPhoneNumber == phoneNumber &&
+                a.AppointmentDate.Date == date.Date &&
+                a.AppointmentTime == time);
+        }
+
+
+
+
+
+
+
+
+
+
+        /// <summary>
+        /// Imports 2020-2024 patient appointments from CSV file and creates appointment entries with clinic visits.
+        /// CSV structure: doctorName, patientName, patientId, date, startTime, endTime, status, explanation
+        /// Date format: "Fri Aug 16 14:00:00 IST 2020" (or 2021, 2022, 2023, 2024)
+        /// Only processes patients with 2020-2024 dates. Creates appointments and clinic visits for existing users.
+        /// Provides year-wise breakdown of imported appointments.
+        /// </summary>
+        /// <param name="request">The CSV file and clinic ID</param>
+        /// <returns>Summary of import results including added, not found, and skipped appointments with year-wise statistics</returns>
+        [HttpPost("import-2020-2024-appointments-csv")]
+        //[Authorize]
+        public async Task<IActionResult> Import2020To2024AppointmentsFromCsv([FromForm] Appointment2020To2024ImportRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "2020-2024 Appointment Import";
+
+            _logger.LogInformation("Starting 2020-2024 appointment import from CSV file for Clinic ID {ClinicId}", request.ClinicId);
+
+            // Validate clinic exists
+            var clinicExists = await _clinicRepository.ExistsAsync(request.ClinicId);
+            if (!clinicExists)
+            {
+                _logger.LogWarning("Clinic ID {ClinicId} does not exist", request.ClinicId);
+                return BadRequest(ApiResponseFactory.Fail("Invalid Clinic ID."));
+            }
+
+            // Validate file upload
+            if (request.CsvFile == null || request.CsvFile.Length == 0)
+                return BadRequest(ApiResponseFactory.Fail("CSV file is required."));
+
+            var extension = Path.GetExtension(request.CsvFile.FileName).ToLower();
+            if (extension != ".csv")
+                return BadRequest(ApiResponseFactory.Fail("Only .csv files are supported."));
+
+            var response = new Appointment2020To2024ImportResponse();
+            var appointmentsToAdd = new List<ClinicAppointment>();
+            var visitsToAdd = new List<ClinicVisit>();
+            var skippedReasons = new List<string>();
+            var patientNotFoundList = new List<string>();
+
+            // Initialize year-wise breakdown for 2020-2024
+            var yearWiseStats = new Dictionary<int, YearWiseAppointmentStats>();
+            for (int year = 2020; year <= 2024; year++)
+            {
+                yearWiseStats[year] = new YearWiseAppointmentStats();
+            }
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+            var committed = false;
+
+            try
+            {
+                using var stream = new MemoryStream();
+                await request.CsvFile.CopyToAsync(stream);
+                stream.Position = 0;
+
+                using var reader = new StreamReader(stream);
+                using var parser = new TextFieldParser(reader);
+
+                parser.TextFieldType = FieldType.Delimited;
+                parser.SetDelimiters(",");
+                parser.HasFieldsEnclosedInQuotes = true;
+                parser.TrimWhiteSpace = true;
+
+                // Skip header row
+                if (!parser.EndOfData)
+                    parser.ReadFields();
+
+                int rowNumber = 1;
+
+                while (!parser.EndOfData)
+                {
+                    rowNumber++;
+
+                    try
+                    {
+                        string[]? fields = parser.ReadFields();
+
+                        if (fields == null || fields.Length == 0)
+                            continue;
+
+                        response.TotalProcessed++;
+
+                        // Check minimum columns (8 columns expected)
+                        if (fields.Length < 7)
+                        {
+                            skippedReasons.Add($"Row {rowNumber}: Insufficient columns ({fields.Length})");
+                            response.Skipped++;
+                            continue;
+                        }
+
+                        // Extract data from CSV columns
+                        // Column 0: doctorName (skip)
+                        // Column 1: patientName
+                        // Column 2: patientId
+                        // Column 3: date (format: "Fri Aug 16 14:00:00 IST 2020")
+                        // Column 4: startTime (minutes)
+                        // Column 5: endTime (minutes)
+                        // Column 6: status (CONFIRM/CANCEL)
+                        // Column 7: explanation (optional)
+
+                        var patientName = fields[1].Trim();
+                        var patientId = fields[2].Trim();
+                        var dateString = fields[3].Trim();
+                        var status = fields[6].Trim();
+                        var explanation = fields.Length > 7 ? fields[7].Trim() : "";
+
+                        // Parse date using the complex date string parser
+                        var dateTimeResult = ParseDateTimeString(dateString);
+                        if (!dateTimeResult.IsValid)
+                        {
+                            skippedReasons.Add($"Row {rowNumber}: {dateTimeResult.ErrorMessage}");
+                            response.Skipped++;
+                            continue;
+                        }
+
+                        // Filter: Only process 2020-2024 appointments
+                        if (dateTimeResult.Date.Year < 2020 || dateTimeResult.Date.Year > 2024)
+                        {
+                            _logger.LogDebug("Skipping row {Row}: Date is not from 2020-2024 ({Date})",
+                                rowNumber, dateTimeResult.Date.ToString("yyyy-MM-dd"));
+                            continue;
+                        }
+
+                        // Validate required fields
+                        if (string.IsNullOrWhiteSpace(patientName))
+                        {
+                            skippedReasons.Add($"Row {rowNumber}: Patient name is required");
+                            response.Skipped++;
+                            continue;
+                        }
+
+                        if (string.IsNullOrWhiteSpace(patientId))
+                        {
+                            skippedReasons.Add($"Row {rowNumber}: Patient ID is required");
+                            response.Skipped++;
+                            continue;
+                        }
+
+                        if (!status.Equals("CONFIRM", StringComparison.OrdinalIgnoreCase) &&
+                            !status.Equals("CANCEL", StringComparison.OrdinalIgnoreCase))
+                        {
+                            skippedReasons.Add($"Row {rowNumber}: Invalid status '{status}'. Expected CONFIRM or CANCEL");
+                            response.Skipped++;
+                            continue;
+                        }
+
+                        // Try to find user by PatientId
+                        var user = await _userRepository.GetUserByPatientIdAsync(patientId);
+
+                        if (user == null)
+                        {
+                            patientNotFoundList.Add($"Row {rowNumber}: Patient '{patientName}' (ID: {patientId}) not found in system");
+                            response.PatientNotFound++;
+                            yearWiseStats[dateTimeResult.Date.Year].PatientsNotFound++;
+                            _logger.LogInformation("Patient not found for row {Row}: {PatientId}", rowNumber, patientId);
+                            continue;
+                        }
+
+                        // Null-safe access to user properties
+                        var userPhoneNumber = user.PhoneNumber ?? "";
+                        var userFirstName = user.FirstName ?? "Unknown";
+                        var userLastName = user.LastName ?? "User";
+                        var userHfId = user.HfId ?? "";
+
+                        // Check if appointment already exists for this date/time
+                        var existingAppointment = await CheckExistingAppointment(
+                            request.ClinicId,
+                            userPhoneNumber,
+                            dateTimeResult.Date,
+                            dateTimeResult.Time);
+
+                        if (existingAppointment != null)
+                        {
+                            skippedReasons.Add($"Row {rowNumber}: Appointment already exists for {userFirstName} {userLastName} on {dateTimeResult.Date:dd-MM-yyyy} at {dateTimeResult.Time:hh\\:mm}");
+                            response.AlreadyHasAppointment++;
+                            continue;
+                        }
+
+                        // Create full name
+                        var fullName = $"{userFirstName} {userLastName}".Trim();
+
+                        // Get or create clinic patient
+                        var clinicPatient = await _clinicVisitRepository.GetOrCreatePatientAsync(
+                            userHfId,
+                            fullName);
+
+                        // Convert status: CONFIRM -> Completed, CANCEL -> Canceled
+                        string appointmentStatus = status.Equals("CONFIRM", StringComparison.OrdinalIgnoreCase)
+                            ? "Completed"
+                            : "Canceled";
+
+                        // Track year-wise statistics
+                        yearWiseStats[dateTimeResult.Date.Year].TotalAppointments++;
+                        if (appointmentStatus == "Completed")
+                            yearWiseStats[dateTimeResult.Date.Year].Confirmed++;
+                        else
+                            yearWiseStats[dateTimeResult.Date.Year].Canceled++;
+
+                        // Create appointment
+                        var appointment = new ClinicAppointment
+                        {
+                            VisitorUsername = fullName,
+                            VisitorPhoneNumber = userPhoneNumber,
+                            AppointmentDate = dateTimeResult.Date.Date,
+                            AppointmentTime = dateTimeResult.Time,
+                            ClinicId = request.ClinicId,
+                            Status = appointmentStatus,
+                            Treatment = string.IsNullOrWhiteSpace(explanation) ? null : explanation
+                        };
+
+                        appointmentsToAdd.Add(appointment);
+
+                        // Only create visit if appointment was confirmed
+                        if (appointmentStatus == "Completed")
+                        {
+                            // Check if visit already exists for this date AND time
+                            var existingVisit = await _clinicVisitRepository.GetExistingVisitAsyncWithTime(
+                                clinicPatient.Id,
+                                dateTimeResult.Date.Date,
+                                dateTimeResult.Time);
+
+                            if (existingVisit == null)
+                            {
+                                // Create clinic visit
+                                var visit = new ClinicVisit
+                                {
+                                    ClinicPatientId = clinicPatient.Id,
+                                    ClinicId = request.ClinicId,
+                                    AppointmentDate = dateTimeResult.Date.Date,
+                                    AppointmentTime = dateTimeResult.Time,
+                                    PaymentMethod = null
+                                };
+
+                                visitsToAdd.Add(visit);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error processing row {Row}", rowNumber);
+                        skippedReasons.Add($"Row {rowNumber}: Processing error - {ex.Message}");
+                        response.Skipped++;
+                    }
+                }
+
+                // Bulk insert appointments and visits
+                if (appointmentsToAdd.Any())
+                {
+                    await _appointmentRepository.AddRangeAsync(appointmentsToAdd);
+                    await _appointmentRepository.SaveChangesAsync();
+
+                    // Save visits after appointments
+                    foreach (var visit in visitsToAdd)
+                    {
+                        await _clinicVisitRepository.SaveVisitAsync(visit);
+                    }
+
+                    response.SuccessfullyAdded = appointmentsToAdd.Count;
+
+                    // Build summary list
+                    response.AddedAppointments = new List<ImportedAppointmentSummary>();
+                    for (int i = 0; i < appointmentsToAdd.Count; i++)
+                    {
+                        var appointment = appointmentsToAdd[i];
+                        var visit = visitsToAdd.FirstOrDefault(v =>
+                            v.AppointmentDate == appointment.AppointmentDate &&
+                            v.AppointmentTime == appointment.AppointmentTime);
+
+                        response.AddedAppointments.Add(new ImportedAppointmentSummary
+                        {
+                            AppointmentId = appointment.Id,
+                            VisitId = visit?.Id,
+                            PatientName = appointment.VisitorUsername,
+                            PatientId = "",
+                            HFID = "",
+                            PhoneNumber = appointment.VisitorPhoneNumber,
+                            AppointmentDate = appointment.AppointmentDate.ToString("dd-MM-yyyy"),
+                            AppointmentTime = appointment.AppointmentTime.ToString(@"hh\:mm"),
+                            Status = appointment.Status,
+                            //Treatment = appointment.Treatment ?? ""
+                        });
+                    }
+                }
+
+                await transaction.CommitAsync();
+                committed = true;
+
+                response.PatientNotFoundList = patientNotFoundList;
+                response.SkippedReasons = skippedReasons;
+                response.YearWiseBreakdown = yearWiseStats;
+
+                // Build year-wise breakdown message
+                var yearBreakdown = string.Join(", ",
+                    yearWiseStats.Where(kvp => kvp.Value.TotalAppointments > 0)
+                                .Select(kvp => $"{kvp.Key}: {kvp.Value.TotalAppointments} appointments ({kvp.Value.Confirmed} confirmed, {kvp.Value.Canceled} canceled)"));
+
+                response.Message = $"Import completed: {response.SuccessfullyAdded} appointments added, " +
+                                  $"{response.PatientNotFound} patients not found, " +
+                                  $"{response.AlreadyHasAppointment} already have appointments, " +
+                                  $"{response.Skipped} skipped out of {response.TotalProcessed} total 2020-2024 records. " +
+                                  (yearBreakdown.Any() ? $"Year-wise breakdown - {yearBreakdown}" : "");
+
+                _logger.LogInformation("2020-2024 Appointment import completed for Clinic {ClinicId}: {Added} added, {NotFound} not found, {Skipped} skipped",
+                    request.ClinicId, response.SuccessfullyAdded, response.PatientNotFound, response.Skipped);
+
+                // Invalidate cache
+                _cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+                return Ok(ApiResponseFactory.Success(response, response.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to import 2020-2024 appointments from CSV for Clinic {ClinicId}", request.ClinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("Failed to process CSV file: " + ex.Message));
+            }
+            finally
+            {
+                if (!committed && transaction?.GetDbTransaction()?.Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+            }
+        }
     }
 }
 

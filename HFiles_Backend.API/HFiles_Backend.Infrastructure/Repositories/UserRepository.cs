@@ -61,5 +61,14 @@ namespace HFiles_Backend.Infrastructure.Repositories
             return await _context.Users
                 .FirstOrDefaultAsync(u => u.PatientId == patientId && u.DeletedBy == 0);
         }
+
+        public async Task<User?> GetUserByEmailForLookupAsync(string email)
+        {
+            return await _context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u =>
+                    u.Email == email &&
+                    u.DeletedBy == 0);
+        }
     }
 }

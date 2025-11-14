@@ -129,6 +129,7 @@ namespace HFiles_Backend.Infrastructure.Data
             modelBuilder.Entity<UserSocialHistory>().ToTable("usersocialhistories", t => t.ExcludeFromMigrations());
             modelBuilder.Entity<UserNotification>().ToTable("usernotifications", t => t.ExcludeFromMigrations());
             modelBuilder.Entity<UserSubscription>().ToTable("usersubscriptions", t => t.ExcludeFromMigrations());
+            modelBuilder.Entity<CountryLists2>().ToTable("countrylist2", t => t.ExcludeFromMigrations());
 
 
 
@@ -421,6 +422,8 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<UserSocialHistory> UserSocialHistories { get; set; }
         public DbSet<UserNotification> UserNotifications { get; set; }
         public DbSet<UserSubscription> UserSubscriptions { get; set; }
+        public DbSet<CountryLists2> countrylist2 { get; set; }
+
 
 
         // Clinics

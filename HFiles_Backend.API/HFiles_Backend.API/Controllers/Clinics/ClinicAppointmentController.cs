@@ -828,8 +828,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpPost("clinics/{clinicId}/follow-up")]
         [Authorize]
         public async Task<IActionResult> CreateFollowUpAppointment(
-     [FromBody] FollowUpAppointmentDto dto,
-     [FromRoute] int clinicId)
+         [FromBody] FollowUpAppointmentDto dto,
+         [FromRoute] int clinicId)
         {
             HttpContext.Items["Log-Category"] = "Clinic Appointment";
 

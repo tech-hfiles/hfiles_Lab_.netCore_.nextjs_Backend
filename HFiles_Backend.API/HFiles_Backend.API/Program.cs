@@ -236,6 +236,7 @@ try
     builder.Services.AddScoped<IClinicGoogleTokenRepository, ClinicGoogleTokenRepository>();
 
     builder.Services.AddScoped<ICountryService, CountryService>();
+    builder.Services.AddScoped<IHfidService, HfidService>();
 
     // Register Services
     builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();

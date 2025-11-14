@@ -15,15 +15,13 @@ using HFiles_Backend.Domain.Entities.Users;
 using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Repositories;
-using Humanizer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.VisualBasic.FileIO;
 using Newtonsoft.Json;
 using System.Globalization;
-using System.Text;
 using System.Text.RegularExpressions;
-using Microsoft.VisualBasic.FileIO;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -255,7 +253,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     await transaction.RollbackAsync();
                 }
             }
-        }                                     
+        }
 
 
 

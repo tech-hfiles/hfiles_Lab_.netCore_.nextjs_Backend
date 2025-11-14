@@ -235,6 +235,8 @@ try
     // Register Repository
     builder.Services.AddScoped<IClinicGoogleTokenRepository, ClinicGoogleTokenRepository>();
 
+    builder.Services.AddScoped<ICountryService, CountryService>();
+
     // Register Services
     builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
     builder.Services.AddScoped<IGoogleCalendarService, GoogleCalendarService>();

@@ -267,9 +267,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [HttpPost("clinics/{clinicId}/patients/{patientId}/consent-forms/send")]
         [Authorize]
         public async Task<IActionResult> SendConsentFormsToPatient(
-         [FromRoute] int clinicId,
-         [FromRoute] int patientId,
-         [FromBody] SendConsentFormsRequest request)
+            [FromRoute] int clinicId,
+            [FromRoute] int patientId,
+            [FromBody] SendConsentFormsRequest request)
         {
             HttpContext.Items["Log-Category"] = "Clinic Consent Form";
 
@@ -321,14 +321,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     return NotFound(ApiResponseFactory.Fail("Patient not found in this clinic."));
                 }
 
-                // Get user details by HFID for email
+                // Get user details by HFID
                 var user = await _userRepository.GetUserByHFIDAsync(targetPatient.HFID);
                 if (user == null)
                 {
                     _logger.LogWarning("User not found for HFID {HFID}", targetPatient.HFID);
                     return NotFound(ApiResponseFactory.Fail("User not found for this patient."));
                 }
-                if (user.FirstName == null)
+
+                if (string.IsNullOrWhiteSpace(user.FirstName))
                 {
                     _logger.LogWarning("FirstName not found for HFID {HFID}", targetPatient.HFID);
                     return NotFound(ApiResponseFactory.Fail("FirstName not found for this patient."));
@@ -417,25 +418,58 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     });
                 }
 
-                // Send email to patient with all consent forms
-                var emailTemplate = _emailTemplateService.GenerateMultipleConsentFormsEmailTemplate(
-                    user.FirstName,
-                    consentFormLinks,
-                    clinic.ClinicName
-                );
-
-                var consentFormNames = string.Join(", ", request.ConsentForms.Select(f => f.ConsentFormName));
-                await _emailService.SendEmailAsync(
-                    user.Email,
-                    $"Consent Forms Required - {clinic.ClinicName}",
-                    emailTemplate
-                );
-
-                // Commit transaction BEFORE building response
+                // Commit transaction BEFORE sending email (so data is saved regardless of email success)
                 await transaction.CommitAsync();
 
+                // Prepare consent form names string (used in both email and response)
+                var consentFormNames = string.Join(", ", request.ConsentForms.Select(f => f.ConsentFormName));
+
+                // ==================== SEND EMAIL NOTIFICATION ====================
+                // Only send email if email is provided
+                bool emailSent = false;
+                string? emailSentTo = null;
+
+                if (!string.IsNullOrWhiteSpace(user.Email))
+                {
+                    try
+                    {
+                        var emailTemplate = _emailTemplateService.GenerateMultipleConsentFormsEmailTemplate(
+                            user.FirstName,
+                            consentFormLinks,
+                            clinic.ClinicName
+                        );
+
+                        await _emailService.SendEmailAsync(
+                            user.Email,
+                            $"Consent Forms Required - {clinic.ClinicName}",
+                            emailTemplate
+                        );
+
+                        emailSent = true;
+                        emailSentTo = user.Email;
+
+                        _logger.LogInformation(
+                            "Consent forms email sent successfully to {Email} with {Count} forms",
+                            user.Email, consentFormEntries.Count);
+                    }
+                    catch (Exception emailEx)
+                    {
+                        _logger.LogError(emailEx,
+                            "Failed to send consent forms email to {Email} for Patient {PatientId}",
+                            user.Email, patientId);
+                        // Don't fail the entire operation if email fails
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Email not provided for Patient {PatientName} (HFID: {HFID}). Skipping email notification.",
+                        targetPatient.PatientName, targetPatient.HFID);
+                }
+
+                // Build notification messages
                 var consentFormLinksFormatted = string.Join("\n", consentFormLinks.Select((link, index) =>
-                $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"));
+                    $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"));
 
                 var userNotificationMessage = $"{clinic.ClinicName} has sent you {consentFormEntries.Count} consent form(s) to complete. Please check the links below:\n\n{consentFormLinksFormatted}";
 
@@ -452,8 +486,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     PatientName = targetPatient.PatientName,
                     PatientHFID = targetPatient.HFID,
                     ClinicName = clinic.ClinicName,
-                    EmailSent = true,
-                    SentToEmail = user.Email,
+
+                    // Email status
+                    EmailSent = emailSent,
+                    SentToEmail = emailSentTo,
 
                     // Notification context
                     NotificationContext = new
@@ -464,16 +500,20 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         ClinicName = clinic.ClinicName,
                         ConsentFormsCount = consentFormEntries.Count,
                         ConsentFormNames = consentFormNames,
-                        Status = "Sent"
+                        Status = "Sent",
+                        EmailStatus = emailSent
+                            ? "Email sent"
+                            : string.IsNullOrWhiteSpace(user.Email)
+                                ? "No email provided"
+                                : "Email sending failed"
                     },
                     NotificationMessage = $"{consentFormEntries.Count} consent form(s) have been sent to {targetPatient.PatientName} on their HF Account (HFID: {targetPatient.HFID}). Forms: {consentFormNames}",
                     UserNotificationMessage = userNotificationMessage
                 };
 
                 _logger.LogInformation(
-                    "{Count} consent form(s) sent to Patient {PatientName} (HFID: {HFID}) for Clinic {ClinicId}. Forms: {Forms}",
-                    consentFormEntries.Count, targetPatient.PatientName, targetPatient.HFID, clinicId, consentFormNames
-                );
+                    "{Count} consent form(s) sent to Patient {PatientName} (HFID: {HFID}) for Clinic {ClinicId}. Forms: {Forms}. Email sent: {EmailSent}",
+                    consentFormEntries.Count, targetPatient.PatientName, targetPatient.HFID, clinicId, consentFormNames, emailSent);
 
                 return Ok(ApiResponseFactory.Success(response, "Consent forms sent successfully to patient."));
             }

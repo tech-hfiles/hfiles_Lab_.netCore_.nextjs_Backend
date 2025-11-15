@@ -330,12 +330,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
             if (user == null)
                 return NotFound(ApiResponseFactory.Fail("User not found for provided HFID."));
 
-            if (string.IsNullOrWhiteSpace(user.Email) || user.Email == null)
-            {
-                _logger.LogWarning("User email not found for HFID: {HFID}", clinicPatient.HFID);
-                return BadRequest(ApiResponseFactory.Fail($"No email address found for user with HFID {clinicPatient.HFID}."));
-            }
-
             HttpContext.Items["Sent-To-UserId"] = user.Id;
 
             // Get clinic details
@@ -507,6 +501,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 await _clinicVisitRepository.UpdateAsync(visit);
 
+                // Commit transaction BEFORE sending email (so data is saved regardless of email success)
+                await transaction.CommitAsync();
+                committed = true;
+
+                // Invalidate cache after successful upload
+                _cacheService.InvalidateClinicStatistics(request.ClinicId);
+
                 var patientName = clinicPatient?.PatientName ?? $"{user?.FirstName} {user?.LastName}" ?? "N/A";
                 string appointmentDate = visit?.AppointmentDate != null
                     ? visit.AppointmentDate.ToString("dd-MM-yyyy")
@@ -523,30 +524,53 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 var userNotificationMessage = $"{clinicName} has uploaded {uploadedDocumentDetails.Count} document(s) to your account. You can view them in the All Reports section under the following categories:\n\n{documentsFormatted}";
 
-                // Generate email template
-                var patientFirstName = user?.FirstName ?? "Patient";
-                var patientEmail = user?.Email ?? string.Empty;
+                // ==================== SEND EMAIL NOTIFICATION ====================
+                // Only send email if email is provided
+                bool emailSent = false;
+                string? emailSentTo = null;
 
-                var emailTemplate = _emailTemplateService.GeneratePatientDocumentsUploadedEmailTemplate(
-                    patientFirstName,
-                    patientDocumentInfoList,
-                    clinicName,
-                    appointmentDate,
-                    appointmentTime
-                );
+                if (!string.IsNullOrWhiteSpace(user?.Email))
+                {
+                    try
+                    {
+                        var patientFirstName = user.FirstName ?? "Patient";
 
-                // Send email without attachments (view buttons in email instead)
-                await _emailService.SendEmailAsync(
-                    patientEmail,
-                    $"Documents Uploaded - {clinicName}",
-                    emailTemplate
-                );
+                        var emailTemplate = _emailTemplateService.GeneratePatientDocumentsUploadedEmailTemplate(
+                            patientFirstName,
+                            patientDocumentInfoList,
+                            clinicName,
+                            appointmentDate,
+                            appointmentTime
+                        );
 
-                await transaction.CommitAsync();
-                committed = true;
+                        // Send email without attachments (view buttons in email instead)
+                        await _emailService.SendEmailAsync(
+                            user.Email,
+                            $"Documents Uploaded - {clinicName}",
+                            emailTemplate
+                        );
 
-                // INVALIDATE CACHE AFTER SUCCESSFUL UPLOAD - ADD THIS
-                _cacheService.InvalidateClinicStatistics(request.ClinicId);
+                        emailSent = true;
+                        emailSentTo = user.Email;
+
+                        _logger.LogInformation(
+                            "Document upload email sent successfully to {Email} with {Count} documents",
+                            user.Email, uploadedDocumentDetails.Count);
+                    }
+                    catch (Exception emailEx)
+                    {
+                        _logger.LogError(emailEx,
+                            "Failed to send document upload email to {Email} for Patient {PatientId}",
+                            user.Email, request.PatientId);
+                        // Don't fail the entire operation if email fails
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Email not provided for Patient {PatientName} (HFID: {HFID}). Skipping email notification.",
+                        patientName, clinicPatient?.HFID);
+                }
 
                 // Response + Notification
                 var response = new
@@ -554,13 +578,17 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     PatientName = patientName,
                     PatientHFID = clinicPatient?.HFID,
                     ClinicName = clinicName,
-                    Email = user?.Email,
+                    Email = string.IsNullOrWhiteSpace(user?.Email) ? "Not provided" : user.Email,
                     AppointmentDate = appointmentDate,
                     AppointmentTime = appointmentTime,
                     UploadedDocuments = uploadedDocs,
                     DocumentDetails = uploadedDocumentDetails,
                     SentAt = DateTime.UtcNow,
-                    EmailSent = true,
+
+                    // Email status
+                    EmailSent = emailSent,
+                    SentToEmail = emailSentTo,
+
                     NotificationMessage =
                      $"Documents ({string.Join(", ", uploadedDocs)}) uploaded for patient {patientName} on HF account {clinicPatient?.HFID} for {appointmentDate} at {appointmentTime}.",
                     UserNotificationMessage = userNotificationMessage,
@@ -576,16 +604,21 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         AppointmentDate = appointmentDate,
                         AppointmentTime = appointmentTime,
                         UploadedDocuments = uploadedDocs,
-                        DocumentDetails = uploadedDocumentDetails
+                        DocumentDetails = uploadedDocumentDetails,
+                        EmailStatus = emailSent
+                            ? "Email sent"
+                            : string.IsNullOrWhiteSpace(user?.Email)
+                                ? "No email provided"
+                                : "Email sending failed"
                     }
                 };
 
                 _logger.LogInformation(
-                    "Uploaded documents ({Documents}) for Clinic ID {ClinicId}, Patient ID {PatientId}, Appointment on {AppointmentDate} {AppointmentTime}",
-                    string.Join(", ", uploadedDocs), request.ClinicId, request.PatientId, appointmentDate, appointmentTime
+                    "Uploaded documents ({Documents}) for Clinic ID {ClinicId}, Patient ID {PatientId}, Appointment on {AppointmentDate} {AppointmentTime}. Email sent: {EmailSent}",
+                    string.Join(", ", uploadedDocs), request.ClinicId, request.PatientId, appointmentDate, appointmentTime, emailSent
                 );
 
-                return Ok(ApiResponseFactory.Success(response, "Documents uploaded successfully and notification sent."));
+                return Ok(ApiResponseFactory.Success(response, "Documents uploaded successfully."));
             }
             catch (Exception ex)
             {

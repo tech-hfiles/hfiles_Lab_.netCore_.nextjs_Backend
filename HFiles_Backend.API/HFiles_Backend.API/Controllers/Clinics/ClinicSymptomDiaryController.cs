@@ -97,7 +97,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (string.IsNullOrWhiteSpace(user.Email))
                 {
                     _logger.LogWarning("User email not found for HFID: {HFID}", request.HFID);
-                    return BadRequest(ApiResponseFactory.Fail($"No email address found for user with HFID {request.HFID}."));
+                    return BadRequest(ApiResponseFactory.Fail($"No email address found for this user. Kindly advice the user to update the email address to share symptom diary"));
                 }
 
                 HttpContext.Items["Sent-To-UserId"] = user.Id;

@@ -42,7 +42,7 @@ namespace HFiles_Backend.Domain.Interfaces
         /// <param name="clinicId">The unique identifier of the clinic.</param>
         /// <returns>True if the clinic exists and is not deleted; otherwise false.</returns>
         Task<bool> ExistsAsync(int clinicId);
-
+        Task<IDbContextTransaction> BeginTransactionAsync();
         /// <summary>
         /// Retrieves comprehensive clinic information by clinic ID.
         /// </summary>
@@ -57,9 +57,21 @@ namespace HFiles_Backend.Domain.Interfaces
         Task AddSubscriptionAsync(UserSubscription subscription);
 
         /// <summary>
-        /// Begins a new database transaction scope for atomic operations.
+        /// Gets the count of new users who first visited a clinic within a date range.
         /// </summary>
-        /// <returns>An active database transaction context.</returns>
-        Task<IDbContextTransaction> BeginTransactionAsync();
+        /// <param name="clinicId">The clinic ID to check.</param>
+        /// <param name="startDate">Start date of the range (inclusive).</param>
+        /// <param name="endDate">End date of the range (exclusive).</param>
+        /// <returns>Count of new users.</returns>
+        Task<int> GetNewClinicUsersCountAsync(int clinicId, DateTime startDate, DateTime endDate);
+
+        /// <summary>
+        /// Gets detailed information about new users who first visited a clinic within a date range.
+        /// </summary>
+        /// <param name="clinicId">The clinic ID to check.</param>
+        /// <param name="startDate">Start date of the range (inclusive).</param>
+        /// <param name="endDate">End date of the range (exclusive).</param>
+        /// <returns>List of user statistics.</returns>
+        //Task<List<UserClinicStatDto>> GetNewClinicUsersDetailedAsync(int clinicId, DateTime startDate, DateTime endDate);
     }
 }

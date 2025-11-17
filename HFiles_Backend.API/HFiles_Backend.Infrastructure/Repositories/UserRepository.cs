@@ -1,4 +1,5 @@
-﻿using HFiles_Backend.Domain.Entities.Clinics;
+﻿using HFiles_Backend.Application.DTOs.Clinics.Statistics;
+using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Entities.Users;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
@@ -475,6 +476,154 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 _logger.LogError(ex,
                     "Error adding subscription for UserId: {UserId}",
                     subscription.UserId);
+                throw;
+            }
+        }
+
+        // ==================== CLINIC USER STATISTICS METHODS ====================
+
+        /// <summary>
+        /// Gets the count of new users who first visited a clinic within a date range.
+        /// Uses optimized two-step query to avoid EF Core translation issues.
+        /// </summary>
+        public async Task<int> GetNewClinicUsersCountAsync(int clinicId, DateTime startDate, DateTime endDate)
+        {
+            try
+            {
+                _logger.LogInformation(
+                    "Getting new users count for clinic {ClinicId} from {StartDate} to {EndDate}",
+                    clinicId, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+
+                // Step 1: Get first visit dates grouped by HFID (materialized to memory)
+                var firstVisits = await _context.ClinicVisits
+                    .Where(cv => cv.ClinicId == clinicId)
+                    .GroupBy(cv => cv.Patient.HFID)
+                    .Select(g => new
+                    {
+                        HFID = g.Key,
+                        FirstVisitDate = g.Min(cv => cv.AppointmentDate)
+                    })
+                    .Where(fv => fv.FirstVisitDate >= startDate && fv.FirstVisitDate < endDate)
+                    .ToListAsync();
+
+                _logger.LogDebug("Found {Count} unique HFIDs with first visits in date range", firstVisits.Count);
+
+                // Step 2: Extract HFIDs
+                var hfids = firstVisits.Select(fv => fv.HFID).ToList();
+
+                if (!hfids.Any())
+                {
+                    _logger.LogInformation("No new users found for clinic {ClinicId} in specified date range", clinicId);
+                    return 0;
+                }
+
+                // Step 3: Count users with these HFIDs
+                var userCount = await _context.Users
+                    .Where(u => hfids.Contains(u.HfId!) && u.DeletedBy == 0)
+                    .CountAsync();
+
+                _logger.LogInformation(
+                    "Found {Count} new users for clinic {ClinicId} between {StartDate} and {EndDate}",
+                    userCount, clinicId, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+
+                return userCount;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting new clinic users count for clinic {ClinicId}", clinicId);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Gets detailed information about new users who first visited a clinic within a date range.
+        /// Uses optimized single-query approach with proper joins.
+        /// </summary>
+        /// <summary>
+        /// Gets detailed information about new users who first visited a clinic within a date range.
+        /// Uses two-step approach to avoid EF Core translation issues with MySQL.
+        /// </summary>
+        public async Task<List<UserClinicStatDto>> GetNewClinicUsersDetailedAsync(
+            int clinicId,
+            DateTime startDate,
+            DateTime endDate)
+        {
+            try
+            {
+                _logger.LogInformation(
+                    "Getting detailed new users for clinic {ClinicId} from {StartDate} to {EndDate}",
+                    clinicId, startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+
+                // Step 1: Get first visits with HFID (materialized to memory)
+                var firstVisits = await _context.ClinicVisits
+                    .Where(cv => cv.ClinicId == clinicId)
+                    .GroupBy(cv => cv.Patient.HFID)
+                    .Select(g => new
+                    {
+                        HFID = g.Key,
+                        FirstVisitDate = g.Min(cv => cv.AppointmentDate)
+                    })
+                    .Where(fv => fv.FirstVisitDate >= startDate && fv.FirstVisitDate < endDate)
+                    .ToListAsync();
+
+                _logger.LogDebug("Found {Count} unique HFIDs with first visits in date range", firstVisits.Count);
+
+                // Step 2: Extract HFIDs
+                var hfids = firstVisits.Select(fv => fv.HFID).ToList();
+
+                if (!hfids.Any())
+                {
+                    _logger.LogInformation("No new users found for clinic {ClinicId} in specified date range", clinicId);
+                    return new List<UserClinicStatDto>();
+                }
+
+                // Step 3: Get users with these HFIDs
+                var users = await _context.Users
+                    .Where(u => hfids.Contains(u.HfId!) && u.DeletedBy == 0)
+                    .Select(u => new
+                    {
+                        u.Id,
+                        u.HfId,
+                        u.FirstName,
+                        u.LastName,
+                        u.PhoneNumber,
+                        u.Email,
+                        u.CreatedEpoch
+                    })
+                    .ToListAsync();
+
+                _logger.LogDebug("Found {Count} users matching HFIDs", users.Count);
+
+                // Step 4: Join in memory and create DTOs
+                var result = users
+                    .Select(u =>
+                    {
+                        var firstVisit = firstVisits.FirstOrDefault(fv => fv.HFID == u.HfId);
+                        return new UserClinicStatDto
+                        {
+                            UserId = u.Id,
+                            HFID = u.HfId,
+                            FullName = $"{u.FirstName ?? ""} {u.LastName ?? ""}".Trim(),
+                            PhoneNumber = u.PhoneNumber,
+                            Email = u.Email,
+                            FirstVisitDate = firstVisit?.FirstVisitDate ?? DateTime.MinValue,
+                            UserCreatedDate = DateTimeOffset.FromUnixTimeSeconds(u.CreatedEpoch).DateTime
+                        };
+                    })
+                    .Where(u => u.FirstVisitDate != DateTime.MinValue) // Filter out any nulls
+                    .OrderBy(u => u.FirstVisitDate)
+                    .ThenBy(u => u.FullName)
+                    .ToList();
+
+                _logger.LogInformation(
+                    "Retrieved {Count} detailed user records for clinic {ClinicId}",
+                    result.Count, clinicId);
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting detailed clinic users for clinic {ClinicId}", clinicId);
                 throw;
             }
         }

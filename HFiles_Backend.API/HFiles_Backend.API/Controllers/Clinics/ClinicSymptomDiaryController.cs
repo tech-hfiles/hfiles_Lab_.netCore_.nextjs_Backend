@@ -33,11 +33,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IEmailTemplateService _emailTemplateService = emailTemplateService;
         private readonly S3StorageService _s3StorageService = s3StorageService;
         private readonly IClinicPatientRecordRepository _clinicPatientRecordRepository = clinicPatientRecordRepository;
-
-
-
-
-
+                    
         [HttpPost("send/symptom-diary")]
         [Authorize]
         public async Task<IActionResult> SendSymptomDiary([FromForm] SendSymptomDiaryRequest request)

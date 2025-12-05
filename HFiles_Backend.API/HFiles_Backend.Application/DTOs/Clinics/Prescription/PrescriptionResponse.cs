@@ -8,5 +8,6 @@
         public string Frequency { get; set; } = null!;
         public string Timing { get; set; } = null!;
         public string? Instructions { get; set; }
+        public string? Duration { get; set; }
     }
 }

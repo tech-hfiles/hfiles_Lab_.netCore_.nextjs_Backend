@@ -135,7 +135,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     MedicationDosage = p.MedicationDosage,
                     Frequency = p.Frequency.ToString(),
                     Timing = p.Timing.ToString(),
-                    Instructions = p.Instructions
+                    Instructions = p.Instructions,
+                    Duration = p.Duration
                 }).ToList();
 
                 _logger.LogInformation("Fetched {Count} prescriptions for Clinic ID {ClinicId}", response.Count, clinicId);

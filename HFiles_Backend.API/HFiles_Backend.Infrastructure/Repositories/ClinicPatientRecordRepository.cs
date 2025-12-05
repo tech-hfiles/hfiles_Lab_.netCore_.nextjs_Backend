@@ -424,5 +424,24 @@ namespace HFiles_Backend.Infrastructure.Repositories
                             !r.SendToPatient)
                 .ToListAsync();
         }
+
+        public async Task<bool> DeleteAsync(int uniqueRecordId)
+        {
+            var record = await _context.ClinicPatientRecords
+                .FirstOrDefaultAsync(r => r.Id == uniqueRecordId);
+
+            if (record == null) return false;
+
+            _context.ClinicPatientRecords.Remove(record);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<ClinicPatientRecord?> GetByUniqueRecordIdAsync(int uniqueRecordId)
+        {
+            var records = await _context.ClinicPatientRecords
+                .FirstOrDefaultAsync(r => r.Id == uniqueRecordId);
+            return records;
+        }
     }
 }

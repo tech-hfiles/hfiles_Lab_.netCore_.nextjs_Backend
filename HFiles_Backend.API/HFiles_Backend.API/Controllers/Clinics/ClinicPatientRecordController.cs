@@ -179,7 +179,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     clinicId, patientId, clinicVisitId);
 
                 var response = records.Select(r => new ClinicPatientRecordResponse
-                {
+                {   Id= r.Id,
                     Type = r.Type,
                     JsonData = r.JsonData,
                     UniqueRecordId = r.UniqueRecordId // Include the unique ID
@@ -8769,5 +8769,71 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return false;
             }
         }
+        [HttpDelete("clinic/{clinicId}/patient/{patientId}/visit/{clinicVisitId}/records/{recordId}")]
+        [Authorize]
+        public async Task<IActionResult> DeletePatientRecord(
+    [FromRoute] int clinicId,
+    [FromRoute] int patientId,
+    [FromRoute] int clinicVisitId,
+    [FromRoute] int recordId)  // This is the UniqueRecordId of the specific record
+        {
+            HttpContext.Items["Log-Category"] = "Patient Record Delete";
+
+            // Validate all IDs are positive
+            if (clinicId <= 0 || patientId <= 0 || clinicVisitId <= 0 || recordId <= 0)
+            {
+                _logger.LogWarning("Invalid IDs in delete request. ClinicId: {ClinicId}, PatientId: {PatientId}, VisitId: {VisitId}, RecordId: {RecordId}",
+                    clinicId, patientId, clinicVisitId, recordId);
+                return BadRequest(ApiResponseFactory.Fail("All IDs must be positive integers."));
+            }
+
+            // Check clinic authorization (user must belong to the clinic)
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized delete attempt for Clinic ID {ClinicId}.", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to delete records in this clinic."));
+            }
+
+            try
+            {
+                // Optional: Verify the record actually belongs to this clinic/patient/visit (security defense-in-depth)
+                var existingRecord = await _clinicPatientRecordRepository.GetByUniqueRecordIdAsync(recordId);
+
+                if (existingRecord == null)
+                {
+                    return NotFound(ApiResponseFactory.Fail("Record not found."));
+                }
+
+                if (existingRecord.ClinicId != clinicId ||
+                    existingRecord.PatientId != patientId ||
+                    existingRecord.ClinicVisitId != clinicVisitId)
+                {
+                    _logger.LogWarning("Security: Attempt to delete record {RecordId} with mismatched ownership. Expected Clinic/Patient/Visit: {ClinicId}/{PatientId}/{VisitId}, Actual: {ActualClinic}/{ActualPatient}/{ActualVisit}",
+                        recordId, clinicId, patientId, clinicVisitId, existingRecord.ClinicId, existingRecord.PatientId, existingRecord.ClinicVisitId);
+                    return NotFound(ApiResponseFactory.Fail("Record not found.")); // Don't leak existence
+                }
+
+                // Perform the deletion
+                bool deleted = await _clinicPatientRecordRepository.DeleteAsync(recordId);
+
+                if (!deleted)
+                {
+                    return NotFound(ApiResponseFactory.Fail("Record not found or already deleted."));
+                }
+
+                _logger.LogInformation("Successfully deleted record {RecordId} for Clinic {ClinicId}, Patient {PatientId}, Visit {VisitId}",
+                    recordId, clinicId, patientId, clinicVisitId);
+
+                return Ok(ApiResponseFactory.Success( "Record deleted successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting record {RecordId} for Clinic {ClinicId}, Patient {PatientId}, Visit {VisitId}",
+                    recordId, clinicId, patientId, clinicVisitId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while deleting the record."));
+            }
+        }
+
     }
 }

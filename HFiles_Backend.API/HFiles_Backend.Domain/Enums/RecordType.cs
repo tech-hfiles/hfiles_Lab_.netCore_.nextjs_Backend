@@ -7,7 +7,8 @@
         Invoice = 3,
         Receipt = 4,
         Images = 5,
-        SymptomDiary = 6
+        SymptomDiary = 6,
+        HfPdf = 7
     }
 }
 

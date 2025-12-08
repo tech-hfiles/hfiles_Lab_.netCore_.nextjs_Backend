@@ -358,7 +358,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     if (fileSize > 100 * 1024 * 1024)
                         return BadRequest(ApiResponseFactory.Fail("File size exceeds the 100MB limit."));
 
-                    if ((doc.Type == RecordType.Invoice || doc.Type == RecordType.Receipt) && doc.PdfFile == null)
+                    if ((doc.Type == RecordType.Invoice || doc.Type == RecordType.Receipt || doc.Type == RecordType.HfPdf) && doc.PdfFile == null)
                         return BadRequest(ApiResponseFactory.Fail($"{doc.Type} PDF is required."));
 
                     if (doc.Type == RecordType.Images)
@@ -460,6 +460,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                             RecordType.Invoice => (int)ReportType.InvoicesInsurance,
                             RecordType.Receipt => (int)ReportType.InvoicesInsurance,
                             RecordType.Images => (int)ReportType.LabReport,
+                            RecordType.HfPdf => (int)ReportType.SpecialReport,
                             _ => (int)ReportType.Unknown
                         };
 
@@ -486,6 +487,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                             RecordType.Invoice => "Invoices/Insurance",
                             RecordType.Receipt => "Invoices/Insurance",
                             RecordType.Images => "Lab Reports",
+                            RecordType.HfPdf => "SpecialReport",
                             _ => "Unknown"
                         };
 
@@ -631,6 +633,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     await transaction.RollbackAsync();
             }
         }
+
+        
 
 
 

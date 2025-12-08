@@ -22,6 +22,12 @@
         public string? Notes { get; set; }
         public string? PresentComplaints { get; set; }
         public string? PastHistory { get; set; }
+        public string? intensity { get; set; }
+        public string? frequency { get; set; }
+        public string? duration { get; set; }
+        public string? natureofPain { get; set; }
+        public string? aggravatingFactors { get; set; }
+        public string? relievingFacors { get; set; }
         public long CreatedAt { get; set; }
         public long? UpdatedAt { get; set; }
         public string CreatedBy { get; set; } = string.Empty;

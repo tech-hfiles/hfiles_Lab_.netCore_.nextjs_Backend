@@ -48,6 +48,25 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Column(TypeName = "longtext")]
         public string? PastHistory { get; set; }
 
+        [Column(TypeName = "longtext")]
+        public string? Intensity { get; set; }
+
+        [Column(TypeName = "longtext")]
+        public string? Frequency { get; set; }
+
+        [Column(TypeName = "longtext")]
+        public string? Duration { get; set; } 
+        
+        [Column(TypeName = "longtext")]
+        public string? NatureofPain { get; set; }
+
+        [Column(TypeName = "longtext")]
+        public string? AggravatingFactors { get; set; }
+
+        [Column(TypeName = "longtext")]
+        public string? RelievingFacors { get; set; }
+
+
         [Required]
         public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 

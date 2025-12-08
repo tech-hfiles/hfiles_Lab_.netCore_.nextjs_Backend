@@ -150,6 +150,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     existingHistory.Notes = request.Notes;
                     existingHistory.PresentComplaints = request.PresentComplaints;
                     existingHistory.PastHistory = request.PastHistory;
+                    existingHistory.Intensity = request.Intensity;
+                    existingHistory.Frequency = request.Frequency;
+                    existingHistory.Duration = request.Duration;
+                    existingHistory.NatureofPain = request.NatureofPain;
+                    existingHistory.AggravatingFactors = request.AggravatingFactors;
+                    existingHistory.RelievingFacors = request.RelievingFacors;
                     existingHistory.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                     existingHistory.UpdatedBy = adminId;
 
@@ -178,6 +184,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         Notes = request.Notes,
                         PresentComplaints = request.PresentComplaints,
                         PastHistory = request.PastHistory,
+                        Intensity = request.Intensity,
+                        Frequency = request.Frequency,
+                        Duration = request.Duration,
+                        NatureofPain = request.NatureofPain,
+                        AggravatingFactors = request.AggravatingFactors,
+                        RelievingFacors = request.RelievingFacors,
                         CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                         CreatedBy = adminId
                     };
@@ -320,6 +332,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     Investigations = history.Investigations,
                     Diagnoses = history.Diagnoses,
                     ProvisionalDiagnosis = history.ProvisionalDiagnosis,
+                    intensity = history.Intensity,
+                    frequency = history.Frequency,
+                    duration = history.Duration,
+                    natureofPain = history.NatureofPain,
+                    aggravatingFactors = history.AggravatingFactors,
+                    relievingFacors = history.RelievingFacors,
                     Notes = history.Notes,
                     PresentComplaints = history.PresentComplaints,
                     PastHistory = history.PastHistory,

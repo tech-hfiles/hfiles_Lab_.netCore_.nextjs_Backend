@@ -10,6 +10,6 @@
         Radiology = 5,
         Opthalmology = 6,
         SpecialReport = 7,
-        InvoicesInsurance = 8
+        InvoicesInsurance = 8,
     }
 }

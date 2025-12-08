@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HFiles_Backend.Application.DTOs.Clinics.PatientHistory
 {
@@ -47,5 +48,23 @@ namespace HFiles_Backend.Application.DTOs.Clinics.PatientHistory
 
         [StringLength(4000, ErrorMessage = "Past history cannot exceed 4000 characters.")]
         public string? PastHistory { get; set; }
+
+        [StringLength(4000, ErrorMessage = "Intensity cannot exceed 4000 characters.")]
+        public string? Intensity { get; set; }
+
+        [StringLength(4000, ErrorMessage = "Frequency cannot exceed 4000 characters.")]
+        public string? Frequency { get; set; }
+
+        [StringLength(4000, ErrorMessage = "Duration cannot exceed 4000 characters.")]
+        public string? Duration { get; set; }
+
+        [StringLength(4000, ErrorMessage = "Nature of Pain cannot exceed 4000 characters.")]
+        public string? NatureofPain { get; set; }
+
+        [StringLength(4000, ErrorMessage = "Aggravating Factors cannot exceed 4000 characters.")]
+        public string? AggravatingFactors { get; set; }
+
+        [StringLength(4000, ErrorMessage = "Relieving Facors cannot exceed 4000 characters.")]
+        public string? RelievingFacors { get; set; }
     }
 }

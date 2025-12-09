@@ -11,5 +11,12 @@ namespace HFiles_Backend.Domain.Interfaces
 
         Task DeletePrescriptionAsync(int prescriptionId);
 
+
+        Task<ClinicPrescriptionNotes> SavePrescriptionNoteAsync(ClinicPrescriptionNotes note);
+        Task<List<ClinicPrescriptionNotes>> GetPrescriptionNotesByClinicIdAsync(int clinicId);
+        Task<ClinicPrescriptionNotes?> GetByNotesIdAsync(int noteId);
+        Task<ClinicPrescriptionNotes?> GetPrescriptionNoteByIdAsync(int noteId);
+        Task UpdatePrescriptionNoteAsync(ClinicPrescriptionNotes note);
+        Task DeletePrescriptionNoteAsync(int noteId);
     }
 }

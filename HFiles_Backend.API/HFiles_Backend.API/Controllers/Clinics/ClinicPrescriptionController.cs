@@ -9,6 +9,7 @@ using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using OfficeOpenXml;
 using System.Globalization;
@@ -26,6 +27,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
     IUserRepository userRepository,
     IClinicVisitRepository clinicVisitRepository,
     IClinicPatientRecordRepository clinicPatientRecordRepository
+
     ) : ControllerBase
     {
         private readonly IClinicPrescriptionRepository _clinicalPrescriptionRepository = clinicPrescriptionRepository;
@@ -1006,7 +1008,226 @@ namespace HFiles_Backend.API.Controllers.Clinics
             return values.ToArray();
         }
 
-        // Note: Use your existing ParseDateFromExcel method from current prescription API
 
+
+
+        // Prescripatin Notes Api
+
+        [HttpPost("clinic/{clinicId}/prescription-note")]
+        [Authorize]
+        public async Task<IActionResult> SavePrescriptionNote(
+        [FromRoute] int clinicId,
+        [FromBody] PrescriptionNoteCreateRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Prescription Note Save";
+
+            if (clinicId <= 0)
+            {
+                _logger.LogWarning("Invalid Clinic ID: {ClinicId}", clinicId);
+                return BadRequest(ApiResponseFactory.Fail("Clinic ID must be a positive integer."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed for prescription note. Errors: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized prescription note attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to save prescription notes for this clinic."));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var prescriptionNote = new ClinicPrescriptionNotes
+                {
+                    ClinicId = clinicId,
+                    Notes = request.Notes
+                };
+
+                var savedNote = await _clinicalPrescriptionRepository.SavePrescriptionNoteAsync(prescriptionNote);
+                await transaction.CommitAsync();
+                committed = true;
+
+                _logger.LogInformation("Prescription note saved for Clinic ID {ClinicId}", clinicId);
+                return Ok(ApiResponseFactory.Success("Prescription note saved successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving prescription note for Clinic ID {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while saving the prescription note."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
+
+
+        [HttpGet("clinic/{clinicId}/prescription-notes")]
+        [Authorize]
+        public async Task<IActionResult> GetPrescriptionNotes([FromRoute] int clinicId)
+        {
+            HttpContext.Items["Log-Category"] = "Prescription Notes Fetch";
+
+            if (clinicId <= 0)
+            {
+                _logger.LogWarning("Invalid Clinic ID received: {ClinicId}", clinicId);
+                return BadRequest(ApiResponseFactory.Fail("Clinic ID must be a positive integer."));
+            }
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized prescription notes fetch attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view prescription notes for this clinic."));
+            }
+
+            try
+            {
+                var notes = await _clinicalPrescriptionRepository.GetPrescriptionNotesByClinicIdAsync(clinicId);
+
+                var response = notes.Select(n => new PrescriptionNoteResponse
+                {
+                    Id = n.Id,
+                    Notes = n.Notes
+                }).ToList();
+
+                _logger.LogInformation("Fetched {Count} prescription notes for Clinic ID {ClinicId}", response.Count, clinicId);
+                return Ok(ApiResponseFactory.Success(response, "Prescription notes fetched successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching prescription notes for Clinic ID {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching prescription notes."));
+            }
+        }
+
+
+        [HttpPatch("clinic/{clinicId}/prescription-note/{noteId}")]
+        [Authorize]
+        public async Task<IActionResult> UpdatePrescriptionNote(
+        [FromRoute] int clinicId,
+        [FromRoute] int noteId,
+        [FromBody] PrescriptionNoteUpdateRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Prescription Note Update";
+
+            if (clinicId <= 0 || noteId <= 0)
+            {
+                _logger.LogWarning("Invalid Clinic ID or Note ID. ClinicId: {ClinicId}, NoteId: {NoteId}", clinicId, noteId);
+                return BadRequest(ApiResponseFactory.Fail("Clinic ID and Note ID must be positive integers."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed for prescription note update. Errors: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized prescription note update attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to update prescription notes for this clinic."));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var existing = await _clinicalPrescriptionRepository.GetPrescriptionNoteByIdAsync(noteId);
+                if (existing == null || existing.ClinicId != clinicId)
+                {
+                    _logger.LogWarning("Prescription note not found or mismatched clinic. ClinicId: {ClinicId}, NoteId: {NoteId}", clinicId, noteId);
+                    return NotFound(ApiResponseFactory.Fail("Prescription note not found for the specified clinic."));
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.Notes))
+                {
+                    existing.Notes = request.Notes;
+                }
+
+                await _clinicalPrescriptionRepository.UpdatePrescriptionNoteAsync(existing);
+                await transaction.CommitAsync();
+                committed = true;
+
+                _logger.LogInformation("Prescription note updated. ClinicId: {ClinicId}, NoteId: {NoteId}", clinicId, noteId);
+                return Ok(ApiResponseFactory.Success("Prescription note updated successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating prescription note. ClinicId: {ClinicId}, NoteId: {NoteId}", clinicId, noteId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while updating the prescription note."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
+
+
+        [HttpDelete("clinic/{clinicId}/prescription-note/{noteId}")]
+        [Authorize]
+        public async Task<IActionResult> DeletePrescriptionNote(
+        [FromRoute] int clinicId,
+        [FromRoute] int noteId)
+        {
+            HttpContext.Items["Log-Category"] = "Prescription Note Delete";
+
+            if (clinicId <= 0 || noteId <= 0)
+            {
+                _logger.LogWarning("Invalid Clinic ID or Note ID. ClinicId: {ClinicId}, NoteId: {NoteId}", clinicId, noteId);
+                return BadRequest(ApiResponseFactory.Fail("Clinic ID and Note ID must be positive integers."));
+            }
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized prescription note delete attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to delete prescription notes for this clinic."));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var existing = await _clinicalPrescriptionRepository.GetPrescriptionNoteByIdAsync(noteId);
+                if (existing == null || existing.ClinicId != clinicId)
+                {
+                    _logger.LogWarning("Prescription note not found or mismatched clinic. ClinicId: {ClinicId}, NoteId: {NoteId}", clinicId, noteId);
+                    return NotFound(ApiResponseFactory.Fail("Prescription note not found for the specified clinic."));
+                }
+
+                await _clinicalPrescriptionRepository.DeletePrescriptionNoteAsync(noteId);
+                await transaction.CommitAsync();
+                committed = true;
+
+                _logger.LogInformation("Prescription note deleted. ClinicId: {ClinicId}, NoteId: {NoteId}", clinicId, noteId);
+                return Ok(ApiResponseFactory.Success("Prescription note deleted successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting prescription note. ClinicId: {ClinicId}, NoteId: {NoteId}", clinicId, noteId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while deleting the prescription note."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
     }
 }

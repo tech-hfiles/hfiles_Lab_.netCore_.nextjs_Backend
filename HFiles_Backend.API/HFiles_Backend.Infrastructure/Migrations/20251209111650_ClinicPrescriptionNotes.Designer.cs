@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20251208103813_ClinicPatientMedicalHistory")]
-    partial class ClinicPatientMedicalHistory
+    [Migration("20251209111650_ClinicPrescriptionNotes")]
+    partial class ClinicPrescriptionNotes
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -476,6 +476,27 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.HasIndex("ClinicId");
 
                     b.ToTable("clinicprescriptions", (string)null);
+                });
+
+            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicPrescriptionNotes", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<int>("ClinicId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Notes")
+                        .IsRequired()
+                        .HasMaxLength(10000)
+                        .HasColumnType("varchar(10000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClinicId");
+
+                    b.ToTable("clinicPrescriptionNotes");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicRecordCounter", b =>
@@ -1721,6 +1742,17 @@ namespace HFilesBackend.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicPrescription", b =>
+                {
+                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicSignup", "Clinic")
+                        .WithMany()
+                        .HasForeignKey("ClinicId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Clinic");
+                });
+
+            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicPrescriptionNotes", b =>
                 {
                     b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicSignup", "Clinic")
                         .WithMany()

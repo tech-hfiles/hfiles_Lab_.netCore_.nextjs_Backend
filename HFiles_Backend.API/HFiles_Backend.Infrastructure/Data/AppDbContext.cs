@@ -444,5 +444,7 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<ClinicRecordCounter> ClinicRecordCounters { get; set; }
         //public DbSet<NotificationAuditLog> NotificationAuditLogs { get; set; }
         public DbSet<ClinicGoogleToken> ClinicGoogleTokens { get; set; }
+
+        public DbSet<ClinicPrescriptionNotes> clinicPrescriptionNotes { get; set; }
     }
 }

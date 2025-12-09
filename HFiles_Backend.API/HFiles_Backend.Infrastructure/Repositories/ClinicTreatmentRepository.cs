@@ -26,6 +26,19 @@ namespace HFiles_Backend.Infrastructure.Repositories
             _context.ClinicTreatments.Update(treatment);
             await _context.SaveChangesAsync();
         }
+
+        public async Task DeleteAsync(int treatmentId)
+        {
+            var treatment = await _context.ClinicTreatments
+           .FirstOrDefaultAsync(t => t.Id == treatmentId);
+
+            if (treatment != null)
+            {
+                _context.ClinicTreatments.Remove(treatment);
+                await _context.SaveChangesAsync();
+
+            }
+        }
     }
 
 }

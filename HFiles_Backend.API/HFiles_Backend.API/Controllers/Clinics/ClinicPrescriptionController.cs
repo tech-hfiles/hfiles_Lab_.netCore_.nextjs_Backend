@@ -214,6 +214,59 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
         }
 
+        [HttpDelete("clinic/{clinicId}/prescription/{prescriptionId}/delete")]
+        [Authorize]
+        public async Task<IActionResult> DeletePrescription(
+        [FromRoute] int clinicId,
+        [FromRoute] int prescriptionId)
+        {
+            HttpContext.Items["Log-Category"] = "Prescription Delete";
+
+            if (clinicId <= 0 || prescriptionId <= 0)
+            {
+                _logger.LogWarning("Invalid Clinic ID or Prescription ID. ClinicId: {ClinicId}, PrescriptionId: {PrescriptionId}", clinicId, prescriptionId);
+                return BadRequest(ApiResponseFactory.Fail("Clinic ID and Prescription ID must be positive integers."));
+            }
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized delete attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to delete prescriptions for this clinic."));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var existing = await _clinicalPrescriptionRepository.GetByIdAsync(prescriptionId);
+                if (existing == null || existing.ClinicId != clinicId)
+                {
+                    _logger.LogWarning("Prescription not found or mismatched clinic. ClinicId: {ClinicId}, PrescriptionId: {PrescriptionId}", clinicId, prescriptionId);
+                    return NotFound(ApiResponseFactory.Fail("Prescription not found for the specified clinic."));
+                }
+
+                await _clinicalPrescriptionRepository.DeletePrescriptionAsync(prescriptionId);
+
+                await transaction.CommitAsync();
+                committed = true;
+
+                _logger.LogInformation("Prescription deleted. ClinicId: {ClinicId}, PrescriptionId: {PrescriptionId}", clinicId, prescriptionId);
+                return Ok(ApiResponseFactory.Success("Prescription deleted successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting prescription. ClinicId: {ClinicId}, PrescriptionId: {PrescriptionId}", clinicId, prescriptionId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while deleting the prescription."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
+
 
         // ********************************************************************************************************************
 

@@ -197,5 +197,59 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching Treatments."));
             }
         }
+
+
+        [HttpDelete("clinic/{clinicId}/treatment/{treatmentId}/delete")]
+        [Authorize]
+        public async Task<IActionResult> DeleteTreatment(
+        [FromRoute] int clinicId,
+        [FromRoute] int treatmentId)
+        {
+            HttpContext.Items["Log-Category"] = "Treatment Delete";
+
+            if (clinicId <= 0 || treatmentId <= 0)
+            {
+                _logger.LogWarning("Invalid Clinic ID or Treatment ID. ClinicId: {ClinicId}, TreatmentId: {TreatmentId}", clinicId, treatmentId);
+                return BadRequest(ApiResponseFactory.Fail("Clinic ID and Treatment ID must be positive integers."));
+            }
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized treatment delete attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to delete treatments for this clinic."));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var existing = await _clinicTreatmentRepository.GetByIdAsync(treatmentId);
+                if (existing == null || existing.ClinicId != clinicId)
+                {
+                    _logger.LogWarning("Treatment not found or mismatched clinic. ClinicId: {ClinicId}, TreatmentId: {TreatmentId}", clinicId, treatmentId);
+                    return NotFound(ApiResponseFactory.Fail("Treatment not found for the specified clinic."));
+                }
+
+                await _clinicTreatmentRepository.DeleteAsync(treatmentId);
+
+                await transaction.CommitAsync();
+                committed = true;
+
+                _logger.LogInformation("Treatment deleted. ClinicId: {ClinicId}, TreatmentId: {TreatmentId}", clinicId, treatmentId);
+                return Ok(ApiResponseFactory.Success("Treatment deleted successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting treatment. ClinicId: {ClinicId}, TreatmentId: {TreatmentId}", clinicId, treatmentId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while deleting the treatment."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
     }
 }

@@ -8,5 +8,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<List<ClinicTreatment>> GetByClinicIdAsync(int clinicId);
         Task SaveAsync(ClinicTreatment treatment);
         Task UpdateAsync(ClinicTreatment treatment);
+        Task DeleteAsync(int treatmentId);
     }
 }

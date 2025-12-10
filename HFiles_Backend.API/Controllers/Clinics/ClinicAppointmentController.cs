@@ -1506,7 +1506,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         [FromQuery] string? endDate,
         [FromQuery] string? paymentStatus,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10)
+        [FromQuery] int pageSize = 6)
         {
             HttpContext.Items["Log-Category"] = "Clinic Patient Overview";
             if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))

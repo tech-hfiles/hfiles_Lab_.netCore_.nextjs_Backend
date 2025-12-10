@@ -1,0 +1,76 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<UserSecretsId>f1089c80-ac29-45d8-be6d-1d85e9a0ed8b</UserSecretsId>
+		<DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+	</PropertyGroup>
+
+	<ItemGroup>
+	  <Compile Remove="NewFolder1\**" />
+	  <Compile Remove="NewFolder2\**" />
+	  <Compile Remove="NewFolder3\**" />
+	  <Content Remove="NewFolder1\**" />
+	  <Content Remove="NewFolder2\**" />
+	  <Content Remove="NewFolder3\**" />
+	  <EmbeddedResource Remove="NewFolder1\**" />
+	  <EmbeddedResource Remove="NewFolder2\**" />
+	  <EmbeddedResource Remove="NewFolder3\**" />
+	  <None Remove="NewFolder1\**" />
+	  <None Remove="NewFolder2\**" />
+	  <None Remove="NewFolder3\**" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="AWSSDK.S3" Version="4.0.1.6" />
+		<PackageReference Include="DotNetEnv" Version="3.1.1" />
+		<PackageReference Include="EPPlus" Version="8.1.1" />
+		<PackageReference Include="Google.Apis.Auth" Version="1.72.0" />
+		<PackageReference Include="Google.Apis.Calendar.v3" Version="1.69.0.3746" />
+		<PackageReference Include="Hangfire.AspNetCore" Version="1.8.21" />
+		<PackageReference Include="Hangfire.Core" Version="1.8.21" />
+		<PackageReference Include="Hangfire.MySqlStorage" Version="2.0.3" />
+		<PackageReference Include="itext7" Version="9.2.0" />
+		<PackageReference Include="itext7.bouncy-castle-adapter" Version="9.2.0" />
+		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="7.0.2" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="7.0.2" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="7.0.2">
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="7.0.2">
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.21.0" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+
+		<PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="7.0.0" />
+
+		<PackageReference Include="PuppeteerSharp" Version="20.2.2" />
+
+		<PackageReference Include="RabbitMQ.Client" Version="7.1.2" />
+
+		<PackageReference Include="Serilog.AspNetCore" Version="9.0.0" />
+
+		<PackageReference Include="Serilog.Settings.Configuration" Version="9.0.0" />
+
+		<PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+
+		<PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+
+		<PackageReference Include="SharpZipLib" Version="1.4.2" />
+		<PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\HFiles_Backend.Application\HFiles_Backend.Application.csproj" />
+		<ProjectReference Include="..\HFiles_Backend.Domain\HFiles_Backend.Domain.csproj" />
+		<ProjectReference Include="..\HFiles_Backend.Infrastructure\HFiles_Backend.Infrastructure.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="wwwroot\uploads\" />
+	</ItemGroup>
+
+</Project>

@@ -446,5 +446,6 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<ClinicGoogleToken> ClinicGoogleTokens { get; set; }
 
         public DbSet<ClinicPrescriptionNotes> clinicPrescriptionNotes { get; set; }
+        public DbSet<Hifi5PricingPackage> hifi5PricingPackages { get; set; }
     }
 }

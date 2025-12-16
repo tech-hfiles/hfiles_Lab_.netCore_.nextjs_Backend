@@ -3,6 +3,7 @@ using System;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251212063646_HifisPricingPackage")]
+    partial class HifisPricingPackage
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -764,9 +767,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    b.Property<int>("ClinicId")
-                        .HasColumnType("int");
-
                     b.Property<int>("DurationMonths")
                         .HasColumnType("int")
                         .HasColumnName("Duration_Months");
@@ -817,8 +817,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .HasColumnName("Total_Sessions");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ClinicId");
 
                     b.ToTable("hifi5PricingPackages");
                 });
@@ -1902,17 +1900,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.Navigation("ConsentForm");
 
                     b.Navigation("Visit");
-                });
-
-            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.Hifi5PricingPackage", b =>
-                {
-                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicSignup", "Clinic")
-                        .WithMany()
-                        .HasForeignKey("ClinicId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Clinic");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Users.UserDynamicAllergy", b =>

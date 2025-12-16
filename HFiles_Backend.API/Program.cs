@@ -231,7 +231,7 @@ try
     builder.Services.AddScoped<IClinicStatisticsRepository, ClinicStatisticsRepository>();
     builder.Services.AddScoped<ClinicStatisticsRepository, ClinicStatisticsRepository>();
     builder.Services.AddScoped<IClinicStatisticsCacheService, ClinicStatisticsCacheService>();
-
+    builder.Services.AddScoped<IHifi5PricingPackageRepository, Hifi5PricingPackageRepository>();
     // Register Repository
     builder.Services.AddScoped<IClinicGoogleTokenRepository, ClinicGoogleTokenRepository>();
 

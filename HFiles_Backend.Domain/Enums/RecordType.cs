@@ -9,7 +9,8 @@
         Images = 5,
         SymptomDiary = 6,
         HfPdf = 7,
-        MembershipPlan = 8
+        MembershipPlan = 8,
+        PhysiotherapyForm = 9
     }
 }
 

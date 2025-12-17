@@ -106,7 +106,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         parsedType == RecordType.Prescription ||
                         parsedType == RecordType.Invoice ||
                         parsedType == RecordType.Receipt || 
-                        parsedType == RecordType.MembershipPlan )
+                        parsedType == RecordType.MembershipPlan ||  
+                        parsedType == RecordType.PhysiotherapyForm )
                     {
                         uniqueId = await _uniqueIdGenerator.GenerateUniqueIdAsync(
                             request.ClinicId, parsedType);

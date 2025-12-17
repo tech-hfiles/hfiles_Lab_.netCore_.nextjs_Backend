@@ -8,7 +8,8 @@
         Receipt = 4,
         Images = 5,
         SymptomDiary = 6,
-        HfPdf = 7
+        HfPdf = 7,
+        MembershipPlan = 8
     }
 }
 

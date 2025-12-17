@@ -19,7 +19,8 @@ namespace HFiles_Backend.API.Services
         { RecordType.Prescription, "PRC" },
         { RecordType.Treatment, "TRT" },
         { RecordType.Invoice, "INV" },
-        { RecordType.Receipt, "REC" }
+        { RecordType.Receipt, "REC" },
+        { RecordType.MembershipPlan, "MEP" }
     };           
 
         public async Task<string> GenerateUniqueIdAsync(int clinicId, RecordType recordType)

@@ -37,6 +37,8 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Range(1, int.MaxValue, ErrorMessage = "CreatedBy must be a valid user ID.")]
         public int CreatedBy { get; set; }
 
+        public string? Coach { get; set; }
+
         [ForeignKey(nameof(CreatedBy))]
         public User CreatedByUser { get; set; } = null!;
 

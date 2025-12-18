@@ -150,6 +150,49 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
         }
 
+        // RETURN DISTINCT PROGRAM NAMES FROM DB
+        [HttpGet("ProgramNames")]
+        [AllowAnonymous]
+        public async Task<ActionResult<IEnumerable<string>>> GetProgramNames()
+        {
+            HttpContext.Items["Log-Category"] = "Pricing Package Management";
+            _logger.LogInformation("Fetching all program names");
+
+            try
+            {
+                var programNames = await _repository.GetProgramNamesAsync();
+
+                if (programNames == null || !programNames.Any())
+                {
+                    _logger.LogWarning("No pricing packages found");
+                    return Ok(ApiResponseFactory.Success(
+                        new List<string>(),
+                        "No program names found."
+                    ));
+                }
+
+                _logger.LogInformation(
+                    "Successfully retrieved {Count} program names",
+                    programNames.Count
+                );
+
+                return Ok(ApiResponseFactory.Success(
+                    programNames,
+                    "Program names retrieved successfully."
+                ));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error occurred while retrieving program names");
+                return StatusCode(
+                    500,
+                    ApiResponseFactory.Fail(
+                        "An error occurred while retrieving program names."
+                    )
+                );
+            }
+        }
+
 
         [HttpGet("{id}")]
         public async Task<ActionResult<Hifi5PricingPackageResponseDto>> GetById(int id)

@@ -57,6 +57,16 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        public async Task<List<string>> GetProgramNamesAsync()
+        {
+            return await _context.hifi5PricingPackages
+                .Select(p => p.ProgramName)
+                .Distinct()
+                .OrderBy(x => x)
+                .ToListAsync();
+        }
+
+
         public async Task<Hifi5PricingPackage> AddAsync(Hifi5PricingPackage package)
         {
             package.EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();

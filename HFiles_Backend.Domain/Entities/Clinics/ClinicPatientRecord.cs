@@ -34,8 +34,18 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [MaxLength(20)]
         public string? UniqueRecordId { get; set; }
 
+        public int Reference_Id { get; set; }
+        public bool payment_verify { get; set; }
+
+        public bool Is_Cansel { get; set; }
+        public bool? Is_editable { get; set; }
+
         [Required]
         public string JsonData { get; set; } = null!;
-        public bool SendToPatient { get; set; } 
+        public bool SendToPatient { get; set; }
+
+        [Required(ErrorMessage = "EpochTime is required.")]
+        [Range(1, long.MaxValue, ErrorMessage = "EpochTime must be a valid timestamp.")]
+        public long EpochTime { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     }
 }

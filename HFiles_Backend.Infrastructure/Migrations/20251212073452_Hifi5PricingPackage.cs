@@ -10,17 +10,17 @@ namespace HFilesBackend.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "ClinicId",
-                table: "hifi5PricingPackages",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+            //migrationBuilder.AddColumn<int>(
+            //    name: "ClinicId",
+            //    table: "hifi5PricingPackages",
+            //    type: "int",
+            //    nullable: false,
+            //    defaultValue: 0);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_hifi5PricingPackages_ClinicId",
-                table: "hifi5PricingPackages",
-                column: "ClinicId");
+            //migrationBuilder.CreateIndex(
+            //    name: "IX_hifi5PricingPackages_ClinicId",
+            //    table: "hifi5PricingPackages",
+            //    column: "ClinicId");
 
             migrationBuilder.AddForeignKey(
                 name: "FK_hifi5PricingPackages_clinicsignups_ClinicId",

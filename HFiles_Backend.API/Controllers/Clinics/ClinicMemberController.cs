@@ -154,7 +154,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     UserId = userDetails.Id,
                     ClinicId = clinicEntry.Id,
                     PasswordHash = _passwordHasher.HashPassword(null!, dto.Password),
-                    CreatedBy = creatorSuperAdmin.UserId, 
+                    CreatedBy = creatorSuperAdmin.UserId,
+                    Coach = dto.Coach,
                     DeletedBy = 0
                 };
 
@@ -173,6 +174,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     ClinicName = clinicEntry.ClinicName!,
                     CreatedBy = createdByName,
                     Role = newMember.Role,
+                    Coach = newMember.Coach,
                     EpochTime = newMember.EpochTime,
                     BranchClinicId = newMember.ClinicId != clinicId ? newMember.ClinicId : 0,
                     NotificationMessage = $"{fullNames} was successfully added by {createdByName}"

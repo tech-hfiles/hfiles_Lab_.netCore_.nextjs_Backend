@@ -12,6 +12,10 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Member
         [Range(1, int.MaxValue, ErrorMessage = "BranchId must be greater than zero.")]
         public int BranchId { get; set; }
 
+        [MaxLength(100, ErrorMessage = "Coach name must not exceed 100 characters.")]
+        public string? Coach { get; set; }
+
+
         [Required(ErrorMessage = "Password is required.")]
         [MinLength(6, ErrorMessage = "Password must be at least 6 characters.")]
         [MaxLength(100, ErrorMessage = "Password must not exceed 100 characters.")]

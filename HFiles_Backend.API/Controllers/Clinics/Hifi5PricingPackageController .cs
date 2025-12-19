@@ -150,8 +150,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
         }
 
-        // RETURN DISTINCT PROGRAM NAMES FROM DB
-        [HttpGet("ProgramNames")]
+        [HttpGet("program-names")]
         [AllowAnonymous]
         public async Task<ActionResult<IEnumerable<string>>> GetProgramNames()
         {
@@ -164,7 +163,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 if (programNames == null || !programNames.Any())
                 {
-                    _logger.LogWarning("No pricing packages found");
+                    _logger.LogInformation("No program names found");
                     return Ok(ApiResponseFactory.Success(
                         new List<string>(),
                         "No program names found."
@@ -172,27 +171,24 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
 
                 _logger.LogInformation(
-                    "Successfully retrieved {Count} program names",
-                    programNames.Count
+                    "Successfully fetched {Count} program name(s)",
+                    programNames.Count()
                 );
 
                 return Ok(ApiResponseFactory.Success(
                     programNames,
-                    "Program names retrieved successfully."
+                    $"Found {programNames.Count()} program name(s)."
                 ));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while retrieving program names");
+                _logger.LogError(ex, "Error occurred while fetching program names");
                 return StatusCode(
                     500,
-                    ApiResponseFactory.Fail(
-                        "An error occurred while retrieving program names."
-                    )
+                    ApiResponseFactory.Fail("An error occurred while fetching program names.")
                 );
             }
         }
-
 
         [HttpGet("{id}")]
         public async Task<ActionResult<Hifi5PricingPackageResponseDto>> GetById(int id)

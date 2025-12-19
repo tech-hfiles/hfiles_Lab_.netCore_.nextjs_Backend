@@ -51,6 +51,9 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Range(0, int.MaxValue, ErrorMessage = "DeletedBy must be a valid user ID or zero.")]
         public int DeletedBy { get; set; } = 0;
 
+        
+      
+
         //[ForeignKey(nameof(DeletedBy))]
         //public User? DeletedByUser { get; set; }
 

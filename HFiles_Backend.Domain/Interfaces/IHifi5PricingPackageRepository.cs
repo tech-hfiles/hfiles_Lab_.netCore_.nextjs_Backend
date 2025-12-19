@@ -12,6 +12,7 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<IEnumerable<Hifi5PricingPackage>> GetByClinicIdAsync(int clinicId);
         Task<IEnumerable<Hifi5PricingPackage>> GetByProgramCategoryAsync(string programCategory);
         Task<IEnumerable<Hifi5PricingPackage>> GetByProgramNameAsync(string programName);
+
         Task<List<string>> GetProgramNamesAsync();
 
         Task<Hifi5PricingPackage> AddAsync(Hifi5PricingPackage package);

@@ -13,6 +13,8 @@ namespace HFiles_Backend.Application.DTOs.Labs
         public string Name { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string Role { get; set; } = string.Empty;
+        public string? Coach { get; set; }
+
         public string PromotedByName { get; set; } = "Not Promoted Yet";
         public string CreatedByName { get; set; } = "Unknown";
         public string ProfilePhoto { get; set; } = "No image preview available";

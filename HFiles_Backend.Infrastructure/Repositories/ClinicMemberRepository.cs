@@ -63,6 +63,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     Name = $"{m.User?.FirstName} {m.User?.LastName}".Trim(),
                     Email = m.User?.Email ?? string.Empty,
                     Role = m.Role,
+                    Coach = m.Coach,
                     CreatedByName = createdByName,
                     PromotedByName = promotedByName,
                     ProfilePhoto = string.IsNullOrEmpty(m.User?.ProfilePhoto)

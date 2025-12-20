@@ -443,5 +443,13 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .FirstOrDefaultAsync(r => r.Id == uniqueRecordId);
             return records;
         }
+        public async Task<ClinicPatientRecord?> GetByUniqueRecordIdAsync(int clinicId, string uniqueRecordId)
+        {
+            return await _context.ClinicPatientRecords
+                .FirstOrDefaultAsync(r =>
+                    r.ClinicId == clinicId &&
+                    r.UniqueRecordId == uniqueRecordId);
+        }
+
     }
 }

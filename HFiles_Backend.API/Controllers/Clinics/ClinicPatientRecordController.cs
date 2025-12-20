@@ -55,9 +55,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-
-
-        // Stores JSON data
         [HttpPost("clinic/patient/records")]
         [Authorize]
         public async Task<IActionResult> SavePatientRecord([FromBody] ClinicPatientRecordCreateRequest request)
@@ -85,34 +82,67 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 var parsedType = request.Type;
 
-                var existingRecord = await _clinicPatientRecordRepository
-                    .GetByCompositeKeyAsync(request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
-
-                if (existingRecord is not null)
+                // ✅ FIXED LOGIC: Only check for existing record if UniqueRecordId is provided
+                if (!string.IsNullOrWhiteSpace(request.UniqueRecordId))
                 {
+                    // UPDATE MODE: Find record by UniqueRecordId and update it
+                    var existingRecord = await _clinicPatientRecordRepository
+                        .GetByUniqueRecordIdAsync(request.ClinicId, request.UniqueRecordId);
+
+                    if (existingRecord is null)
+                    {
+                        _logger.LogWarning("Record with UniqueRecordId {UniqueRecordId} not found for Clinic ID {ClinicId}",
+                            request.UniqueRecordId, request.ClinicId);
+                        return NotFound(ApiResponseFactory.Fail($"Record with ID {request.UniqueRecordId} not found."));
+                    }
+
+                    // Update existing record with all properties
                     existingRecord.JsonData = request.JsonData;
+                    existingRecord.PatientId = request.PatientId;
+                    existingRecord.ClinicVisitId = request.ClinicVisitId;
+
+                    // ✅ ADD THESE PROPERTY UPDATES
+                    if (request.Reference_Id.HasValue)
+                        existingRecord.Reference_Id = request.Reference_Id.Value;
+
+                    if (request.payment_verify.HasValue)
+                        existingRecord.payment_verify = request.payment_verify.Value;
+
+                    if (request.Is_Cansel.HasValue)
+                        existingRecord.Is_Cansel = request.Is_Cansel.Value;
+
+                    if (request.Is_editable.HasValue)
+                        existingRecord.Is_editable = request.Is_editable.Value;
+
                     await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
 
-                    _logger.LogInformation("Existing record updated for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
-                        request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+                    _logger.LogInformation("Existing record {UniqueRecordId} updated for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
+                        existingRecord.UniqueRecordId, request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+
+                    await transaction.CommitAsync();
+                    committed = true;
+
+                    _cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+                    return Ok(ApiResponseFactory.Success("Patient record updated successfully."));
                 }
                 else
                 {
-                    // Generate unique ID for new records only
+                    // CREATE MODE: Always create new record when UniqueRecordId is not provided
                     string uniqueId = string.Empty;
 
-                    // Only generate IDs for these specific types
+                    // Generate unique ID for specific types
                     if (parsedType == RecordType.Treatment ||
                         parsedType == RecordType.Prescription ||
                         parsedType == RecordType.Invoice ||
-                        parsedType == RecordType.Receipt || 
-                        parsedType == RecordType.MembershipPlan ||  
-                        parsedType == RecordType.PhysiotherapyForm )
+                        parsedType == RecordType.Receipt ||
+                        parsedType == RecordType.MembershipPlan ||
+                        parsedType == RecordType.PhysiotherapyForm)
                     {
-                        uniqueId = await _uniqueIdGenerator.GenerateUniqueIdAsync(
-                            request.ClinicId, parsedType);
+                        uniqueId = await _uniqueIdGenerator.GenerateUniqueIdAsync(request.ClinicId, parsedType);
                     }
 
+                    // ✅ FIX: Map all properties from request to entity
                     var newRecord = new ClinicPatientRecord
                     {
                         ClinicId = request.ClinicId,
@@ -120,23 +150,25 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         ClinicVisitId = request.ClinicVisitId,
                         Type = parsedType,
                         JsonData = request.JsonData,
-                        UniqueRecordId = uniqueId
+                        UniqueRecordId = uniqueId,
+                        Reference_Id = request.Reference_Id ?? 0,  // Map Reference_Id
+                        payment_verify = request.payment_verify ?? false,  // Map payment_verify
+                        Is_Cansel = request.Is_Cansel ?? false,  // Map Is_Cansel
+                        Is_editable = request.Is_editable ?? null  // Map Is_editable
                     };
 
                     await _clinicPatientRecordRepository.SaveAsync(newRecord);
 
-                    _logger.LogInformation("New record created for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
-                        request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+                    _logger.LogInformation("New record {UniqueRecordId} created for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}, Reference_Id {ReferenceId}",
+                        uniqueId, request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType, request.Reference_Id);
+
+                    await transaction.CommitAsync();
+                    committed = true;
+
+                    _cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+                    return Ok(ApiResponseFactory.Success("Patient record created successfully."));
                 }
-
-
-                await transaction.CommitAsync();
-                committed = true;
-
-                // INVALIDATE CACHE AFTER SUCCESSFUL SAVE - ADD THIS
-                _cacheService.InvalidateClinicStatistics(request.ClinicId);
-
-                return Ok(ApiResponseFactory.Success("Patient record saved successfully."));
             }
             catch (Exception ex)
             {
@@ -149,6 +181,99 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     await transaction.RollbackAsync();
             }
         }
+
+        // Stores JSON data
+        //[HttpPost("clinic/patient/records")]
+        //[Authorize]
+        //public async Task<IActionResult> SavePatientRecord([FromBody] ClinicPatientRecordCreateRequest request)
+        //{
+        //    HttpContext.Items["Log-Category"] = "Patient Record Save";
+
+        //    if (!ModelState.IsValid)
+        //    {
+        //        var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+        //        _logger.LogWarning("Validation failed for patient record. Errors: {@Errors}", errors);
+        //        return BadRequest(ApiResponseFactory.Fail(errors));
+        //    }
+
+        //    bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+        //    if (!isAuthorized)
+        //    {
+        //        _logger.LogWarning("Unauthorized record save attempt for Clinic ID {ClinicId}", request.ClinicId);
+        //        return Unauthorized(ApiResponseFactory.Fail("You are not authorized to save records for this clinic."));
+        //    }
+
+        //    await using var transaction = await _clinicRepository.BeginTransactionAsync();
+        //    bool committed = false;
+
+        //    try
+        //    {
+        //        var parsedType = request.Type;
+
+        //        var existingRecord = await _clinicPatientRecordRepository
+        //            .GetByCompositeKeyAsync(request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+
+        //        if (existingRecord is not null)
+        //        {
+        //            existingRecord.JsonData = request.JsonData;
+        //            await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
+
+        //            _logger.LogInformation("Existing record updated for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
+        //                request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+        //        }
+        //        else
+        //        {
+        //            // Generate unique ID for new records only
+        //            string uniqueId = string.Empty;
+
+        //            // Only generate IDs for these specific types
+        //            if (parsedType == RecordType.Treatment ||
+        //                parsedType == RecordType.Prescription ||
+        //                parsedType == RecordType.Invoice ||
+        //                parsedType == RecordType.Receipt || 
+        //                parsedType == RecordType.MembershipPlan ||  
+        //                parsedType == RecordType.PhysiotherapyForm )
+        //            {
+        //                uniqueId = await _uniqueIdGenerator.GenerateUniqueIdAsync(
+        //                    request.ClinicId, parsedType);
+        //            }
+
+        //            var newRecord = new ClinicPatientRecord
+        //            {
+        //                ClinicId = request.ClinicId,
+        //                PatientId = request.PatientId,
+        //                ClinicVisitId = request.ClinicVisitId,
+        //                Type = parsedType,
+        //                JsonData = request.JsonData,
+        //                UniqueRecordId = uniqueId
+        //            };
+
+        //            await _clinicPatientRecordRepository.SaveAsync(newRecord);
+
+        //            _logger.LogInformation("New record created for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
+        //                request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+        //        }
+
+
+        //        await transaction.CommitAsync();
+        //        committed = true;
+
+        //        // INVALIDATE CACHE AFTER SUCCESSFUL SAVE - ADD THIS
+        //        _cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+        //        return Ok(ApiResponseFactory.Success("Patient record saved successfully."));
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Error saving/updating record for Clinic ID {ClinicId}", request.ClinicId);
+        //        return StatusCode(500, ApiResponseFactory.Fail("An error occurred while saving the record."));
+        //    }
+        //    finally
+        //    {
+        //        if (!committed && transaction.GetDbTransaction().Connection != null)
+        //            await transaction.RollbackAsync();
+        //    }
+        //}
 
 
         // Fetch JSON Data
@@ -181,10 +306,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     clinicId, patientId, clinicVisitId);
 
                 var response = records.Select(r => new ClinicPatientRecordResponse
-                {   Id= r.Id,
+                {
+                    Id = r.Id,
                     Type = r.Type,
                     JsonData = r.JsonData,
-                    UniqueRecordId = r.UniqueRecordId // Include the unique ID
+                    UniqueRecordId = r.UniqueRecordId,
+                    EpochTime = r.EpochTime
                 }).ToList();
 
                 _logger.LogInformation(

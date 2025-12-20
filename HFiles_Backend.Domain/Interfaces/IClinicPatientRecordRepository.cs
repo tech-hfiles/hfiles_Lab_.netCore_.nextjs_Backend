@@ -23,6 +23,9 @@ namespace HFiles_Backend.Domain.Interfaces
 
         Task<ClinicPatientRecord?> GetByUniqueRecordIdAsync(int uniqueRecordId);
 
+        Task<ClinicPatientRecord?> GetByUniqueRecordIdAsync(int clinicId, string uniqueRecordId);
+
+
         Task<bool> DeleteAsync(int uniqueRecordId);
     }
 }

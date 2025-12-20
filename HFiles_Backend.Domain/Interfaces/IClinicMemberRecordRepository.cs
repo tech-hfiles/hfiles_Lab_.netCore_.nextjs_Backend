@@ -1,0 +1,15 @@
+﻿using HFiles_Backend.Domain.Entities.Clinics;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace HFiles_Backend.Domain.Interfaces
+{
+    public interface IClinicMemberRecordRepository
+    {
+        Task AddAsync(ClinicMemberRecord record);
+        Task<List<ClinicMemberRecord>> GetByClinicAndUserAsync(int clinicId, int userId);
+    }
+}

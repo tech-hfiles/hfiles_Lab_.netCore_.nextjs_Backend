@@ -9,6 +9,7 @@ using HFiles_Backend.Domain.Entities.Users;
 
 namespace HFiles_Backend.Domain.Entities.Clinics
 {
+    [Table("clinicMemberRecords")]
     public class ClinicMemberRecord
     {
         [Key]

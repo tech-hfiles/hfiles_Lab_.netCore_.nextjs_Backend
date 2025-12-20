@@ -232,6 +232,9 @@ try
     builder.Services.AddScoped<ClinicStatisticsRepository, ClinicStatisticsRepository>();
     builder.Services.AddScoped<IClinicStatisticsCacheService, ClinicStatisticsCacheService>();
     builder.Services.AddScoped<IHifi5PricingPackageRepository, Hifi5PricingPackageRepository>();
+    builder.Services.AddScoped<IClinicMemberRecordRepository, ClinicMemberRecordRepository>();
+    builder.Services.AddScoped<IClinicMemberRecordService, ClinicMemberRecordService>();
+
     // Register Repository
     builder.Services.AddScoped<IClinicGoogleTokenRepository, ClinicGoogleTokenRepository>();
 

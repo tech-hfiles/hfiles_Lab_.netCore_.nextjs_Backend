@@ -12,42 +12,6 @@ namespace HFilesBackend.Infrastructure.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "clinic_member_reports",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    ClinicId = table.Column<int>(type: "int", nullable: false),
-                    UserId = table.Column<int>(type: "int", nullable: false),
-                    ReportName = table.Column<string>(type: "varchar(255)", maxLength: 255, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    ReportUrl = table.Column<string>(type: "longtext", nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    ReportType = table.Column<string>(type: "varchar(50)", maxLength: 50, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    FileSize = table.Column<long>(type: "bigint", nullable: false),
-                    DeletedBy = table.Column<int>(type: "int", nullable: false),
-                    EpochTime = table.Column<long>(type: "bigint", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_clinic_member_reports", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_clinic_member_reports_clinicsignups_ClinicId",
-                        column: x => x.ClinicId,
-                        principalTable: "clinicsignups",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_clinic_member_reports_users_UserId",
-                        column: x => x.UserId,
-                        principalTable: "users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                })
-                .Annotation("MySql:CharSet", "utf8mb4");
-
-            migrationBuilder.CreateTable(
                 name: "clinicMemberRecords",
                 columns: table => new
                 {
@@ -84,16 +48,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                 .Annotation("MySql:CharSet", "utf8mb4");
 
             migrationBuilder.CreateIndex(
-                name: "IX_clinic_member_reports_ClinicId",
-                table: "clinic_member_reports",
-                column: "ClinicId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_clinic_member_reports_UserId",
-                table: "clinic_member_reports",
-                column: "UserId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_clinicMemberRecords_ClinicId",
                 table: "clinicMemberRecords",
                 column: "ClinicId");
@@ -107,9 +61,6 @@ namespace HFilesBackend.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "clinic_member_reports");
-
             migrationBuilder.DropTable(
                 name: "clinicMemberRecords");
         }

@@ -5,13 +5,13 @@ namespace HFiles_Backend.API.DTOs.Clinics
 {
     public class UploadClinicMemberRecordsRequestDto
     {
-        [Required]
+        [Required(ErrorMessage = "Clinic ID is required.")]
         public int ClinicId { get; set; }
 
-        [Required]
-        public int UserId { get; set; }
+        [Required(ErrorMessage = "Clinic Member ID is required.")]
+        public int ClinicMemberId { get; set; }
 
-        [Required]
+        [Required(ErrorMessage = "At least one record is required.")]
         public List<ClinicMemberRecordItemDto> Records { get; set; } = new();
     }
 }

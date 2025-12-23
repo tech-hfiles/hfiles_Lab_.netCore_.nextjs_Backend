@@ -11,5 +11,7 @@ namespace HFiles_Backend.Domain.Interfaces
     {
         Task AddAsync(ClinicMemberRecord record);
         Task<List<ClinicMemberRecord>> GetByClinicAndUserAsync(int clinicId, int userId);
+        Task<ClinicMember?> GetClinicMemberByIdAsync(int id);
+        Task<List<ClinicMemberRecord>> GetRecordsByClinicMemberAsync(int clinicMemberId);
     }
 }

@@ -63,12 +63,16 @@ namespace HFiles_Backend.API.Controllers.Clinics
             if (clinic == null)
                 return NotFound(ApiResponseFactory.Fail($"Clinic with ID {request.ClinicId} not found."));
 
-            // Get user details
-            var user = await _userRepository.GetByIdAsync(request.UserId);
-            if (user == null)
-                return NotFound(ApiResponseFactory.Fail("User not found."));
+            // Get clinic member details (instead of user)
+            var clinicMember = await _repository.GetClinicMemberByIdAsync(request.ClinicMemberId);
+            if (clinicMember == null)
+                return NotFound(ApiResponseFactory.Fail("Clinic member not found."));
 
-            HttpContext.Items["Sent-To-UserId"] = user.Id;
+            // Verify clinic member belongs to the clinic
+            if (clinicMember.ClinicId != request.ClinicId)
+                return BadRequest(ApiResponseFactory.Fail("Clinic member does not belong to this clinic."));
+
+            HttpContext.Items["Sent-To-ClinicMemberId"] = clinicMember.Id;
 
             try
             {
@@ -87,7 +91,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                     // 🔹 Create temp file
                     var extension = Path.GetExtension(file.FileName);
-                    var fileName = $"{recordItem.ReportType.ToLower()}_clinic{request.ClinicId}_user{request.UserId}_{Guid.NewGuid()}{extension}";
+                    var fileName = $"{recordItem.ReportType.ToLower()}_clinic{request.ClinicId}_member{request.ClinicMemberId}_{Guid.NewGuid()}{extension}";
                     var tempPath = Path.Combine(Path.GetTempPath(), fileName);
 
                     using (var stream = new FileStream(tempPath, FileMode.Create))
@@ -109,7 +113,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     var record = new ClinicMemberRecord
                     {
                         ClinicId = request.ClinicId,
-                        UserId = request.UserId,
+                        ClinicMemberId = request.ClinicMemberId,
+                        UserId = clinicMember.UserId, // Populate UserId from ClinicMember
                         ReportName = recordItem.ReportName,
                         ReportType = recordItem.ReportType,
                         ReportUrl = s3Url,
@@ -130,24 +135,23 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
 
             
-                var userName = $"{user.FirstName} {user.LastName}";
                 var clinicName = clinic.ClinicName ?? "Clinic";
 
                 // Response
                 var response = new
                 {
-                    UserName = userName,
-                    UserId = user.Id,
+                    ClinicMemberId = clinicMember.Id,
+                    UserId = clinicMember.UserId,
                     ClinicName = clinicName,
                     UploadedRecords = recordResponseList,
                     TotalRecords = recordResponseList.Count,
                     SentAt = DateTime.UtcNow,
-                    NotificationMessage = $"{uploadedRecordDetails.Count} record(s) uploaded for {userName} by {clinicName}."
+                    NotificationMessage = $"{uploadedRecordDetails.Count} record(s) uploaded for  by {clinicName}."
                 };
 
                 _logger.LogInformation(
-                    "Uploaded {Count} records for Clinic ID {ClinicId}, User ID {UserId}",
-                    uploadedRecordDetails.Count, request.ClinicId, request.UserId);
+                    "Uploaded {Count} records for Clinic ID {ClinicId}, Clinic Member ID {ClinicMemberId}",
+                    uploadedRecordDetails.Count, request.ClinicId, request.ClinicMemberId);
 
                 return Ok(ApiResponseFactory.Success(response, "Records uploaded successfully."));
             }
@@ -158,41 +162,49 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
         }
 
-        // ✅ GET RECORDS
-        [HttpGet("{userId}")]
-        public async Task<IActionResult> Get(int userId)
+        [HttpGet("{clinicMemberId}")]
+        public async Task<IActionResult> Get(int clinicMemberId)
         {
             HttpContext.Items["Log-Category"] = "Clinic Member Record";
-
-            var clinicIdClaim = User.FindFirst("ClinicId")?.Value;
-            if (clinicIdClaim == null || !int.TryParse(clinicIdClaim, out int currentClinicId))
-            {
-                return Unauthorized(ApiResponseFactory.Fail("Invalid or missing ClinicId claim."));
-            }
-
-            if (!await _clinicAuthorizationService.IsClinicAuthorized(currentClinicId, User))
-            {
-                return Unauthorized(ApiResponseFactory.Fail(
-                    "Permission denied. You can only access records for your clinic or its branches."
-                ));
-            }
-
             try
             {
-                var result = await _service.GetAsync(currentClinicId, userId);
+                // Verify clinic member exists
+                var clinicMember = await _repository.GetClinicMemberByIdAsync(clinicMemberId);
+                if (clinicMember == null)
+                {
+                    return NotFound(ApiResponseFactory.Fail("Clinic member not found."));
+                }
+
+                // Get records by clinic member ID (only specific columns)
+                var result = await _repository.GetRecordsByClinicMemberAsync(clinicMemberId);
 
                 if (result == null || !result.Any())
                 {
                     return NotFound(ApiResponseFactory.Fail(
-                        "No records found for this user in the specified clinic."
+                        "No records found for this clinic member."
                     ));
                 }
 
-                return Ok(ApiResponseFactory.Success(result, "Records retrieved successfully."));
+                // Map to response DTO with only required fields
+                var response = result.Select(r => new
+                {
+                    Id = r.Id,
+                    ClinicId = r.ClinicId,
+                    UserId = r.UserId,
+                    ReportName = r.ReportName,
+                    ReportUrl = r.ReportUrl,
+                    ReportType = r.ReportType,
+                    FileSize = r.FileSize,
+                    DeletedBy = r.DeletedBy,
+                    EpochTime = r.EpochTime,
+                    ClinicMemberId = r.ClinicMemberId
+                });
+
+                return Ok(ApiResponseFactory.Success(response, "Records retrieved successfully."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving records");
+                _logger.LogError(ex, "Error retrieving records for clinic member {ClinicMemberId}", clinicMemberId);
 
                 return StatusCode(
                     StatusCodes.Status500InternalServerError,

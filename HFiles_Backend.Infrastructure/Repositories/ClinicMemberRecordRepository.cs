@@ -35,6 +35,23 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .OrderByDescending(x => x.EpochTime)
                 .ToListAsync();
         }
+
+        public async Task<ClinicMember?> GetClinicMemberByIdAsync(int id)
+        {
+            return await _context.ClinicMembers
+                .Include(cm => cm.User) // Include User navigation property
+                .Include(cm => cm.Clinic) // Include Clinic navigation property if needed
+                .Where(cm => cm.DeletedBy == 0) // Only active members
+                .FirstOrDefaultAsync(cm => cm.Id == id);
+        }
+
+        public async Task<List<ClinicMemberRecord>> GetRecordsByClinicMemberAsync(int clinicMemberId)
+        {
+            return await _context.clinicMemberRecords
+            .Where(r => r.ClinicMemberId == clinicMemberId &&  r.DeletedBy == 0)
+            .OrderByDescending(r => r.EpochTime)
+            .ToListAsync();
+        }
     }
 }
 

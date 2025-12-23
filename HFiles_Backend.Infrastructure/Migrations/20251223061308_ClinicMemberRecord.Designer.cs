@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20251220093753_ClinicMemberRecord")]
+    [Migration("20251223061308_ClinicMemberRecord")]
     partial class ClinicMemberRecord
     {
         /// <inheritdoc />
@@ -263,6 +263,9 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.Property<int>("ClinicId")
                         .HasColumnType("int");
 
+                    b.Property<int>("ClinicMemberId")
+                        .HasColumnType("int");
+
                     b.Property<int>("DeletedBy")
                         .HasColumnType("int");
 
@@ -292,54 +295,12 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ClinicId");
+
+                    b.HasIndex("ClinicMemberId");
 
                     b.HasIndex("UserId");
 
                     b.ToTable("clinicMemberRecords");
-                });
-
-            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicMemberReport", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    b.Property<int>("ClinicId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DeletedBy")
-                        .HasColumnType("int");
-
-                    b.Property<long>("EpochTime")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("FileSize")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("ReportName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<string>("ReportType")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.Property<string>("ReportUrl")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClinicId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("clinic_member_reports");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicOtpEntry", b =>
@@ -1874,22 +1835,9 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("HFiles_Backend.Domain.Entities.Users.User", "User")
+                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicMember", "ClinicMember")
                         .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Clinic");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicMemberReport", b =>
-                {
-                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicSignup", "Clinic")
-                        .WithMany()
-                        .HasForeignKey("ClinicId")
+                        .HasForeignKey("ClinicMemberId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -1900,6 +1848,8 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Clinic");
+
+                    b.Navigation("ClinicMember");
 
                     b.Navigation("User");
                 });

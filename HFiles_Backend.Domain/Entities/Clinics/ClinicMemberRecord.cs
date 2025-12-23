@@ -29,6 +29,12 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [ForeignKey(nameof(UserId))]
         public User User { get; set; } = null!;
 
+        public int ClinicMemberId { get; set; }
+
+
+        [ForeignKey(nameof(ClinicMemberId))]
+        public ClinicMember ClinicMember { get; set; } = null!;
+
         [Required(ErrorMessage = "Report name is required.")]
         [MaxLength(255, ErrorMessage = "Report name must not exceed 255 characters.")]
         public string ReportName { get; set; } = null!;

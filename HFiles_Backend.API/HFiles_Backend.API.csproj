@@ -8,6 +8,8 @@
 		<DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
 	</PropertyGroup>
 
+	<PropertyGroup Condition=" '$(RunConfiguration)' == 'https' " />
+	<PropertyGroup Condition=" '$(RunConfiguration)' == 'http' " />
 	<ItemGroup>
 	  <Compile Remove="NewFolder1\**" />
 	  <Compile Remove="NewFolder2\**" />
@@ -73,4 +75,7 @@
 	  <Folder Include="wwwroot\uploads\" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <Reference Include="netstandard, Version=2.1.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51" />
+	</ItemGroup>
 </Project>

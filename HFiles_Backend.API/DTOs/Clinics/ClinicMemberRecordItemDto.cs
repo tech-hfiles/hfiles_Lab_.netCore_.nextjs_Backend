@@ -1,13 +1,17 @@
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
+using System.ComponentModel.DataAnnotations;
 
 namespace HFiles_Backend.API.DTOs.Clinics
 {
-    public class UploadClinicMemberRecordRequestDto
+    public class ClinicMemberRecordItemDto
     {
-        public int ClinicId { get; set; }
-        public int UserId { get; set; }
+        [Required]
         public string ReportName { get; set; } = null!;
+
+        [Required]
         public string ReportType { get; set; } = null!;
+
+        [Required]
         public IFormFile File { get; set; } = null!;
     }
 }

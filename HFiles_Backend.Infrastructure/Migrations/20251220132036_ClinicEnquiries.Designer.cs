@@ -3,6 +3,7 @@ using System;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251220132036_ClinicEnquiries")]
+    partial class ClinicEnquiries
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -337,7 +340,48 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.Property<int>("ClinicId")
                         .HasColumnType("int");
 
-                    b.Property<int>("ClinicMemberId")
+                    b.Property<int>("DeletedBy")
+                        .HasColumnType("int");
+
+                    b.Property<long>("EpochTime")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ReportName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<string>("ReportType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("ReportUrl")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClinicId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("clinicMemberRecords");
+                });
+
+            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicMemberReport", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<int>("ClinicId")
                         .HasColumnType("int");
 
                     b.Property<int>("DeletedBy")
@@ -370,11 +414,9 @@ namespace HFilesBackend.Infrastructure.Migrations
 
                     b.HasIndex("ClinicId");
 
-                    b.HasIndex("ClinicMemberId");
-
                     b.HasIndex("UserId");
 
-                    b.ToTable("clinicMemberRecords");
+                    b.ToTable("clinic_member_reports");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicOtpEntry", b =>
@@ -1928,9 +1970,22 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicMember", "ClinicMember")
+                    b.HasOne("HFiles_Backend.Domain.Entities.Users.User", "User")
                         .WithMany()
-                        .HasForeignKey("ClinicMemberId")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Clinic");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicMemberReport", b =>
+                {
+                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicSignup", "Clinic")
+                        .WithMany()
+                        .HasForeignKey("ClinicId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -1941,8 +1996,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Clinic");
-
-                    b.Navigation("ClinicMember");
 
                     b.Navigation("User");
                 });

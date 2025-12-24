@@ -175,8 +175,10 @@ try
         });
     });
 
-    // Scoped services
-    builder.Services.AddScoped<IPasswordHasher<LabSignup>, PasswordHasher<LabSignup>>();
+	// Scoped services
+	builder.Services.AddScoped<IClinicEnquiryRepository, ClinicEnquiryRepository>();
+	builder.Services.AddScoped<ClinicEnquiryRepository, ClinicEnquiryRepository>();
+	builder.Services.AddScoped<IPasswordHasher<LabSignup>, PasswordHasher<LabSignup>>();
     builder.Services.AddScoped<IPasswordHasher<LabSuperAdmin>, PasswordHasher<LabSuperAdmin>>();
     builder.Services.AddScoped<IPasswordHasher<LabMember>, PasswordHasher<LabMember>>();
     builder.Services.AddScoped<EmailService>();

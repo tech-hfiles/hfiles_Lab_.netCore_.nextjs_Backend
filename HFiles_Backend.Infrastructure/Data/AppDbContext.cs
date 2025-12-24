@@ -448,5 +448,7 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<ClinicPrescriptionNotes> clinicPrescriptionNotes { get; set; }
         public DbSet<Hifi5PricingPackage> hifi5PricingPackages { get; set; }
         public DbSet<ClinicMemberRecord> clinicMemberRecords { get; set; }
-    }
+
+        public DbSet<ClinicEnquiry> clinicEnquiry { get; set; }
+	}
 }

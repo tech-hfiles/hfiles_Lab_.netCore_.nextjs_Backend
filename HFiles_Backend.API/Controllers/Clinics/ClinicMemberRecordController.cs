@@ -1,4 +1,6 @@
-﻿using System.Runtime.InteropServices;
+﻿using System;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using HFiles_Backend.API.DTOs.Clinics;
 using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.Application.Common;
@@ -8,7 +10,7 @@ using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-
+using System.Security.Claims;
 namespace HFiles_Backend.API.Controllers.Clinics
 {
     [ApiController]
@@ -43,7 +45,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
             _repository = repository;
         }
 
-        // ✅ MULTIPLE RECORDS UPLOAD
         [HttpPost("upload")]
         public async Task<IActionResult> UploadMemberRecords(
             [FromForm] UploadClinicMemberRecordsRequestDto request)
@@ -209,6 +210,100 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return StatusCode(
                     StatusCodes.Status500InternalServerError,
                     ApiResponseFactory.Fail("An error occurred while retrieving records.")
+                );
+            }
+        }
+
+        [HttpPut("{recordId}")]
+        public async Task<IActionResult> UpdateRecordName(
+     int recordId,
+     [FromBody] UpdateClinicMemberRecordNameDto request)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Member Record Rename";
+
+            try
+            {
+                // 🔍 Get existing record
+                var record = await _repository.GetByIdAsync(recordId);
+                if (record == null)
+                    return NotFound(ApiResponseFactory.Fail("Record not found."));
+
+                // ❌ ReportName is required for this API
+                if (string.IsNullOrWhiteSpace(request.ReportName))
+                    return BadRequest(ApiResponseFactory.Fail("Report name is required."));
+
+                // ✅ ONLY rename
+                record.ReportName = request.ReportName.Trim();
+
+                await _repository.UpdateAsync(record);
+
+                // ✅ Response (same structure as before)
+                var response = new ClinicMemberRecordDto
+                {
+                    Id = record.Id,
+                    ClinicId = record.ClinicId,
+                    UserId = record.UserId,
+                    ReportName = record.ReportName,
+                    ReportUrl = record.ReportUrl,
+                    ReportType = record.ReportType,
+                    FileSize = record.FileSize,
+                    EpochTime = record.EpochTime
+                };
+
+                _logger.LogInformation(
+                    "Renamed record {RecordId} in Clinic {ClinicId}",
+                    recordId, record.ClinicId);
+
+                return Ok(ApiResponseFactory.Success(
+                    response,
+                    "Report name updated successfully."
+                ));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error renaming record {RecordId}", recordId);
+                return StatusCode(
+                    500,
+                    ApiResponseFactory.Fail("An error occurred while updating the record.")
+                );
+            }
+        }
+
+
+
+
+        [HttpPut("{recordId}/soft-delete")]
+        [Authorize]
+        public async Task<IActionResult> SoftDeleteRecord(int recordId)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Member Record Soft Delete";
+
+            try
+            {
+                var record = await _repository.GetByIdAsync(recordId);
+                if (record == null)
+                    return NotFound(ApiResponseFactory.Fail("Record not found."));
+
+                // ✅ FIX: READ UserId EXACTLY AS JWT SENDS IT
+                var userIdClaim = User.FindFirst("UserId")?.Value;
+                if (string.IsNullOrEmpty(userIdClaim))
+                    return Unauthorized(ApiResponseFactory.Fail("UserId not found in token."));
+
+                record.DeletedBy = int.Parse(userIdClaim);
+
+                await _repository.UpdateAsync(record);
+
+                return Ok(ApiResponseFactory.Success<object>(
+                    null,
+                    "Record deleted successfully."
+                ));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting record {RecordId}", recordId);
+                return StatusCode(
+                    StatusCodes.Status500InternalServerError,
+                    ApiResponseFactory.Fail("An error occurred while deleting the record.")
                 );
             }
         }

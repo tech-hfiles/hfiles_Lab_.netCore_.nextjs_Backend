@@ -19,6 +19,19 @@ namespace HFiles_Backend.Infrastructure.Repositories
             _context = context;
         }
 
+
+        public async Task<ClinicMemberRecord?> GetByIdAsync(int id)
+        {
+            return await _context.clinicMemberRecords
+                .FirstOrDefaultAsync(r => r.Id == id && r.DeletedBy == 0);
+        }
+
+        public async Task<ClinicMemberRecord> UpdateAsync(ClinicMemberRecord record)
+        {
+            _context.clinicMemberRecords.Update(record);
+            await _context.SaveChangesAsync();
+            return record;
+        }
         public async Task AddAsync(ClinicMemberRecord record)
         {
             _context.clinicMemberRecords.Add(record);

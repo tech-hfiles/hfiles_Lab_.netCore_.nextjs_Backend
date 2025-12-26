@@ -27,5 +27,12 @@ namespace HFiles_Backend.Domain.Interfaces
 
 
         Task<bool> DeleteAsync(int uniqueRecordId);
+
+        // ✅ ADD THIS - Returns ClinicPatientRecord (Record entity)
+
+        Task<ClinicPatientRecord?> GetRecordByIdAsync(int recordId);
+        Task<ClinicPatientRecord> GetRecordByUniqueRecordIdAsync(string uniqueRecordId);
+
+
     }
 }

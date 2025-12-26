@@ -451,5 +451,22 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     r.UniqueRecordId == uniqueRecordId);
         }
 
+        public async Task<ClinicPatientRecord?> GetRecordByIdAsync(int recordId)
+        {
+            return await _context.ClinicPatientRecords
+                .FirstOrDefaultAsync(r => r.Id == recordId);
+        }
+
+        public async Task<ClinicPatientRecord> GetRecordByUniqueRecordIdAsync(string uniqueRecordId)
+        {
+            if (string.IsNullOrWhiteSpace(uniqueRecordId))
+                return null;
+
+            return await _context.ClinicPatientRecords
+                .Where(r => r.UniqueRecordId == uniqueRecordId && r.Type == RecordType.Receipt)
+                .OrderByDescending(r => r.Id) // Get the latest one if multiple exist
+                .FirstOrDefaultAsync();
+        }
+
     }
 }

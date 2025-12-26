@@ -767,7 +767,72 @@ namespace HFiles_Backend.API.Controllers.Clinics
         }
 
 
-        
+        [HttpPut("clinic/patient/documents/verify-payment/{receiptRecordId}")]
+        [Authorize]
+        public async Task<IActionResult> VerifyPayment(int receiptRecordId)
+        {
+            try
+            {
+                var receiptRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(receiptRecordId);
+                if (receiptRecord == null)
+                    return NotFound(ApiResponseFactory.Fail("Receipt record not found."));
+
+                if (receiptRecord.Type != RecordType.Receipt)
+                    return BadRequest(ApiResponseFactory.Fail("Record is not a receipt type."));
+
+                // Check if UniqueRecordId is null or empty
+                if (string.IsNullOrWhiteSpace(receiptRecord.UniqueRecordId))
+                    return BadRequest(ApiResponseFactory.Fail("Receipt does not have a valid UniqueRecordId."));
+
+                // Check if another receipt with the same UniqueRecordId already exists with payment verified
+                var existingVerifiedReceipt = await _clinicPatientRecordRepository
+                    .GetRecordByUniqueRecordIdAsync(receiptRecord.UniqueRecordId);
+
+                if (existingVerifiedReceipt != null &&
+                    existingVerifiedReceipt.Id != receiptRecordId &&
+                    existingVerifiedReceipt.payment_verify == true &&
+                    existingVerifiedReceipt.Is_editable == true)
+                {
+                    return BadRequest(ApiResponseFactory.Fail("A receipt with this UniqueRecordId is already verified and editable."));
+                }
+
+                // Update Receipt
+                receiptRecord.payment_verify = true;
+                receiptRecord.Is_editable = true;
+                await _clinicPatientRecordRepository.UpdateAsync(receiptRecord);
+
+                // Update Invoice
+                if (receiptRecord.Reference_Id.HasValue && receiptRecord.Reference_Id.Value > 0)
+                {
+                    var invoiceRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(receiptRecord.Reference_Id.Value);
+                    if (invoiceRecord != null && invoiceRecord.Type == RecordType.Invoice)
+                    {
+                        invoiceRecord.payment_verify = true;
+                        invoiceRecord.Is_editable = true;
+                        await _clinicPatientRecordRepository.UpdateAsync(invoiceRecord);
+
+                        // Update Package/MEP
+                        if (invoiceRecord.Reference_Id.HasValue && invoiceRecord.Reference_Id.Value > 0)
+                        {
+                            var packageRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(invoiceRecord.Reference_Id.Value);
+                            if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
+                            {
+                                packageRecord.payment_verify = true;
+                                packageRecord.Is_editable = true;
+                                await _clinicPatientRecordRepository.UpdateAsync(packageRecord);
+                            }
+                        }
+                    }
+                }
+
+                return Ok(ApiResponseFactory.Success("Payment verification updated successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating payment verification");
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred."));
+            }
+        }
 
 
 

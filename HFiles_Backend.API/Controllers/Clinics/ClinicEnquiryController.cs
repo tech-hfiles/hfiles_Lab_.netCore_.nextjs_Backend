@@ -80,15 +80,19 @@ public class ClinicEnquiryController : ControllerBase
 			// COUNT AFTER FILTER
 			// -----------------
 			int totalRecords = filteredEnquiries.Count();
-
+			filteredEnquiries = filteredEnquiries.OrderBy(e => e.FollowUpDate).ToList();
 			// -----------------
 			// PAGINATION (FILTERED!)
 			// -----------------
+			var today = DateTime.Today;
+
 			var pagedData = filteredEnquiries
-				.OrderByDescending(e => e.EpochTime)
+				.OrderByDescending(e => e.FollowUpDate.HasValue && e.FollowUpDate.Value.Date == today)
+				.ThenByDescending(e => e.FollowUpDate)
 				.Skip((page - 1) * pageSize)
 				.Take(pageSize)
 				.ToList();
+
 
 			var result = new
 			{

@@ -9,5 +9,6 @@ namespace HFiles_Backend.Application.DTOs.Clinics.PatientRecord
         public string JsonData { get; set; } = null!;
         public string? UniqueRecordId { get; set; }
         public long EpochTime { get; set; }
+        public bool? PaymentVerify { get; set; }
     }
 }

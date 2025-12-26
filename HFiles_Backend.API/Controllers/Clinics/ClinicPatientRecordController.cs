@@ -311,7 +311,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     Type = r.Type,
                     JsonData = r.JsonData,
                     UniqueRecordId = r.UniqueRecordId,
-                    EpochTime = r.EpochTime
+                    EpochTime = r.EpochTime,
+                    PaymentVerify = r.payment_verify
                 }).ToList();
 
                 _logger.LogInformation(

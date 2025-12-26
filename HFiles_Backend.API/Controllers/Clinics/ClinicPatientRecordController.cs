@@ -575,7 +575,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         ClinicVisitId = request.ClinicVisitId,
                         Type = doc.Type,
                         JsonData = jsonData,
-                        SendToPatient = doc.SendToPatient
+                        SendToPatient = doc.SendToPatient,
+                        Reference_Id = doc.ReferenceId ?? 0,           // Map ReferenceId to Reference_Id
+                        payment_verify = doc.PaymentVerify,            // Map PaymentVerify to payment_verify
+                        Is_editable = doc.IsEditable
                     };
 
                     await _clinicPatientRecordRepository.SaveAsync(record);
@@ -762,6 +765,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     await transaction.RollbackAsync();
             }
         }
+
 
         
 

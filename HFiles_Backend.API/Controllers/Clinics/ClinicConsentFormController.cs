@@ -402,6 +402,30 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     {
                         formUrl = "publicFunctionalScreeningForm";
                     }
+                    else if (consentFormName.Contains("registration"))
+                    {
+                        formUrl =  "high5RegistrationForm";
+                    }
+                    else if (consentFormName.Contains("waiver"))
+                    {
+                        formUrl =  "high5WavierForm";
+                    }
+                    else if (consentFormName.Contains("terms") || consentFormName.Contains("conditions"))
+                    {
+                        formUrl = "high5TermsConditionsForm";
+                    }
+                    else if (consentFormName.Contains("postnatal"))
+                    {
+                        formUrl = "high5PostNatalAssessmentForm";
+                    }
+                    else if (consentFormName.Contains("fitness assessment"))
+                    {
+                        formUrl = "PublicHigh5FitnessAssessment";
+                    }
+                    else if (consentFormName.Contains("goal setting"))
+                    {
+                        formUrl = "PublicHigh5GoalSettingForm";
+                    }
                     else
                     {
                         // Default fallback

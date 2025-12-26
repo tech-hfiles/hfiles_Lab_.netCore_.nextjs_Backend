@@ -106,6 +106,60 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 return "publicFunctionalScreeningForm";
             }
+            // High 5 / High5 Forms
+            else if (formNameLower.Contains("registration"))
+            {
+                return "high5RegistrationForm";
+            }
+            else if (formNameLower.Contains("waiver"))
+            {
+                return "high5WavierForm";
+            }
+            else if (formNameLower.Contains("terms") || formNameLower.Contains("conditions"))
+            {
+                return "high5TermsConditionsForm";
+            }
+            else if (formNameLower.Contains("postnatal"))
+            {
+                return "high5PostNatalAssessmentForm";
+            }
+            else if (formNameLower.Contains("fitness assessment"))
+            {
+                return "PublicHigh5FitnessAssessment";
+            }
+            else if (formNameLower.Contains("goal setting"))
+            {
+                return "PublicHigh5GoalSettingForm";
+            }
+
+            // Assessments & Monitoring
+            else if (formNameLower.Contains("swimmers") && formNameLower.Contains("kinetic"))
+            {
+                return "PublicSwimmersKineticAssessment";
+            }
+            else if (formNameLower.Contains("athlete") && formNameLower.Contains("monitoring"))
+            {
+                return "PublicAthleteMonitoringSheet";
+            }
+            else if (formNameLower.Contains("pt") && formNameLower.Contains("pt"))
+            {
+                return "PublicPTMonitoringSheet";
+            }
+
+            // PAR-Q / Medical
+            else if (formNameLower.Contains("ggs") && formNameLower.Contains("post"))
+            {
+                return "PublicHigh5GGSPostPARQ";
+            }
+            else if (formNameLower.Contains("prenatal") && formNameLower.Contains("parq"))
+            {
+                return "PublicPrenatalPARQForm";
+            }
+            else if (formNameLower.Contains("parmed"))
+            {
+                return "PublicPARmedXForm";
+            }
+
             else
             {
                 // Default fallback

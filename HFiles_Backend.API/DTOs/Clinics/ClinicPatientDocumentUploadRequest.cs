@@ -28,6 +28,9 @@ namespace HFiles_Backend.API.DTOs.Clinics
 
         public bool SendToPatient { get; set; }
 
-        public IFormFile? PdfFile { get; set; } 
+        public IFormFile? PdfFile { get; set; }
+        public bool? IsEditable { get; set; }
+        public bool? PaymentVerify { get; set; }
+        public int? ReferenceId { get; set; }
     }
 }

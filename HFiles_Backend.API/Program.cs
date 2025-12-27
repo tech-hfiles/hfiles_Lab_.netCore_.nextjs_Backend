@@ -236,6 +236,8 @@ try
     builder.Services.AddScoped<IHifi5PricingPackageRepository, Hifi5PricingPackageRepository>();
     builder.Services.AddScoped<IClinicMemberRecordRepository, ClinicMemberRecordRepository>();
     builder.Services.AddScoped<IClinicMemberRecordService, ClinicMemberRecordService>();
+    // Add this line in your service registration
+    builder.Services.AddScoped<IHigh5ChocheFormRepository, High5ChocheFormRepository>();
 
     // Register Repository
     builder.Services.AddScoped<IClinicGoogleTokenRepository, ClinicGoogleTokenRepository>();

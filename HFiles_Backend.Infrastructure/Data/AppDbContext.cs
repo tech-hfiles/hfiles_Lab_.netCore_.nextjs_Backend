@@ -450,5 +450,6 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<ClinicMemberRecord> clinicMemberRecords { get; set; }
 
         public DbSet<ClinicEnquiry> clinicEnquiry { get; set; }
+        public DbSet<High5ChocheForm> high5ChocheForms { get; set; }
 	}
 }

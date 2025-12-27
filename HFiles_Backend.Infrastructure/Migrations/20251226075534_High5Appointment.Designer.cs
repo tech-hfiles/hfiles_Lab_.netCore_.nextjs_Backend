@@ -3,6 +3,7 @@ using System;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251226075534_High5Appointment")]
+    partial class High5Appointment
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -552,7 +555,7 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.Property<int>("PatientId")
                         .HasColumnType("int");
 
-                    b.Property<int?>("Reference_Id")
+                    b.Property<int>("Reference_Id")
                         .HasColumnType("int");
 
                     b.Property<bool>("SendToPatient")
@@ -565,7 +568,7 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("varchar(20)");
 
-                    b.Property<bool?>("payment_verify")
+                    b.Property<bool>("payment_verify")
                         .HasColumnType("tinyint(1)");
 
                     b.HasKey("Id");
@@ -1006,46 +1009,9 @@ namespace HFilesBackend.Infrastructure.Migrations
 
                     b.HasIndex("ClinicId");
 
-                    b.HasIndex("CoachId");
-
                     b.HasIndex("UserId");
 
                     b.ToTable("High5Appointments");
-                });
-
-            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.High5ChocheForm", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    b.Property<int>("ClinicId")
-                        .HasColumnType("int");
-
-                    b.Property<long>("EpochTime")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("FormName")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<bool?>("IsSend")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("JsonData")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClinicId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("high5ChocheForms");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Labs.LabAuditLog", b =>
@@ -2194,10 +2160,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicMember", "CoachMember")
-                        .WithMany()
-                        .HasForeignKey("CoachId");
-
                     b.HasOne("HFiles_Backend.Domain.Entities.Users.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -2205,27 +2167,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Clinic");
-
-                    b.Navigation("CoachMember");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.High5ChocheForm", b =>
-                {
-                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicSignup", "Clinics")
-                        .WithMany()
-                        .HasForeignKey("ClinicId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("HFiles_Backend.Domain.Entities.Users.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Clinics");
 
                     b.Navigation("User");
                 });

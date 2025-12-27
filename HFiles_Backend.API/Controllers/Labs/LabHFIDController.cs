@@ -74,55 +74,57 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
         // Verify HFID for Users
-        [HttpPost("users/hfid")]
-        public async Task<IActionResult> GetUserDetails([FromBody] HFIDRequest dto)
-        {
-            HttpContext.Items["Log-Category"] = "Identity Verification";
-            _logger.LogInformation("Received request to fetch user details for HFID: {HFID}", dto?.HFID);
-
-            // Check if dto is null
-            if (dto == null || string.IsNullOrWhiteSpace(dto.HFID))
+            [HttpPost("users/hfid")]
+            public async Task<IActionResult> GetUserDetails([FromBody] HFIDRequest dto)
             {
-                _logger.LogWarning("Invalid request: HFID is required");
-                return BadRequest(ApiResponseFactory.Fail("HFID is required"));
-            }
+                HttpContext.Items["Log-Category"] = "Identity Verification";
+                _logger.LogInformation("Received request to fetch user details for HFID: {HFID}", dto?.HFID);
 
-            if (!ModelState.IsValid)
-            {
-                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
-                _logger.LogWarning("Validation failed: {@Errors}", errors);
-                return BadRequest(ApiResponseFactory.Fail(errors));
-            }
-
-            try
-            {
-                var userDetails = await _context.Users
-                    .Where(u => u.HfId == dto.HFID)
-                    .Select(u => new
-                    {
-                        Username = $"{u.FirstName} {u.LastName}",
-                        UserEmail = u.Email,
-                        UserProfile = u.ProfilePhoto,
-                        DOB = u.DOB,
-                        Gender = u.Gender,
-                        Phone = u.PhoneNumber
-                    })
-                    .FirstOrDefaultAsync();
-
-                if (userDetails == null)
+                // Check if dto is null
+                if (dto == null || string.IsNullOrWhiteSpace(dto.HFID))
                 {
-                    _logger.LogWarning("User details retrieval failed: No user found with HFID {HFID}", dto.HFID);
-                    return NotFound(ApiResponseFactory.Fail($"No user found with HFID '{dto.HFID}'"));
+                    _logger.LogWarning("Invalid request: HFID is required");
+                    return BadRequest(ApiResponseFactory.Fail("HFID is required"));
                 }
 
-                _logger.LogInformation("Successfully fetched user details for HFID {HFID}.", dto.HFID);
-                return Ok(ApiResponseFactory.Success(userDetails, "User details retrieved successfully."));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "User details retrieval failed due to an unexpected error for HFID {HFID}", dto.HFID);
-                return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                    _logger.LogWarning("Validation failed: {@Errors}", errors);
+                    return BadRequest(ApiResponseFactory.Fail(errors));
+                }
+
+                try
+                {
+                    var userDetails = await _context.Users
+                        .Where(u => u.HfId == dto.HFID)
+                        .Select(u => new
+                        {
+                            id = u.Id,
+                            Username = $"{u.FirstName} {u.LastName}",
+                            UserEmail = u.Email,
+                            UserProfile = u.ProfilePhoto,
+                            DOB = u.DOB,
+                            Gender = u.Gender,
+                            Phone = u.PhoneNumber
+
+                        })
+                        .FirstOrDefaultAsync();
+
+                    if (userDetails == null)
+                    {
+                        _logger.LogWarning("User details retrieval failed: No user found with HFID {HFID}", dto.HFID);
+                        return NotFound(ApiResponseFactory.Fail($"No user found with HFID '{dto.HFID}'"));
+                    }
+
+                    _logger.LogInformation("Successfully fetched user details for HFID {HFID}.", dto.HFID);
+                    return Ok(ApiResponseFactory.Success(userDetails, "User details retrieved successfully."));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "User details retrieval failed due to an unexpected error for HFID {HFID}", dto.HFID);
+                    return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
+                }
             }
         }
-    }
 }

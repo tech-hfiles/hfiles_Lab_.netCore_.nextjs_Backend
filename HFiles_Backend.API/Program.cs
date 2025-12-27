@@ -1,4 +1,6 @@
-﻿using Hangfire;
+﻿using System.Text;
+using System.Text.Json.Serialization;
+using Hangfire;
 using Hangfire.MySql;
 using HFiles_Backend.API.Extensions;
 using HFiles_Backend.API.Interfaces;
@@ -8,6 +10,7 @@ using HFiles_Backend.API.Settings;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Domain.Interfaces;
+using HFiles_Backend.Domain.Interfaces.Clinics;
 using HFiles_Backend.Infrastructure.Data;
 using HFiles_Backend.Infrastructure.Repositories;
 using HFiles_Main.API.Middlewares;
@@ -20,8 +23,6 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using MySqlConnector;
 using Serilog;
-using System.Text;
-using System.Text.Json.Serialization;
 
 // Configure Serilog at the top
 Log.Logger = new LoggerConfiguration()
@@ -176,6 +177,7 @@ try
     });
 
 	// Scoped services
+	builder.Services.AddScoped<IClinicHigh5AppointmentService, High5AppointmentRepository>();
 	builder.Services.AddScoped<IClinicEnquiryRepository, ClinicEnquiryRepository>();
 	builder.Services.AddScoped<ClinicEnquiryRepository, ClinicEnquiryRepository>();
 	builder.Services.AddScoped<IPasswordHasher<LabSignup>, PasswordHasher<LabSignup>>();
@@ -236,11 +238,13 @@ try
     builder.Services.AddScoped<IHifi5PricingPackageRepository, Hifi5PricingPackageRepository>();
     builder.Services.AddScoped<IClinicMemberRecordRepository, ClinicMemberRecordRepository>();
     builder.Services.AddScoped<IClinicMemberRecordService, ClinicMemberRecordService>();
+    // for calling the APis
+	builder.Services.AddHttpContextAccessor(); // ← ADD THIS LINE
     // Add this line in your service registration
     builder.Services.AddScoped<IHigh5ChocheFormRepository, High5ChocheFormRepository>();
 
-    // Register Repository
-    builder.Services.AddScoped<IClinicGoogleTokenRepository, ClinicGoogleTokenRepository>();
+	// Register Repository
+	builder.Services.AddScoped<IClinicGoogleTokenRepository, ClinicGoogleTokenRepository>();
 
     builder.Services.AddScoped<ICountryService, CountryService>();
     builder.Services.AddScoped<IHfidService, HfidService>();

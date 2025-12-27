@@ -1,4 +1,7 @@
-﻿using HFiles_Backend.API.DTOs.Clinics;
+﻿using System.Globalization;
+using System.Text;
+using HFiles_Backend.API.Controllers.Labs;
+using HFiles_Backend.API.DTOs.Clinics;
 using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
@@ -11,12 +14,12 @@ using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
 using OfficeOpenXml;
 using PuppeteerSharp;
 using PuppeteerSharp.Media;
-using System.Globalization;
-using System.Text;
+using static Google.Apis.Requests.BatchRequest;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -33,8 +36,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
         IUniqueIdGeneratorService uniqueIdGenerator,
         IEmailTemplateService emailTemplateService,
         EmailService emailService,
-        IClinicStatisticsCacheService cacheService
-    ) : ControllerBase
+        IClinicStatisticsCacheService cacheService,
+		IHttpContextAccessor httpContextAccessor  // ← ADD THIS PARAMETER
+
+	) : ControllerBase
     {
         private readonly ILogger<ClinicPatientRecordController> _logger = logger;
         private readonly IClinicAuthorizationService _clinicAuthorizationService = clinicAuthorizationService;
@@ -47,9 +52,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IEmailTemplateService _emailTemplateService = emailTemplateService;
         private readonly EmailService _emailService = emailService;
         private readonly IClinicStatisticsCacheService _cacheService = cacheService;
+		private readonly IHttpContextAccessor _httpContextAccessor; // ← ADD THIS
 
 
-        private const int CLINIC_ID = 8;
+
+		private const int CLINIC_ID = 8;
         private const string DOCTOR_NAME = "Dr. Varun R Kunte";
         private readonly TimeSpan APPOINTMENT_TIME = new(10, 0, 0);
 
@@ -182,102 +189,256 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
         }
 
-        // Stores JSON data
-        //[HttpPost("clinic/patient/records")]
-        //[Authorize]
-        //public async Task<IActionResult> SavePatientRecord([FromBody] ClinicPatientRecordCreateRequest request)
-        //{
-        //    HttpContext.Items["Log-Category"] = "Patient Record Save";
+		// Stores JSON data
+		//[HttpPost("clinic/patient/records")]
+		//[Authorize]
+		//public async Task<IActionResult> SavePatientRecord([FromBody] ClinicPatientRecordCreateRequest request)
+		//{
+		//    HttpContext.Items["Log-Category"] = "Patient Record Save";
 
-        //    if (!ModelState.IsValid)
-        //    {
-        //        var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
-        //        _logger.LogWarning("Validation failed for patient record. Errors: {@Errors}", errors);
-        //        return BadRequest(ApiResponseFactory.Fail(errors));
-        //    }
+		//    if (!ModelState.IsValid)
+		//    {
+		//        var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+		//        _logger.LogWarning("Validation failed for patient record. Errors: {@Errors}", errors);
+		//        return BadRequest(ApiResponseFactory.Fail(errors));
+		//    }
 
-        //    bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
-        //    if (!isAuthorized)
-        //    {
-        //        _logger.LogWarning("Unauthorized record save attempt for Clinic ID {ClinicId}", request.ClinicId);
-        //        return Unauthorized(ApiResponseFactory.Fail("You are not authorized to save records for this clinic."));
-        //    }
+		//    bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+		//    if (!isAuthorized)
+		//    {
+		//        _logger.LogWarning("Unauthorized record save attempt for Clinic ID {ClinicId}", request.ClinicId);
+		//        return Unauthorized(ApiResponseFactory.Fail("You are not authorized to save records for this clinic."));
+		//    }
 
-        //    await using var transaction = await _clinicRepository.BeginTransactionAsync();
-        //    bool committed = false;
+		//    await using var transaction = await _clinicRepository.BeginTransactionAsync();
+		//    bool committed = false;
 
-        //    try
-        //    {
-        //        var parsedType = request.Type;
+		//    try
+		//    {
+		//        var parsedType = request.Type;
 
-        //        var existingRecord = await _clinicPatientRecordRepository
-        //            .GetByCompositeKeyAsync(request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+		//        var existingRecord = await _clinicPatientRecordRepository
+		//            .GetByCompositeKeyAsync(request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
 
-        //        if (existingRecord is not null)
-        //        {
-        //            existingRecord.JsonData = request.JsonData;
-        //            await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
+		//        if (existingRecord is not null)
+		//        {
+		//            existingRecord.JsonData = request.JsonData;
+		//            await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
 
-        //            _logger.LogInformation("Existing record updated for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
-        //                request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
-        //        }
-        //        else
-        //        {
-        //            // Generate unique ID for new records only
-        //            string uniqueId = string.Empty;
+		//            _logger.LogInformation("Existing record updated for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
+		//                request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+		//        }
+		//        else
+		//        {
+		//            // Generate unique ID for new records only
+		//            string uniqueId = string.Empty;
 
-        //            // Only generate IDs for these specific types
-        //            if (parsedType == RecordType.Treatment ||
-        //                parsedType == RecordType.Prescription ||
-        //                parsedType == RecordType.Invoice ||
-        //                parsedType == RecordType.Receipt || 
-        //                parsedType == RecordType.MembershipPlan ||  
-        //                parsedType == RecordType.PhysiotherapyForm )
-        //            {
-        //                uniqueId = await _uniqueIdGenerator.GenerateUniqueIdAsync(
-        //                    request.ClinicId, parsedType);
-        //            }
+		//            // Only generate IDs for these specific types
+		//            if (parsedType == RecordType.Treatment ||
+		//                parsedType == RecordType.Prescription ||
+		//                parsedType == RecordType.Invoice ||
+		//                parsedType == RecordType.Receipt || 
+		//                parsedType == RecordType.MembershipPlan ||  
+		//                parsedType == RecordType.PhysiotherapyForm )
+		//            {
+		//                uniqueId = await _uniqueIdGenerator.GenerateUniqueIdAsync(
+		//                    request.ClinicId, parsedType);
+		//            }
 
-        //            var newRecord = new ClinicPatientRecord
-        //            {
-        //                ClinicId = request.ClinicId,
-        //                PatientId = request.PatientId,
-        //                ClinicVisitId = request.ClinicVisitId,
-        //                Type = parsedType,
-        //                JsonData = request.JsonData,
-        //                UniqueRecordId = uniqueId
-        //            };
+		//            var newRecord = new ClinicPatientRecord
+		//            {
+		//                ClinicId = request.ClinicId,
+		//                PatientId = request.PatientId,
+		//                ClinicVisitId = request.ClinicVisitId,
+		//                Type = parsedType,
+		//                JsonData = request.JsonData,
+		//                UniqueRecordId = uniqueId
+		//            };
 
-        //            await _clinicPatientRecordRepository.SaveAsync(newRecord);
+		//            await _clinicPatientRecordRepository.SaveAsync(newRecord);
 
-        //            _logger.LogInformation("New record created for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
-        //                request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
-        //        }
-
-
-        //        await transaction.CommitAsync();
-        //        committed = true;
-
-        //        // INVALIDATE CACHE AFTER SUCCESSFUL SAVE - ADD THIS
-        //        _cacheService.InvalidateClinicStatistics(request.ClinicId);
-
-        //        return Ok(ApiResponseFactory.Success("Patient record saved successfully."));
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        _logger.LogError(ex, "Error saving/updating record for Clinic ID {ClinicId}", request.ClinicId);
-        //        return StatusCode(500, ApiResponseFactory.Fail("An error occurred while saving the record."));
-        //    }
-        //    finally
-        //    {
-        //        if (!committed && transaction.GetDbTransaction().Connection != null)
-        //            await transaction.RollbackAsync();
-        //    }
-        //}
+		//            _logger.LogInformation("New record created for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
+		//                request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+		//        }
 
 
-        // Fetch JSON Data
-        [HttpGet("clinic/{clinicId}/patient/{patientId}/visit/{clinicVisitId}/records")]
+		//        await transaction.CommitAsync();
+		//        committed = true;
+
+		//        // INVALIDATE CACHE AFTER SUCCESSFUL SAVE - ADD THIS
+		//        _cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+		//        return Ok(ApiResponseFactory.Success("Patient record saved successfully."));
+		//    }
+		//    catch (Exception ex)
+		//    {
+		//        _logger.LogError(ex, "Error saving/updating record for Clinic ID {ClinicId}", request.ClinicId);
+		//        return StatusCode(500, ApiResponseFactory.Fail("An error occurred while saving the record."));
+		//    }
+		//    finally
+		//    {
+		//        if (!committed && transaction.GetDbTransaction().Connection != null)
+		//            await transaction.RollbackAsync();
+		//
+		public class UserData
+		{
+			public int id { get; set; }
+			public string Username { get; set; }
+			public string UserEmail { get; set; }
+			public string UserProfile { get; set; }
+			public string DOB { get; set; }
+			public string Gender { get; set; }
+			public string Phone { get; set; }
+		}
+		public class HfidApiResponse
+		{
+			public bool success { get; set; }
+			public UserData data { get; set; }
+			public string message { get; set; }
+		}
+		public class MepJsonData
+{
+    public PatientInfo patient { get; set; }
+    public List<TreatmentInfo> treatments { get; set; }
+}
+
+public class PatientInfo
+{
+    public string hfid { get; set; }
+    public string name { get; set; }
+}
+
+public class TreatmentInfo
+{
+    public string name { get; set; }
+    public int coachId { get; set; }
+    public List<string> sessionDates { get; set; }
+    public List<string> sessionTimes { get; set; }
+}
+
+public class AppointmentRequest
+{
+    public int id { get; set; } = 0;
+    public int clinicId { get; set; }
+    public int userId { get; set; }
+    public string packageId { get; set; }
+    public string packageName { get; set; }
+    public DateTime packageDate { get; set; }
+    public string packageTime { get; set; }
+    public int coachId { get; set; }
+    public string status { get; set; }
+}
+		private async Task CreateAppointmentsFromMepData(string jsonData, string packageId, int clinicId)
+		{
+			try
+			{
+				// Parse the JSON data
+				var mepData = JsonConvert.DeserializeObject<MepJsonData>(jsonData);
+
+				if (mepData?.patient == null || mepData?.treatments == null)
+					return;
+
+				// Get user ID by calling the HFID API
+				int? userId = await GetUserIdByHfId(mepData.patient.hfid);
+
+				if (userId == null)
+				{
+					// Log error: User not found with HFID
+					Console.WriteLine($"User not found with HFID: {mepData.patient.hfid}");
+					return;
+				}
+
+				// Loop through each treatment and create appointments
+				foreach (var treatment in mepData.treatments)
+				{
+					if (treatment.sessionDates == null || treatment.sessionTimes == null)
+						continue;
+
+					for (int i = 0; i < treatment.sessionDates.Count; i++)
+					{
+						var appointment = new AppointmentRequest
+						{
+							clinicId = clinicId,
+							userId = userId.Value,
+							packageId = packageId,
+							packageName = treatment.name,
+							packageDate = DateTime.Parse(treatment.sessionDates[i]),
+							packageTime = treatment.sessionTimes[i],
+							coachId = treatment.coachId,
+							status = "Scheduled"
+						};
+
+						// Call your API or repository to create appointment
+						await CreateAppointment(appointment);
+
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				// Log exception
+				Console.WriteLine($"Error creating appointments: {ex.Message}");
+			}
+		}
+
+		private async Task<int?> GetUserIdByHfId(string hfid)
+		{
+			try
+			{
+				using (var httpClient = new HttpClient())
+				{
+					// Set your base URL
+					httpClient.BaseAddress = new Uri("https://yourapi.com"); // Replace with your actual API base URL
+
+					var requestBody = new { HFID = hfid };
+					var json = JsonConvert.SerializeObject(requestBody);
+					var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+					var response = await httpClient.PostAsync("/api/users/hfid", content);
+
+					if (response.IsSuccessStatusCode)
+					{
+						var responseContent = await response.Content.ReadAsStringAsync();
+						var apiResponse = JsonConvert.DeserializeObject<HfidApiResponse>(responseContent);
+
+						return apiResponse?.data?.id;
+					}
+					else
+					{
+						Console.WriteLine($"Failed to get user ID for HFID: {hfid}");
+						return null;
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Error getting user ID: {ex.Message}");
+				return null;
+			}
+		}
+
+		private async Task CreateAppointment(AppointmentRequest request)
+		{
+			using (var httpClient = new HttpClient())
+			{
+				httpClient.BaseAddress = new Uri("https://localhost:7227/api/"); // Replace with your actual API base URL
+
+				var json = JsonConvert.SerializeObject(request);
+				var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+				var response = await httpClient.PostAsync("/clinics/high5-appointments", content);
+				_logger.LogInformation("Create appointment response: {Status}", response.StatusCode);
+
+				if (!response.IsSuccessStatusCode)
+				{
+					// Log error
+					var error = await response.Content.ReadAsStringAsync();
+					Console.WriteLine($"Failed to create appointment: {error}");
+				}
+			}
+		}
+		// Fetch JSON Data
+		[HttpGet("clinic/{clinicId}/patient/{patientId}/visit/{clinicVisitId}/records")]
         [Authorize]
         public async Task<IActionResult> GetPatientRecordsByVisit(
             [FromRoute] int clinicId,
@@ -305,17 +466,78 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 var records = await _clinicPatientRecordRepository.GetByClinicPatientVisitAsync(
                     clinicId, patientId, clinicVisitId);
 
-                var response = records.Select(r => new ClinicPatientRecordResponse
-                {
-                    Id = r.Id,
-                    Type = r.Type,
-                    JsonData = r.JsonData,
-                    UniqueRecordId = r.UniqueRecordId,
-                    EpochTime = r.EpochTime,
-                    PaymentVerify = r.payment_verify
-                }).ToList();
 
-                _logger.LogInformation(
+				var response = records.Select(r =>
+				{
+					
+					return new ClinicPatientRecordResponse
+					{
+						Id = r.Id,
+						Type = r.Type,
+						JsonData = r.JsonData,
+						UniqueRecordId = r.UniqueRecordId,
+						EpochTime = r.EpochTime,
+						PaymentVerify = r.payment_verify
+					};
+				}).ToList();
+				// check the payment of is its true then if 
+                var data = records.Select(
+                    r => {
+						string targetJsonData = r.JsonData;
+						string targetUniqueRecordId = r.UniqueRecordId;
+						int targetId = r.Id;
+
+						if (r.payment_verify == true)
+						{
+							_logger.LogInformation("Payment verified for record ID: {RecordId}", r.Id);
+
+							// Backtrack to find the MEP record
+							var currentRecord = r;
+							var allRecords = records.ToList(); // Cache for lookups
+
+							// Keep backtracking until we find a record starting with "MEP"
+							while (currentRecord != null && !currentRecord.Type.Equals(8))
+							{
+								// Try to find the parent record using Reference_Id
+								if (currentRecord.Reference_Id != 0)
+								{
+									currentRecord = allRecords.FirstOrDefault(x =>
+										x.Id == currentRecord.Reference_Id);
+								}
+								else
+								{
+									break; // No reference to follow
+								}
+							}
+
+							// If we found a record starting with MEP, use its data
+							if (currentRecord != null && currentRecord.Type.Equals(8))
+							{
+								targetJsonData = currentRecord.JsonData;
+								targetUniqueRecordId = currentRecord.UniqueRecordId;
+								targetId = currentRecord.Id;
+
+								// Create appointments for each session
+								Task.Run(async () => await CreateAppointmentsFromMepData(
+									targetJsonData,
+									targetUniqueRecordId,
+									clinicId
+								));
+							}
+						}
+						return new ClinicPatientRecordResponse
+						{
+							Id = r.Id,
+							Type = r.Type,
+							JsonData = r.JsonData,
+							UniqueRecordId = r.UniqueRecordId,
+							EpochTime = r.EpochTime,
+							PaymentVerify = r.payment_verify
+						};
+
+					}
+					).ToList();
+				_logger.LogInformation(
                     "Fetched {Count} records for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}",
                     response.Count, clinicId, patientId, clinicVisitId);
 

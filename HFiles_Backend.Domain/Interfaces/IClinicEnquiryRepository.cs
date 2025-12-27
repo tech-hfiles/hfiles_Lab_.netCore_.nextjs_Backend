@@ -6,4 +6,6 @@ public interface IClinicEnquiryRepository
 	Task<ClinicEnquiry?> GetByIdAsync(int id);
 	Task AddAsync(ClinicEnquiry enquiry);
 	Task UpdateAsync(ClinicEnquiry enquiry);
+	Task<List<ClinicEnquiry>> GetTodayAppointmentsAsync(int clinicId, DateTime today);
+
 }

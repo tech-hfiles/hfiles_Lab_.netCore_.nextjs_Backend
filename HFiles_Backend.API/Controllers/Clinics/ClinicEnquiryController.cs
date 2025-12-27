@@ -238,6 +238,29 @@ public class ClinicEnquiryController : ControllerBase
 			"Enquiry updated successfully."
 		));
 	}
+	// =====================================================
+	// GET : TODAY APPOINTMENTS (NO DATE FROM FRONTEND)
+	// =====================================================
+	[HttpGet("{clinicId}/appointments/today")]
+	public async Task<IActionResult> GetTodayAppointments(int clinicId)
+	{
+		HttpContext.Items["Log-Category"] = "Clinic Enquiry";
+
+		bool isAuthorized = await _clinicAuthorizationService
+			.IsClinicAuthorized(clinicId, User);
+
+		if (!isAuthorized)
+		{
+			_logger.LogWarning("Unauthorized today appointment access for ClinicId {ClinicId}", clinicId);
+			return Unauthorized(ApiResponseFactory.Fail("You are not authorized."));
+		}
+
+		var today = DateTime.Today; // local date (recommended)
+
+		var enquiries = await _repo.GetTodayAppointmentsAsync(clinicId, today);
+
+		return Ok(ApiResponseFactory.Success(enquiries));
+	}
 
 
 

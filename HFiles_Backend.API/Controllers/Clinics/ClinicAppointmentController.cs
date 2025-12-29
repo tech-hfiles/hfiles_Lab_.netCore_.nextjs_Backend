@@ -1693,6 +1693,16 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         phoneNumber = user?.PhoneNumber;
                     }
 
+                    // ✅ NEW: Get amount due for this patient
+                    decimal amountDue = 0;
+                    if (!string.IsNullOrWhiteSpace(patient.HFID))
+                    {
+                        amountDue = await _clinicPatientRecordRepository.GetTotalAmountDueByHfIdAsync(patient.HFID);
+                    }
+
+                    // ✅ NEW: Get latest package name
+                    var packageName = await recordRepository.GetLatestPackageNameByPatientIdAsync(patient.Id);
+
                     var dto = new PatientDto
                     {
                         PatientId = patient.Id,
@@ -1706,6 +1716,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         TreatmentNames = treatmentNames.Any()
                                          ? string.Join(", ", treatmentNames)
                                          : "-",
+                        AmountDue = amountDue,  // ✅ NEW
+                        PackageName = packageName ?? "-",  // ✅ NEW
                         Visits = patient.Visits
                             .Select(v => new VisitDto
                             {

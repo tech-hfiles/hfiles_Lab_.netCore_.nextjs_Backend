@@ -14,6 +14,7 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Appointment
         public string? PatientName { get; set; }
         public string? HFID { get; set; }
         public string? ProfilePhoto { get; set; }
+        public string? VisitorPhoneNumber { get; set; }
         public string? LastVisitDate { get; set; }
         public PaymentMethod? PaymentMethod { get; set; }
         public string? TreatmentNames { get; set; }

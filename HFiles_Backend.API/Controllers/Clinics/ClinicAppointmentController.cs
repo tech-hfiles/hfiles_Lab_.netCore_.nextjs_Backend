@@ -1685,12 +1685,21 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     var profilePhoto = !string.IsNullOrEmpty(patient.HFID) && userMap.TryGetValue(patient.HFID, out var photo)
                         ? photo
                         : "Not a registered user";
+
+                    var phoneNumber = patient.VisitorPhoneNumber;
+                    if (string.IsNullOrEmpty(phoneNumber) && !string.IsNullOrEmpty(patient.HFID))
+                    {
+                        var user = await userRepository.GetUserByHFIDAsync(patient.HFID);
+                        phoneNumber = user?.PhoneNumber;
+                    }
+
                     var dto = new PatientDto
                     {
                         PatientId = patient.Id,
                         PatientName = patient.PatientName,
                         HFID = patient.HFID,
                         ProfilePhoto = profilePhoto,
+                        VisitorPhoneNumber = phoneNumber,
                         LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
                         PaymentMethod = lastVisit?.PaymentMethod,
                         PaymentStatus = lastVisit?.PaymentMethod?.ToString() ?? "Pending",

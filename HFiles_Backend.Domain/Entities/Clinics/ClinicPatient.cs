@@ -14,6 +14,7 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Required(ErrorMessage = "Patient name is required.")]
         [MaxLength(100, ErrorMessage = "Patient name cannot exceed 100 characters.")]
         public string PatientName { get; set; } = null!;
+        public string? VisitorPhoneNumber { get; set; }
 
         public ICollection<ClinicVisit> Visits { get; set; } = new List<ClinicVisit>();
     }

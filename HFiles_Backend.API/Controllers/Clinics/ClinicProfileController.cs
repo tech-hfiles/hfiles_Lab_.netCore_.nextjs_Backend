@@ -22,7 +22,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
         IClinicAuthorizationService clinicAuthorizationService,
         IUserRepository userRepository,
         IWebHostEnvironment env,
-        S3StorageService s3Service
+        S3StorageService s3Service,
+       IClinicPatientRecordRepository clinicPatientRecordRepository
         ) : ControllerBase
     {
         private readonly ILogger<ClinicProfileController> _logger = logger;
@@ -33,6 +34,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
         private readonly IWebHostEnvironment _env = env;
         private readonly S3StorageService _s3Service = s3Service;
         private readonly IClinicAuthorizationService _clinicAuthorizationService = clinicAuthorizationService;
+        private readonly IClinicPatientRecordRepository _clinicPatientRecordRepository = clinicPatientRecordRepository;
 
 
 
@@ -161,12 +163,16 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return BadRequest(ApiResponseFactory.Fail("HFID is required."));
 
             var user = await _userRepository.GetUserByHFIDAsync(hfId);
-
             if (user == null)
             {
                 _logger.LogInformation("No user found for HFID {HfId}", hfId);
                 return Ok(ApiResponseFactory.Success(new PatientDetailsResponse(), "No patient found."));
             }
+
+            // Fetch the amount due from the last receipt
+            // var amountDue = await _clinicPatientRecordRepository.GetLastReceiptAmountDueByHfIdAsync(hfId);
+
+            var amountDue = await _clinicPatientRecordRepository.GetTotalAmountDueByHfIdAsync(hfId);
 
             var response = new PatientDetailsResponse
             {
@@ -179,10 +185,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 ProfileURL = user.ProfilePhoto,
                 PhoneNumber = user.PhoneNumber,
                 City = user.City,
-                State = user.State
+                State = user.State,
+                AmountDue = amountDue  // NEW: Include amount due from last receipt
             };
 
-            _logger.LogInformation("Fetched patient details for HFID {HfId}", hfId);
+            _logger.LogInformation("Fetched patient details for HFID {HfId} with AmountDue: {AmountDue}",
+                hfId, amountDue);
+
             return Ok(ApiResponseFactory.Success(response, "Patient Details fetched successfully."));
         }
 

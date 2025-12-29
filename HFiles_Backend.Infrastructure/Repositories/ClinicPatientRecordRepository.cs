@@ -6,6 +6,7 @@ using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace HFiles_Backend.Infrastructure.Repositories
 {
@@ -466,6 +467,247 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .Where(r => r.UniqueRecordId == uniqueRecordId && r.Type == RecordType.Receipt)
                 .OrderByDescending(r => r.Id) // Get the latest one if multiple exist
                 .FirstOrDefaultAsync();
+        }
+
+
+        //public async Task<decimal> GetLastReceiptAmountDueByHfIdAsync(string hfId)
+        //{
+        //    try
+        //    {
+        //        // Get the patient by HFID first
+        //        var clinicPatient = await _context.ClinicPatients
+        //            .FirstOrDefaultAsync(p => p.HFID == hfId);
+
+        //        if (clinicPatient == null)
+        //        {
+        //            _logger.LogInformation("No clinic patient found for HFID: {HfId}", hfId);
+        //            return 0;
+        //        }
+
+        //        // Get the last receipt record ordered by EpochTime (most recent)
+        //        var lastReceiptRecord = await _context.ClinicPatientRecords
+        //            .Where(r => r.PatientId == clinicPatient.Id && r.Type == RecordType.Receipt)
+        //            .OrderByDescending(r => r.EpochTime)
+        //            .FirstOrDefaultAsync();
+
+        //        if (lastReceiptRecord == null)
+        //        {
+        //            _logger.LogInformation("No receipt found for patient with HFID: {HfId}", hfId);
+        //            return 0;
+        //        }
+
+        //        // Parse the JSON data to extract amountDue
+        //        using var doc = JsonDocument.Parse(lastReceiptRecord.JsonData);
+        //        var root = doc.RootElement;
+
+        //        if (root.TryGetProperty("summary", out var summary) &&
+        //            summary.TryGetProperty("amountDue", out var amountDue))
+        //        {
+        //            if (amountDue.ValueKind == JsonValueKind.Number)
+        //            {
+        //                return amountDue.GetDecimal();
+        //            }
+        //        }
+
+        //        _logger.LogWarning("Could not extract amountDue from receipt JSON for HFID: {HfId}", hfId);
+        //        return 0;
+        //    }
+        //    catch (JsonException ex)
+        //    {
+        //        _logger.LogError(ex, "Error parsing receipt JSON for HFID: {HfId}", hfId);
+        //        return 0;
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Error fetching last receipt amount due for HFID: {HfId}", hfId);
+        //        return 0;
+        //    }
+        //}
+
+        public async Task<decimal> GetTotalAmountDueByHfIdAsync(string hfId)
+        {
+            try
+            {
+                // 1. Find patient by HFID
+                var patient = await _context.ClinicPatients
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.HFID == hfId);
+
+                if (patient == null)
+                {
+                    _logger.LogWarning("Patient with HFID {HfId} not found", hfId);
+                    return 0;
+                }
+
+                _logger.LogInformation("Found patient ID {PatientId} for HFID {HfId}", patient.Id, hfId);
+
+                // 2. Get ALL records
+                var allRecords = await _context.ClinicPatientRecords
+                    .AsNoTracking()
+                    .Where(r => r.PatientId == patient.Id
+                             && (r.Type == RecordType.Invoice || r.Type == RecordType.Receipt))
+                    .OrderByDescending(r => r.EpochTime)
+                    .ToListAsync();
+
+                var invoices = allRecords
+                    .Where(r => r.Type == RecordType.Invoice
+                             && !string.IsNullOrWhiteSpace(r.UniqueRecordId))
+                    .ToList();
+
+                var receipts = allRecords
+                    .Where(r => r.Type == RecordType.Receipt
+                             && !string.IsNullOrWhiteSpace(r.UniqueRecordId))
+                    .ToList();
+
+                if (!invoices.Any())
+                {
+                    _logger.LogInformation("No invoices found for HFID {HfId}", hfId);
+                    return 0;
+                }
+
+                _logger.LogInformation("Found {InvoiceCount} invoices and {ReceiptCount} receipts",
+                    invoices.Count, receipts.Count);
+
+                decimal totalAmountDue = 0;
+
+                // 3. Process each invoice
+                foreach (var invoice in invoices)
+                {
+                    decimal invoiceAmountDue = 0;
+
+                    try
+                    {
+                        // Check if this invoice has any receipts
+                        var receiptsForInvoice = receipts.Where(receipt =>
+                        {
+                            try
+                            {
+                                using var doc = JsonDocument.Parse(receipt.JsonData);
+                                var root = doc.RootElement;
+
+                                if (root.TryGetProperty("services", out var services) &&
+                                    services.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var service in services.EnumerateArray())
+                                    {
+                                        if (service.TryGetProperty("invoiceNumber", out var invNum) &&
+                                            invNum.GetString() == invoice.UniqueRecordId)
+                                        {
+                                            return true;
+                                        }
+                                    }
+                                }
+                                return false;
+                            }
+                            catch
+                            {
+                                return false;
+                            }
+                        }).OrderByDescending(r => r.EpochTime).ToList();
+
+                        if (receiptsForInvoice.Any())
+                        {
+                            // Invoice HAS receipts - use latest receipt's summary.amountDue
+                            var latestReceipt = receiptsForInvoice.First();
+
+                            using var receiptDoc = JsonDocument.Parse(latestReceipt.JsonData);
+                            var receiptRoot = receiptDoc.RootElement;
+
+                            if (receiptRoot.TryGetProperty("summary", out var summary) &&
+                                summary.TryGetProperty("amountDue", out var amountDueElement))
+                            {
+                                invoiceAmountDue = amountDueElement.GetDecimal();
+                            }
+
+                            _logger.LogInformation(
+                                "Invoice {InvoiceId} has receipt {ReceiptId}, amountDue: ₹{AmountDue}",
+                                invoice.UniqueRecordId, latestReceipt.UniqueRecordId, invoiceAmountDue);
+                        }
+                        else
+                        {
+                            // Invoice has NO receipts - use invoice's amountDue field
+                            using var invoiceDoc = JsonDocument.Parse(invoice.JsonData);
+                            var invoiceRoot = invoiceDoc.RootElement;
+
+                            // ✅ ONLY use amountDue from invoice (not grandTotal)
+                            if (invoiceRoot.TryGetProperty("amountDue", out var amountDueElement))
+                            {
+                                invoiceAmountDue = amountDueElement.GetDecimal();
+                            }
+
+                            _logger.LogInformation(
+                                "Invoice {InvoiceId} has NO receipts, using invoice.amountDue: ₹{AmountDue}",
+                                invoice.UniqueRecordId, invoiceAmountDue);
+                        }
+
+                        totalAmountDue += invoiceAmountDue;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error processing invoice {InvoiceId}",
+                            invoice.UniqueRecordId ?? invoice.Id.ToString());
+                    }
+                }
+
+                _logger.LogInformation(
+                    "Total Amount Due for HFID {HfId}: ₹{TotalAmountDue} from {InvoiceCount} invoices",
+                    hfId, totalAmountDue, invoices.Count);
+
+                return totalAmountDue;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error calculating total amount due for HFID {HfId}", hfId);
+                return 0;
+            }
+        }
+
+        public async Task<string?> GetLatestPackageNameByPatientIdAsync(int patientId)
+        {
+            try
+            {
+                // Get the latest membership plan for this patient
+                var latestMembershipPlan = await _context.ClinicPatientRecords
+                    .AsNoTracking()
+                    .Where(r => r.PatientId == patientId
+                             && r.Type == RecordType.MembershipPlan
+                             && !string.IsNullOrWhiteSpace(r.UniqueRecordId))
+                    .OrderByDescending(r => r.EpochTime)
+                    .FirstOrDefaultAsync();
+
+                if (latestMembershipPlan == null)
+                    return null;
+
+                // Parse JSON to get package/treatment names
+                using var doc = JsonDocument.Parse(latestMembershipPlan.JsonData);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("treatments", out var treatments) &&
+                    treatments.ValueKind == JsonValueKind.Array)
+                {
+                    var treatmentNames = new List<string>();
+
+                    foreach (var treatment in treatments.EnumerateArray())
+                    {
+                        if (treatment.TryGetProperty("name", out var nameElement))
+                        {
+                            var name = nameElement.GetString();
+                            if (!string.IsNullOrWhiteSpace(name))
+                                treatmentNames.Add(name);
+                        }
+                    }
+
+                    if (treatmentNames.Any())
+                        return string.Join(", ", treatmentNames);
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching latest package name for PatientId {PatientId}", patientId);
+                return null;
+            }
         }
 
     }

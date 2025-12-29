@@ -32,6 +32,9 @@ namespace HFiles_Backend.Domain.Interfaces
 
         Task<ClinicPatientRecord?> GetRecordByIdAsync(int recordId);
         Task<ClinicPatientRecord> GetRecordByUniqueRecordIdAsync(string uniqueRecordId);
+        // Task<decimal> GetLastReceiptAmountDueByHfIdAsync(string hfId);
+        Task<decimal> GetTotalAmountDueByHfIdAsync(string hfId);
+        Task<string?> GetLatestPackageNameByPatientIdAsync(int patientId);
 
 
     }

@@ -6,9 +6,21 @@ namespace HFiles_Backend.API.Services
 {
     public class EmailTemplateService : IEmailTemplateService
     {
-        public string GenerateClinicOtpTemplate(string clinicName, string otp)
+        // Helper method to replace terminology based on clinic ID
+        private string ReplaceTerminology(string template, int clinicId)
         {
-            return $"""
+            if (clinicId == 36)
+            {
+                template = template.Replace("Clinic", "Gym")
+                                   .Replace("clinic", "gym")
+                                   .Replace("Patient", "Member")
+                                   .Replace("patient", "member");
+            }
+            return template;
+        }
+        public string GenerateClinicOtpTemplate(string clinicName, string otp, int clinicId = 0)
+        {
+            var template = $"""
             <html>
             <body style='font-family: Arial, sans-serif; line-height: 1.6;'>
                 <p>Hello <strong>{clinicName}</strong>,</p>
@@ -21,11 +33,12 @@ namespace HFiles_Backend.API.Services
             </body>
             </html>
             """;
+            return ReplaceTerminology(template, clinicId);
         }
 
-        public string GenerateClinicWelcomeTemplate(string clinicName)
+        public string GenerateClinicWelcomeTemplate(string clinicName, int clinicId = 0)
         {
-            return $"""
+            var template = $"""
             <html>
             <body style='font-family: Arial, sans-serif; line-height: 1.6;'>
                 <p>Hello <strong>{clinicName}</strong>,</p>
@@ -36,11 +49,12 @@ namespace HFiles_Backend.API.Services
             </body>
             </html>
             """;
+            return ReplaceTerminology(template, clinicId);
         }
 
-        public string GenerateClinicAdminNotificationTemplate(string clinicName, string email, string phone, string pincode)
+        public string GenerateClinicAdminNotificationTemplate(string clinicName, string email, string phone, string pincode, int clinicId = 0)
         {
-            return $"""
+            var template = $"""
             <html>
             <body style='font-family: Arial, sans-serif; line-height: 1.6;'>
                 <h2>New Clinic Signup Received</h2>
@@ -52,11 +66,12 @@ namespace HFiles_Backend.API.Services
             </body>
             </html>
             """;
+            return ReplaceTerminology(template, clinicId);
         }
 
-        public string GenerateClinicLoginOtpTemplate(string otp, int validityMinutes)
+        public string GenerateClinicLoginOtpTemplate(string otp, int validityMinutes, int clinicId = 0)
         {
-            return $"""
+            var template = $"""
             <html>
             <body style='font-family: Arial, sans-serif; line-height: 1.6;'>
                 <p>Hello,</p>
@@ -69,11 +84,12 @@ namespace HFiles_Backend.API.Services
             </body>
             </html>
             """;
+            return ReplaceTerminology(template, clinicId);
         }
 
-        public string GenerateClinicPasswordResetTemplate(string clinicName, string otp, int validityMinutes, string resetLink)
+        public string GenerateClinicPasswordResetTemplate(string clinicName, string otp, int validityMinutes, string resetLink, int clinicId = 0)
         {
-            return $"""
+            var template = $"""
             <html>
             <body style='font-family:Arial,sans-serif;'>
                 <p>Hello <strong>{clinicName}</strong>,</p>
@@ -93,11 +109,12 @@ namespace HFiles_Backend.API.Services
             </body>
             </html>
             """;
+            return ReplaceTerminology(template, clinicId);
         }
 
-        public string GenerateClinicUserPasswordResetTemplate(string firstName, string clinicName, string otp, int validityMinutes, string resetLink)
+        public string GenerateClinicUserPasswordResetTemplate(string firstName, string clinicName, string otp, int validityMinutes, string resetLink, int clinicId = 0)
         {
-            return $"""
+            var template = $"""
                 <html>
                 <body style='font-family:Arial,sans-serif;'>
                     <p>Hello <strong>{firstName}</strong>,</p>
@@ -116,10 +133,11 @@ namespace HFiles_Backend.API.Services
                 </body>
                 </html>
                 """;
+            return ReplaceTerminology(template, clinicId);
         }
 
 
-        public string GenerateMultipleConsentFormsEmailTemplate(string patientFirstName, List<ConsentFormLinkInfo> consentFormLinks, string clinicName)
+        public string GenerateMultipleConsentFormsEmailTemplate(string patientFirstName, List<ConsentFormLinkInfo> consentFormLinks, string clinicName, int clinicId = 0)
         {
             var consentFormsList = string.Join("", consentFormLinks.Select(link =>
                 $@"<li style='margin: 10px 0;'>
@@ -129,7 +147,7 @@ namespace HFiles_Backend.API.Services
                       </a>
                    </li>"));
 
-            return $"""
+            var template =  $"""
             <html>
             <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
                 <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
@@ -177,6 +195,7 @@ namespace HFiles_Backend.API.Services
             </body>
             </html>
             """;
+            return ReplaceTerminology(template, clinicId);
         }
 
 
@@ -188,7 +207,7 @@ namespace HFiles_Backend.API.Services
         List<ConsentFormLinkInfo> consentFormLinks,
         string clinicName,
         string appointmentDate,
-        string appointmentTime)
+        string appointmentTime, int clinicId = 0)
         {
             var consentFormsList = string.Join("", consentFormLinks.Select(link =>
                 $@"<li style='margin: 10px 0;'>
@@ -198,7 +217,7 @@ namespace HFiles_Backend.API.Services
                   </a>
                </li>"));
 
-            return $"""
+            var template = $"""
         <html>
         <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
             <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
@@ -251,12 +270,13 @@ namespace HFiles_Backend.API.Services
         </body>
         </html>
         """;
+            return ReplaceTerminology(template, clinicId);
         }
 
 
 
 
-        public string GenerateFollowUpAppointmentEmailTemplate(string patientFirstName, List<ConsentFormLinkInfo> consentFormLinks, string clinicName, string appointmentDate, string appointmentTime)
+        public string GenerateFollowUpAppointmentEmailTemplate(string patientFirstName, List<ConsentFormLinkInfo> consentFormLinks, string clinicName, string appointmentDate, string appointmentTime, int clinicId = 0)
         {
             var consentFormsList = string.Join("", consentFormLinks.Select(link =>
                 $@"<li style='margin: 10px 0;'>
@@ -266,7 +286,7 @@ namespace HFiles_Backend.API.Services
                       </a>
                    </li>"));
 
-            return $"""
+            var template = $"""
             <html>
             <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
                 <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
@@ -320,17 +340,18 @@ namespace HFiles_Backend.API.Services
             </body>
             </html>
             """;
+            return ReplaceTerminology(template, clinicId);
         }
 
 
 
 
 
-        public string GenerateEmailBodySymptomDiary(string? firstName, string clinicName)
+        public string GenerateEmailBodySymptomDiary(string? firstName, string clinicName, int clinicId = 0)
         {
             var patientName = string.IsNullOrWhiteSpace(firstName) ? "Patient" : firstName;
 
-            return $@"
+           var template = $@"
             <!DOCTYPE html>
             <html lang=""en"">
             <head>
@@ -430,6 +451,7 @@ namespace HFiles_Backend.API.Services
                 </div>
             </body>
             </html>";
+            return ReplaceTerminology(template, clinicId);
         }
 
 
@@ -439,7 +461,7 @@ namespace HFiles_Backend.API.Services
       List<PatientDocumentInfo> uploadedDocuments,
       string clinicName,
       string appointmentDate,
-      string appointmentTime)
+      string appointmentTime, int clinicId = 0)
         {
             var documentsList = string.Join("", uploadedDocuments.Select(doc =>
                 $@"<li style='margin: 15px 0; background-color: white; padding: 12px; border-radius: 6px; border: 1px solid #e0e0e0;'>
@@ -466,7 +488,7 @@ namespace HFiles_Backend.API.Services
               </div>
            </li>"));
 
-            return $"""
+            var template = $"""
     <html>
     <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
         <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
@@ -517,6 +539,7 @@ namespace HFiles_Backend.API.Services
     </body>
     </html>
     """;
+            return ReplaceTerminology(template, clinicId);
         }
     }
 }

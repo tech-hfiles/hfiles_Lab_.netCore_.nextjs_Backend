@@ -460,7 +460,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         var emailTemplate = _emailTemplateService.GenerateMultipleConsentFormsEmailTemplate(
                             user.FirstName,
                             consentFormLinks,
-                            clinic.ClinicName
+                            clinic.ClinicName, clinicId
                         );
 
                         await _emailService.SendEmailAsync(

@@ -227,6 +227,10 @@ public class ClinicEnquiryController : ControllerBase
 
 		if (dto.Remark != null)
 			enquiry.Remark = dto.Remark;
+		if (dto.AppointmentDate != null)
+			enquiry.AppointmentDate = dto.AppointmentDate;
+		if (dto.AppointmentTime != null)
+			enquiry.AppointmentTime = dto.AppointmentTime;
 
 		// ❌ Ignore ClinicId & UserId in UPDATE
 		// ❌ Ignore other fields intentionally

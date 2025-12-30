@@ -1,4 +1,5 @@
 ﻿
+using HFiles_Backend.API.Controllers.Clinics;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Domain.DTOs.Clinics;
 using HFiles_Backend.Domain.Entities.Clinics;
@@ -6,7 +7,7 @@ using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces.Clinics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using HFiles_Backend.API.Controllers.Clinics;
+using Microsoft.IdentityModel.Tokens;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -35,8 +36,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 		[HttpPost]
 		public async Task<IActionResult> Create([FromBody] High5AppointmentDto dto)
 		{
-			if (!ModelState.IsValid)
-				return BadRequest(ModelState);
+			//if (!ModelState.IsValid)
+			//	return BadRequest(ModelState);
 
 			var appointment = new High5Appointment
 			{
@@ -90,31 +91,26 @@ namespace HFiles_Backend.API.Controllers.Clinics
 		// ================= Update =================
 		[HttpPut("{id:int}")]
 		public async Task<IActionResult> Update(
-			int id,
-			[FromBody] High5AppointmentDto dto)
+	int id,
+	[FromBody] High5AppointmentUpdateDto dto)	
 		{
-			if (!ModelState.IsValid)
-				return BadRequest(ModelState);
-
 			var existing = await _appointmentService.GetAppointmentByIdAsync(id);
 
 			if (existing == null)
 				return NotFound(ApiResponseFactory.Fail("High5 appointment not found."));
 
-			existing.PackageDate = dto.PackageDate;
-			existing.PackageTime = dto.PackageTime;
-			existing.PackageName = dto.PackageName;
-			existing.PackageId = dto.PackageId;
-			existing.CoachId = dto.CoachId;
-			existing.Status = dto.Status;
+			// Only update fields that are present in the payload
+			if (dto.PackageDate.HasValue) existing.PackageDate = dto.PackageDate.Value;
+			if (dto.PackageTime.HasValue) existing.PackageTime = dto.PackageTime.Value;
+			if (!string.IsNullOrEmpty(dto.PackageName)) existing.PackageName = dto.PackageName;
+			if (dto.PackageId.HasValue) existing.PackageId = dto.PackageId.Value;
+			if (dto.CoachId.HasValue) existing.CoachId = dto.CoachId.Value;
+			if (dto.Status.HasValue) existing.Status = dto.Status.Value;
 
 			var updated = await _appointmentService.UpdateAppointmentAsync(existing);
 
 			if (!updated)
-				return StatusCode(
-					500,
-					ApiResponseFactory.Fail("Failed to update appointment.")
-				);
+				return StatusCode(500, ApiResponseFactory.Fail("Failed to update appointment."));
 
 			return Ok(ApiResponseFactory.Success("High5 appointment updated successfully."));
 		}
@@ -128,13 +124,16 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			public int? PackageId { get; set; }
 			public string? PackageName { get; set; }
 			public DateTime? Date { get; set; }
-			public string Time { get; set; }
+			public TimeSpan? Time { get; set; }
+
+			public string? phone { get; set; }
 			public int? CoachId { get; set; }
 			public string CoachName { get; set; }  // ADD THIS LINE
 			public string Status { get; set; }
 			public long? EpochTime { get; set; }
 			public string PatientName { get; set; }
 			public string Source { get; set; }
+			public string? HFID { get; set; }
 			public PaymentStatus? PaymentStatus { get; set; }
 		}
 
@@ -158,12 +157,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					.Select(h => new AppointmentMergedDto
 					{
 						Id = h.Id,
+						HFID = h.User.HfId,
+						phone = h.User.PhoneNumber,
 						ClinicId = h.ClinicId,
 						UserId = h.UserId,
 						PackageId = h.PackageId,
 						PackageName = h.PackageName,
 						Date = h.PackageDate,
-						Time = h.PackageTime.ToString(@"hh\:mm"),
+						Time = h.PackageTime,
 						CoachId = h.CoachId,
 						CoachName = h.CoachMember?.User != null
 							? $"{h.CoachMember.User.FirstName} {h.CoachMember.User.LastName}".Trim()
@@ -195,10 +196,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					Id = e.Id,
 					ClinicId = e.ClinicId,
 					UserId = null,
+					phone = e.Contact,
 					PackageId = null,
 					PackageName = null,
 					Date = e.AppointmentDate,
-					Time = e.AppointmentDate.HasValue ? e.AppointmentDate.Value.ToString("HH:mm") : "",
+					Time = e.AppointmentTime.Value,
 					CoachId = null,
 					Status = e.Status.ToString(),
 					EpochTime = null,

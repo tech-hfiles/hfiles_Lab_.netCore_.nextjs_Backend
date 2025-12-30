@@ -40,6 +40,15 @@ namespace HFiles_Backend.Domain.DTOs.Clinics
 
 
 	}
+	public class High5AppointmentUpdateDto
+	{
+		public int? PackageId { get; set; }
+		public string? PackageName { get; set; }
+		public DateTime? PackageDate { get; set; }
+		public TimeSpan? PackageTime { get; set; }
+		public int? CoachId { get; set; }
+		public High5AppointmentStatus? Status { get; set; }
+	}
 
 }
 

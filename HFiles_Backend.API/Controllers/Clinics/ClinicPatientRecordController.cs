@@ -10,6 +10,7 @@ using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Entities.Users;
 using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
+using HFiles_Backend.Domain.Interfaces.Clinics;
 using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -26,11 +27,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
     [Route("api/")]
     [ApiController]
     public class ClinicPatientRecordController(
+
         ILogger<ClinicPatientRecordController> logger,
         IClinicAuthorizationService clinicAuthorizationService,
         IClinicRepository clinicRepository,
         IClinicPatientRecordRepository clinicPatientRecordRepository,
-        S3StorageService s3StorageService,
+	    IClinicHigh5AppointmentService appointmentService,
+
+		S3StorageService s3StorageService,
         IClinicVisitRepository clinicVisitRepository,
         IUserRepository userRepository,
         IUniqueIdGeneratorService uniqueIdGenerator,
@@ -41,7 +45,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 	) : ControllerBase
     {
-        private readonly ILogger<ClinicPatientRecordController> _logger = logger;
+		private readonly IClinicHigh5AppointmentService _appointmentService;
+
+		private readonly ILogger<ClinicPatientRecordController> _logger = logger;
         private readonly IClinicAuthorizationService _clinicAuthorizationService = clinicAuthorizationService;
         private readonly IClinicRepository _clinicRepository = clinicRepository;
         private readonly IClinicPatientRecordRepository _clinicPatientRecordRepository = clinicPatientRecordRepository;
@@ -312,6 +318,7 @@ public class TreatmentInfo
 {
     public string name { get; set; }
     public int coachId { get; set; }
+    public int packageID { get; set; }
     public List<string> sessionDates { get; set; }
     public List<string> sessionTimes { get; set; }
 }
@@ -321,63 +328,142 @@ public class AppointmentRequest
     public int id { get; set; } = 0;
     public int clinicId { get; set; }
     public int userId { get; set; }
-    public string packageId { get; set; }
+    public int packageId { get; set; }
     public string packageName { get; set; }
     public DateTime packageDate { get; set; }
     public string packageTime { get; set; }
     public int coachId { get; set; }
     public string status { get; set; }
 }
+
+		private async Task CreateAppointment(AppointmentRequest request)
+		{
+			using (var httpClient = new HttpClient())
+			{
+				string baseUrl;
+
+#if DEBUG
+				baseUrl = "https://localhost:7227/api/";
+#elif STAGING
+        baseUrl = "https://testlab.hfiles.co.in/api/";
+#else
+        baseUrl = "https://api.hfiles.co.in/api/";
+#endif
+
+				httpClient.BaseAddress = new Uri(baseUrl);
+
+				var json = JsonConvert.SerializeObject(request);
+				var content = new StringContent(json, Encoding.UTF8, "application/json");
+				//var response = await _appointmentService.CreateAppointmentAsync(request);
+				var response = await httpClient.PostAsync("/api/clinics/high5-appointments", content);
+
+                // Log the status code
+                _logger.LogInformation("Create appointment response: {Status}", response.StatusCode);
+
+				// Or if you want more details:
+				var responseBody = await response.Content.ReadAsStringAsync();
+				_logger.LogInformation("Create appointment response: {Status}, Body: {Body}",
+					response.StatusCode, responseBody);
+				
+
+				if (!response.IsSuccessStatusCode)
+				{
+					// Log error
+					var error = await response.Content.ReadAsStringAsync();
+					_logger.LogInformation("Create appointment response: {error}", error);
+
+					Console.WriteLine($"Failed to create appointment: {error}");
+				}
+			}
+		}
+
+
 		private async Task CreateAppointmentsFromMepData(string jsonData, string packageId, int clinicId)
 		{
+
 			try
 			{
 				// Parse the JSON data
 				var mepData = JsonConvert.DeserializeObject<MepJsonData>(jsonData);
-
 				if (mepData?.patient == null || mepData?.treatments == null)
+				{
+					_logger.LogWarning("Invalid MEP data: patient or treatments is null");
 					return;
+				}
 
 				// Get user ID by calling the HFID API
 				int? userId = await GetUserIdByHfId(mepData.patient.hfid);
-
 				if (userId == null)
 				{
-					// Log error: User not found with HFID
-					Console.WriteLine($"User not found with HFID: {mepData.patient.hfid}");
+					_logger.LogWarning("User not found with HFID: {HFID}", mepData.patient.hfid);
 					return;
 				}
+
+				_logger.LogInformation("Entered CreateAppointmentsFromMepData for UserId: {UserId}, HFID: {HFID}",
+					userId, mepData.patient.hfid);
 
 				// Loop through each treatment and create appointments
 				foreach (var treatment in mepData.treatments)
 				{
 					if (treatment.sessionDates == null || treatment.sessionTimes == null)
+					{
+						_logger.LogWarning("Treatment {TreatmentName} has null sessionDates or sessionTimes",
+							treatment.name);
 						continue;
+					}
+
+					if (treatment.sessionDates.Count != treatment.sessionTimes.Count)
+					{
+						_logger.LogWarning("Treatment {TreatmentName} has mismatched dates ({DateCount}) and times ({TimeCount})",
+							treatment.name, treatment.sessionDates.Count, treatment.sessionTimes.Count);
+						continue;
+					}
 
 					for (int i = 0; i < treatment.sessionDates.Count; i++)
 					{
-						var appointment = new AppointmentRequest
+						try
 						{
-							clinicId = clinicId,
-							userId = userId.Value,
-							packageId = packageId,
-							packageName = treatment.name,
-							packageDate = DateTime.Parse(treatment.sessionDates[i]),
-							packageTime = treatment.sessionTimes[i],
-							coachId = treatment.coachId,
-							status = "Scheduled"
-						};
+							var appointment = new AppointmentRequest
+							{
+								clinicId = clinicId,
+								userId = userId.Value,
+								packageId = treatment.packageID,
+								packageName = treatment.name,
+								packageDate = DateTime.Parse(treatment.sessionDates[i]),
+								packageTime = treatment.sessionTimes[i],
+								coachId = treatment.coachId,
+								status = "Scheduled"
+							};
 
-						// Call your API or repository to create appointment
-						await CreateAppointment(appointment);
+							
 
+							// Call your API or repository to create appointment
+							await CreateAppointment(appointment);
+
+							_logger.LogInformation("Successfully created appointment {Index}/{Total} for treatment {TreatmentName}",
+								i + 1, treatment.sessionDates.Count, treatment.name);
+						}
+						catch (Exception ex)
+						{
+							_logger.LogError(ex,
+								"Failed to create appointment {Index}/{Total} for HFID {HFID}, Treatment: {TreatmentName}, Date: {Date}",
+								i + 1,
+								treatment.sessionDates.Count,
+								mepData.patient.hfid,
+								treatment.name,
+								treatment.sessionDates[i]
+							);
+							// Continue with next appointment instead of failing completely
+						}
 					}
 				}
+
+				_logger.LogInformation("Completed CreateAppointmentsFromMepData for HFID: {HFID}",
+					mepData.patient.hfid);
 			}
 			catch (Exception ex)
 			{
-				// Log exception
-				Console.WriteLine($"Error creating appointments: {ex.Message}");
+				_logger.LogError(ex, "Error in CreateAppointmentsFromMepData for packageId {PackageId}", packageId);
 			}
 		}
 
@@ -387,8 +473,17 @@ public class AppointmentRequest
 			{
 				using (var httpClient = new HttpClient())
 				{
-					// Set your base URL
-					httpClient.BaseAddress = new Uri("https://yourapi.com"); // Replace with your actual API base URL
+					string baseUrl;
+
+#if DEBUG
+					baseUrl = "https://localhost:7227/api/";
+#elif STAGING
+        baseUrl = "https://testlab.hfiles.co.in/api/";
+#else
+        baseUrl = "https://api.hfiles.co.in/api/";
+#endif
+
+					httpClient.BaseAddress = new Uri(baseUrl);// Replace with your actual API base URL
 
 					var requestBody = new { HFID = hfid };
 					var json = JsonConvert.SerializeObject(requestBody);
@@ -417,26 +512,6 @@ public class AppointmentRequest
 			}
 		}
 
-		private async Task CreateAppointment(AppointmentRequest request)
-		{
-			using (var httpClient = new HttpClient())
-			{
-				httpClient.BaseAddress = new Uri("https://localhost:7227/api/"); // Replace with your actual API base URL
-
-				var json = JsonConvert.SerializeObject(request);
-				var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-				var response = await httpClient.PostAsync("/clinics/high5-appointments", content);
-				_logger.LogInformation("Create appointment response: {Status}", response.StatusCode);
-
-				if (!response.IsSuccessStatusCode)
-				{
-					// Log error
-					var error = await response.Content.ReadAsStringAsync();
-					Console.WriteLine($"Failed to create appointment: {error}");
-				}
-			}
-		}
 		// Fetch JSON Data
 		[HttpGet("clinic/{clinicId}/patient/{patientId}/visit/{clinicVisitId}/records")]
         [Authorize]
@@ -444,8 +519,9 @@ public class AppointmentRequest
             [FromRoute] int clinicId,
             [FromRoute] int patientId,
             [FromRoute] int clinicVisitId)
-        {
-            HttpContext.Items["Log-Category"] = "Patient Record Fetch";
+        {   
+
+			HttpContext.Items["Log-Category"] = "Patient Record Fetch";
 
             if (clinicId <= 0 || patientId <= 0 || clinicVisitId <= 0)
             {
@@ -461,15 +537,20 @@ public class AppointmentRequest
                 return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view records for this clinic."));
             }
 
-            try
-            {
-                var records = await _clinicPatientRecordRepository.GetByClinicPatientVisitAsync(
-                    clinicId, patientId, clinicVisitId);
+			try
+			{
 
+				var records = await _clinicPatientRecordRepository.GetByClinicPatientVisitAsync(
+					clinicId, patientId, clinicVisitId);
 
-				var response = records.Select(r =>
+				var recordsList = records.ToList(); // Must materialize first
+
+				
+
+				var response = recordsList.Select(r =>
 				{
-					
+				
+
 					return new ClinicPatientRecordResponse
 					{
 						Id = r.Id,
@@ -480,70 +561,16 @@ public class AppointmentRequest
 						PaymentVerify = r.payment_verify
 					};
 				}).ToList();
-				// check the payment of is its true then if 
-                var data = records.Select(
-                    r => {
-						string targetJsonData = r.JsonData;
-						string targetUniqueRecordId = r.UniqueRecordId;
-						int targetId = r.Id;
 
-						if (r.payment_verify == true)
-						{
-							_logger.LogInformation("Payment verified for record ID: {RecordId}", r.Id);
 
-							// Backtrack to find the MEP record
-							var currentRecord = r;
-							var allRecords = records.ToList(); // Cache for lookups
 
-							// Keep backtracking until we find a record starting with "MEP"
-							while (currentRecord != null && !currentRecord.Type.Equals(8))
-							{
-								// Try to find the parent record using Reference_Id
-								if (currentRecord.Reference_Id != 0)
-								{
-									currentRecord = allRecords.FirstOrDefault(x =>
-										x.Id == currentRecord.Reference_Id);
-								}
-								else
-								{
-									break; // No reference to follow
-								}
-							}
-
-							// If we found a record starting with MEP, use its data
-							if (currentRecord != null && currentRecord.Type.Equals(8))
-							{
-								targetJsonData = currentRecord.JsonData;
-								targetUniqueRecordId = currentRecord.UniqueRecordId;
-								targetId = currentRecord.Id;
-
-								// Create appointments for each session
-								Task.Run(async () => await CreateAppointmentsFromMepData(
-									targetJsonData,
-									targetUniqueRecordId,
-									clinicId
-								));
-							}
-						}
-						return new ClinicPatientRecordResponse
-						{
-							Id = r.Id,
-							Type = r.Type,
-							JsonData = r.JsonData,
-							UniqueRecordId = r.UniqueRecordId,
-							EpochTime = r.EpochTime,
-							PaymentVerify = r.payment_verify
-						};
-
-					}
-					).ToList();
 				_logger.LogInformation(
-                    "Fetched {Count} records for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}",
-                    response.Count, clinicId, patientId, clinicVisitId);
+					"Fetched {Count} records for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}",
+					response.Count, clinicId, patientId, clinicVisitId);
 
-                return Ok(ApiResponseFactory.Success(response, "Records fetched successfully."));
-            }
-            catch (Exception ex)
+				return Ok(ApiResponseFactory.Success(response, "Records fetched successfully."));
+			}
+			catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching records for Clinic ID {ClinicId}, Visit ID {VisitId}",
                     clinicId, clinicVisitId);
@@ -1038,17 +1065,39 @@ public class AppointmentRequest
                         if (invoiceRecord.Reference_Id.HasValue && invoiceRecord.Reference_Id.Value > 0)
                         {
                             var packageRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(invoiceRecord.Reference_Id.Value);
-                            if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
-                            {
-                                packageRecord.payment_verify = true;
-                                packageRecord.Is_editable = true;
-                                await _clinicPatientRecordRepository.UpdateAsync(packageRecord);
-                            }
+
+							// After updating Package/MEP (around line 56)
+							if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
+							{
+								packageRecord.payment_verify = true;
+								packageRecord.Is_editable = true;
+								await _clinicPatientRecordRepository.UpdateAsync(packageRecord);
+
+								// Extract the data you need here
+								string packageJsonData = packageRecord.JsonData;
+								string packageUniqueRecordId = packageRecord.UniqueRecordId;
+								string packageId = packageRecord.Id.ToString();
+								int clinicId = 36; // or get from receiptRecord if it has a ClinicId property
+
+								// Create appointments
+								Task.Run(async () => await CreateAppointmentsFromMepData(
+									packageJsonData,
+									packageId,
+									clinicId
+								));
+							}
+							//if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
+       //                     {
+       //                         packageRecord.payment_verify = true;
+       //                         packageRecord.Is_editable = true;
+       //                         await _clinicPatientRecordRepository.UpdateAsync(packageRecord);
+       //                     }
                         }
                     }
                 }
+				
 
-                return Ok(ApiResponseFactory.Success("Payment verification updated successfully."));
+				return Ok(ApiResponseFactory.Success("Payment verification updated successfully."));
             }
             catch (Exception ex)
             {

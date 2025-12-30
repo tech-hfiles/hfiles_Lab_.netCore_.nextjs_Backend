@@ -139,21 +139,30 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 		[HttpGet("clinic/{clinicId}/all-appointments")]
 		public async Task<IActionResult> GetAllAppointmentsByClinic(
-	int clinicId,
-	[FromQuery] int page = 1,
-	[FromQuery] int pageSize = 10,
-	[FromQuery] EnquiryStatus? status = null,
-	[FromQuery] PaymentStatus? paymentStatus = null)
+		int clinicId,
+		[FromQuery] int page = 1,
+		[FromQuery] int pageSize = 10,
+		[FromQuery] EnquiryStatus? status = null,
+		[FromQuery] PaymentStatus? paymentStatus = null,
+		[FromQuery] DateTime? startDate = null,
+		[FromQuery] DateTime? endDate = null)
 		{
 			try
 			{
-				var today = DateTime.Today;
+				// Use provided dates or default to today
+				var filterStartDate = startDate?.Date ?? DateTime.Today;
+				var filterEndDate = endDate?.Date ?? DateTime.Today;
 
-				// --- High5Appointments (Today only) --- 
+				// Ensure startDate is not after endDate
+				if (filterStartDate > filterEndDate)
+				{
+					return BadRequest(ApiResponseFactory.Fail("Start date cannot be after end date"));
+				}
+
+				// --- High5Appointments (Filtered by date range) --- 
 				var high5Result = await _appointmentService.GetAppointmentsByClinicIdWithUserAsync(clinicId);
-
 				var high5List = high5Result
-					.Where(h => h.PackageDate.Date == today)
+					.Where(h => h.PackageDate.Date >= filterStartDate && h.PackageDate.Date <= filterEndDate)
 					.Select(h => new AppointmentMergedDto
 					{
 						Id = h.Id,
@@ -178,12 +187,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						PaymentStatus = null
 					}).ToList();
 
-				// --- Enquiries (Today only) --- 
+				// --- Enquiries (Filtered by date range) --- 
 				var enquiriesResult = await _enquiryRepo.GetAllAsync(clinicId);
-
 				var filteredEnquiries = enquiriesResult
 					.Where(e => e.Status != EnquiryStatus.Member)
-					.Where(e => e.AppointmentDate.HasValue && e.AppointmentDate.Value.Date == today);
+					.Where(e => e.AppointmentDate.HasValue &&
+							   e.AppointmentDate.Value.Date >= filterStartDate &&
+							   e.AppointmentDate.Value.Date <= filterEndDate);
 
 				if (status != null)
 					filteredEnquiries = filteredEnquiries.Where(e => e.Status == status.Value);
@@ -204,8 +214,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					CoachId = null,
 					Status = e.Status.ToString(),
 					EpochTime = null,
-					PatientName = e.Firstname+" "+e.Lastname,
-
+					PatientName = e.Firstname + " " + e.Lastname,
 					Source = "Enquiry",
 					PaymentStatus = e.Payment
 				}).ToList();
@@ -213,7 +222,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				// --- Merge --- 
 				var mergedList = high5List
 					.Concat(enquiryList)
-					.OrderBy(x => x.Time)
+					.OrderBy(x => x.Date)
+					.ThenBy(x => x.Time)
 					.ToList();
 
 				// --- Pagination --- 
@@ -229,6 +239,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					PageSize = pageSize,
 					TotalRecords = totalRecords,
 					TotalPages = (int)Math.Ceiling((double)totalRecords / pageSize),
+					StartDate = filterStartDate,
+					EndDate = filterEndDate,
 					Data = pagedData
 				};
 
@@ -236,7 +248,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			}
 			catch (Exception ex)
 			{
-				_logger.LogError(ex, "Error fetching today's appointments for ClinicId {ClinicId}", clinicId);
+				_logger.LogError(ex, "Error fetching appointments for ClinicId {ClinicId}", clinicId);
 				return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
 			}
 		}

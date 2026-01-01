@@ -8,8 +8,8 @@ namespace HFiles_Backend.API.DTOs.Clinics
         [Required]
         public string ReportName { get; set; } = null!;
 
-        [Required]
-        public string ReportType { get; set; } = null!;
+       
+        public string? ReportType { get; set; } 
 
         [Required]
         public IFormFile File { get; set; } = null!;

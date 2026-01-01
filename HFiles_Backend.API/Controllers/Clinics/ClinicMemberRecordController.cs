@@ -92,7 +92,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                     // 🔹 Create temp file
                     var extension = Path.GetExtension(file.FileName);
-                    var fileName = $"{recordItem.ReportType.ToLower()}_clinic{request.ClinicId}_member{request.ClinicMemberId}_{Guid.NewGuid()}{extension}";
+                    var fileName = $"specialreport_clinic{request.ClinicId}_member{request.ClinicMemberId}_{Guid.NewGuid()}{extension}"; // ✅ FIXED
                     var tempPath = Path.Combine(Path.GetTempPath(), fileName);
 
                     using (var stream = new FileStream(tempPath, FileMode.Create))
@@ -115,9 +115,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     {
                         ClinicId = request.ClinicId,
                         ClinicMemberId = request.ClinicMemberId,
-                        UserId = clinicMember.UserId, // Populate UserId from ClinicMember
+                        UserId = clinicMember.UserId,
                         ReportName = recordItem.ReportName,
-                        ReportType = recordItem.ReportType,
+                        ReportType = "Special Report", // ✅ Already correct
                         ReportUrl = s3Url,
                         FileSize = file.Length,
                         EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
@@ -125,17 +125,17 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                     await _repository.AddAsync(record);
 
-                    uploadedRecordDetails.Add($"{recordItem.ReportName} ({recordItem.ReportType})");
+                    uploadedRecordDetails.Add($"{recordItem.ReportName} (Special Report)"); // ✅ FIXED
                     recordResponseList.Add(new UploadClinicMemberRecordResponseDto
                     {
                         ReportName = recordItem.ReportName,
-                        ReportType = recordItem.ReportType,
+                        ReportType = "Special Report", // ✅ FIXED
                         ReportUrl = s3Url,
                         FileSize = file.Length
                     });
                 }
 
-            
+
                 var clinicName = clinic.ClinicName ?? "Clinic";
 
                 // Response
@@ -147,14 +147,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     UploadedRecords = recordResponseList,
                     TotalRecords = recordResponseList.Count,
                     SentAt = DateTime.UtcNow,
-                    NotificationMessage = $"{uploadedRecordDetails.Count} record(s) uploaded for  by {clinicName}."
+                    NotificationMessage = $"{uploadedRecordDetails.Count} document(s) uploaded for  by {clinicName}."
                 };
 
                 _logger.LogInformation(
-                    "Uploaded {Count} records for Clinic ID {ClinicId}, Clinic Member ID {ClinicMemberId}",
+                    "Uploaded {Count} documents for Clinic ID {ClinicId}, Clinic Member ID {ClinicMemberId}",
                     uploadedRecordDetails.Count, request.ClinicId, request.ClinicMemberId);
 
-                return Ok(ApiResponseFactory.Success(response, "Records uploaded successfully."));
+                return Ok(ApiResponseFactory.Success(response, "Documents uploaded successfully."));
             }
             catch (Exception ex)
             {
@@ -182,7 +182,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (result == null || !result.Any())
                 {
                     return NotFound(ApiResponseFactory.Fail(
-                        "No records found for this clinic member."
+                        "No Documents found for this clinic member."
                     ));
                 }
 
@@ -201,15 +201,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     ClinicMemberId = r.ClinicMemberId
                 });
 
-                return Ok(ApiResponseFactory.Success(response, "Records retrieved successfully."));
+                return Ok(ApiResponseFactory.Success(response, "Documents retrieved successfully."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving records for clinic member {ClinicMemberId}", clinicMemberId);
+                _logger.LogError(ex, "Error retrieving Document for clinic member {ClinicMemberId}", clinicMemberId);
 
                 return StatusCode(
                     StatusCodes.Status500InternalServerError,
-                    ApiResponseFactory.Fail("An error occurred while retrieving records.")
+                    ApiResponseFactory.Fail("An error occurred while retrieving Document.")
                 );
             }
         }
@@ -226,7 +226,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 // 🔍 Get existing record
                 var record = await _repository.GetByIdAsync(recordId);
                 if (record == null)
-                    return NotFound(ApiResponseFactory.Fail("Record not found."));
+                    return NotFound(ApiResponseFactory.Fail("Document not found."));
 
                 // ❌ ReportName is required for this API
                 if (string.IsNullOrWhiteSpace(request.ReportName))
@@ -251,20 +251,20 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 };
 
                 _logger.LogInformation(
-                    "Renamed record {RecordId} in Clinic {ClinicId}",
+                    "Renamed Document {RecordId} in Clinic {ClinicId}",
                     recordId, record.ClinicId);
 
                 return Ok(ApiResponseFactory.Success(
                     response,
-                    "Report name updated successfully."
+                    "Document name updated successfully."
                 ));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error renaming record {RecordId}", recordId);
+                _logger.LogError(ex, "Error renaming Document {RecordId}", recordId);
                 return StatusCode(
                     500,
-                    ApiResponseFactory.Fail("An error occurred while updating the record.")
+                    ApiResponseFactory.Fail("An error occurred while updating the document.")
                 );
             }
         }
@@ -282,7 +282,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 var record = await _repository.GetByIdAsync(recordId);
                 if (record == null)
-                    return NotFound(ApiResponseFactory.Fail("Record not found."));
+                    return NotFound(ApiResponseFactory.Fail("Document not found."));
 
                 // ✅ FIX: READ UserId EXACTLY AS JWT SENDS IT
                 var userIdClaim = User.FindFirst("UserId")?.Value;
@@ -295,12 +295,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 return Ok(ApiResponseFactory.Success<object>(
                     null,
-                    "Record deleted successfully."
+                    "Document deleted successfully."
                 ));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting record {RecordId}", recordId);
+                _logger.LogError(ex, "Error deleting Document {RecordId}", recordId);
                 return StatusCode(
                     StatusCodes.Status500InternalServerError,
                     ApiResponseFactory.Fail("An error occurred while deleting the record.")

@@ -140,7 +140,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 		[HttpGet("clinic/{clinicId}/all-appointments")]
 		public async Task<IActionResult> GetAllAppointmentsByClinic(
 		int clinicId,
-		[FromQuery] int page = 1,
+		[FromQuery] int page = 1,	
 		[FromQuery] int pageSize = 10,
 		[FromQuery] EnquiryStatus? status = null,
 		[FromQuery] PaymentStatus? paymentStatus = null,
@@ -252,6 +252,162 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
 			}
 		}
+
+		// Add these methods to your existing controller
+
+		// ⭐ NEW: Get monthly statistics for calendar
+		[HttpGet("clinic/{clinicId}/calendar-stats")]
+		public async Task<IActionResult> GetCalendarStats(int clinicId)
+		{
+			try
+			{
+				// Get High5Appointments stats
+				var high5Result = await _appointmentService.GetAppointmentsByClinicIdWithUserAsync(clinicId);
+				var high5Stats = high5Result
+					.GroupBy(h => new { h.PackageDate.Year, h.PackageDate.Month })
+					.Select(g => new
+					{
+						Year = g.Key.Year,
+						Month = g.Key.Month,
+						MonthName = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("MMMM"),
+						Count = g.Count()
+					})
+					.OrderByDescending(x => x.Year)
+					.ThenByDescending(x => x.Month)
+					.Take(12)
+					.ToList();
+
+				// Get Enquiries stats
+				var enquiriesResult = await _enquiryRepo.GetAllAsync(clinicId);
+				var enquiryStats = enquiriesResult
+					.Where(e => e.Status != EnquiryStatus.Member && e.AppointmentDate.HasValue)
+					.GroupBy(e => new { e.AppointmentDate.Value.Year, e.AppointmentDate.Value.Month })
+					.Select(g => new
+					{
+						Year = g.Key.Year,
+						Month = g.Key.Month,
+						MonthName = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("MMMM"),
+						Count = g.Count()
+					})
+					.OrderByDescending(x => x.Year)
+					.ThenByDescending(x => x.Month)
+					.Take(12)
+					.ToList();
+
+				// Merge monthly counts
+				var mergedStats = high5Stats
+					.Concat(enquiryStats)
+					.GroupBy(s => new { s.Year, s.Month, s.MonthName })
+					.Select(g => new
+					{
+						Year = g.Key.Year,
+						Month = g.Key.Month,
+						MonthName = g.Key.MonthName,
+						Count = g.Sum(x => x.Count)
+					})
+					.OrderByDescending(x => x.Year)
+					.ThenByDescending(x => x.Month)
+					.Take(12)
+					.ToList();
+
+				var result = new
+				{
+					TotalCount = high5Result.Count() + enquiriesResult.Count(e => e.Status != EnquiryStatus.Member && e.AppointmentDate.HasValue),
+					MonthlyBreakdown = mergedStats
+				};
+
+				return Ok(ApiResponseFactory.Success(result));
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error fetching calendar stats for ClinicId {ClinicId}", clinicId);
+				return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
+			}
+		}
+
+		// ⭐ NEW: Get daily appointment counts for a specific month
+		[HttpGet("clinic/{clinicId}/calendar-daily/{year}/{month}")]
+		public async Task<IActionResult> GetDailyAppointments(int clinicId, int year, int month)
+		{
+			try
+			{
+				var startDate = new DateTime(year, month, 1);
+				var endDate = startDate.AddMonths(1).AddDays(-1);
+
+				// Get High5Appointments
+				var high5Result = await _appointmentService.GetAppointmentsByClinicIdWithUserAsync(clinicId);
+				var high5Daily = high5Result
+					.Where(h => h.PackageDate.Date >= startDate && h.PackageDate.Date <= endDate)
+					.GroupBy(h => h.PackageDate.Date)
+					.Select(g => new
+					{
+						Date = g.Key,
+						Count = g.Count(),
+					});
+
+				// Get Enquiries
+				var enquiriesResult = await _enquiryRepo.GetAllAsync(clinicId);
+				var enquiryDaily = enquiriesResult
+					.Where(e => e.Status != EnquiryStatus.Member)
+					.Where(e => e.AppointmentDate.HasValue &&
+							   e.AppointmentDate.Value.Date >= startDate &&
+							   e.AppointmentDate.Value.Date <= endDate)
+					.GroupBy(e => e.AppointmentDate.Value.Date)
+					.Select(g => new
+					{
+						Date = g.Key,
+						Count = g.Count(),
+						
+					});
+
+				// Merge daily data
+				var mergedDaily = high5Daily
+					.Concat(enquiryDaily)
+					.GroupBy(d => d.Date)
+					.Select(g => new
+					{
+						Date = g.Key.ToString("yyyy-MM-dd"),
+						Count = g.Sum(x => x.Count),
+						
+					})
+					.OrderBy(d => d.Date)
+					.ToList();
+
+				return Ok(ApiResponseFactory.Success(mergedDaily));
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error fetching daily appointments for ClinicId {ClinicId}", clinicId);
+				return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
+			}
+		}
+
+		// ⭐ NEW: Get appointments for a specific date (reuse existing with single date)
+		[HttpGet("clinic/{clinicId}/appointments-by-date")]
+		public async Task<IActionResult> GetAppointmentsByDate(
+			int clinicId,
+			[FromQuery] DateTime date)
+		{
+			try
+			{
+				// Reuse your existing method with same start and end date
+				return await GetAllAppointmentsByClinic(
+					clinicId,
+					page: 1,
+					pageSize: 100, // Get all appointments for the day
+					status: null,
+					paymentStatus: null,
+					startDate: date.Date,
+					endDate: date.Date
+				);
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error fetching appointments by date for ClinicId {ClinicId}", clinicId);
+				return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
+			}
+		}
+
 
 
 

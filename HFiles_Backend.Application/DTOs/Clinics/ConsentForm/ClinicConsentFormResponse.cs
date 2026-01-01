@@ -8,6 +8,7 @@
             public string Title { get; set; } = null!;
             public string? ConsentFormUrl { get; set; }
             public bool IsVerified { get; set; }
+            public long? EpochTime { get; set; }
         }
     }
 }

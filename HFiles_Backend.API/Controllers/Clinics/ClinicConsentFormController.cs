@@ -239,7 +239,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     ClinicConsentFormId = cf.Id,
                     Title = cf.ConsentForm.Title,
                     ConsentFormUrl = cf.ConsentFormUrl,
-                    IsVerified = cf.IsVerified
+                    IsVerified = cf.IsVerified,
+                    EpochTime = cf.EpochTime
                 }).ToList();
 
                 await transaction.CommitAsync();

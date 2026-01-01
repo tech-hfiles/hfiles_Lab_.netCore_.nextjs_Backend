@@ -24,5 +24,9 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         public string? ConsentFormUrl { get; set; }
 
         public bool IsVerified { get; set; } = false;
+
+        [Required(ErrorMessage = "EpochTime is required.")]
+        [Range(1, long.MaxValue, ErrorMessage = "EpochTime must be a valid timestamp.")]
+        public long EpochTime { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     }
 }

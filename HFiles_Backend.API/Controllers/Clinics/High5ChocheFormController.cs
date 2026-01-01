@@ -124,10 +124,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     consentId
                 );
 
-                if (form == null)
-                {
-                    return NotFound(ApiResponseFactory.Fail("Form not found."));
-                }
+               
 
                 return Ok(ApiResponseFactory.Success(new High5ChocheFormResponse
                 {

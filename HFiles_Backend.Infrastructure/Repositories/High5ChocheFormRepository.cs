@@ -84,34 +84,20 @@ namespace HFiles_Backend.Infrastructure.Repositories
         }
 
 
-        public async Task<High5ChocheForm?> GetByConsentIdAsync(
-             int clinicId,
-             int userId,
-             string consentId)
+        public async Task<High5ChocheForm?> GetByClinicUserFormAndConsentAsync(
+     int clinicId,
+     int userId,
+     string formName,
+     int consentId)
         {
-            var forms = await _context.high5ChocheForms
-                .Where(f => f.ClinicId == clinicId && f.UserId == userId)
-                .ToListAsync(); // Load data into memory first
-
-            return forms.FirstOrDefault(f =>
-            {
-                try
-                {
-                    var jsonDoc = JsonDocument.Parse(f.JsonData);
-                    if (jsonDoc.RootElement.TryGetProperty("urlParameters", out var urlParams))
-                    {
-                        if (urlParams.TryGetProperty("consentId", out var consentIdElement))
-                        {
-                            return consentIdElement.GetString() == consentId;
-                        }
-                    }
-                }
-                catch
-                {
-                    return false;
-                }
-                return false;
-            });
+            return await _context.high5ChocheForms
+                .FirstOrDefaultAsync(f =>
+                    f.ClinicId == clinicId &&
+                    f.UserId == userId &&
+                    f.FormName == formName &&
+                    f.ConsentId == consentId
+                );
         }
-}
+
+    }
 }

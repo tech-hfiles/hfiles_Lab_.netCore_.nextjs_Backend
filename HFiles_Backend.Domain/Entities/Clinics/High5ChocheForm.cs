@@ -35,5 +35,7 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Required(ErrorMessage = "EpochTime is required.")]
         [Range(1, long.MaxValue, ErrorMessage = "EpochTime must be a valid timestamp.")]
         public long EpochTime { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        public int? ConsentId { get; set; }
+
     }
 }

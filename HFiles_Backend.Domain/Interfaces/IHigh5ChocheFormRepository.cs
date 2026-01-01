@@ -17,6 +17,11 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<High5ChocheForm?> UpdateAsync(High5ChocheForm form);
         Task<bool> DeleteAsync(int id);
         Task<High5ChocheForm?> GetByClinicUserAndFormNameAsync(int clinicId, int userId, string formName);
-        Task<High5ChocheForm?> GetByConsentIdAsync(int clinicId, int userId, string consentId);
+        Task<High5ChocheForm?> GetByClinicUserFormAndConsentAsync(
+    int clinicId,
+    int userId,
+    string formName,
+    int consentId
+);
     }
 }

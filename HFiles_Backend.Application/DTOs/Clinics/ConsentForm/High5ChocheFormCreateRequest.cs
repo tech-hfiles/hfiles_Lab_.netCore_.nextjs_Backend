@@ -17,6 +17,7 @@ namespace HFiles_Backend.Application.DTOs.Clinics.ConsentForm
         public string JsonData { get; set; } = null!;
 
         public bool? IsSend { get; set; }
+        public int? ConsentId { get; set; }
     }
 
     public class High5ChocheFormResponse
@@ -28,5 +29,6 @@ namespace HFiles_Backend.Application.DTOs.Clinics.ConsentForm
         public string JsonData { get; set; } = null!;
         public bool? IsSend { get; set; }
         public long EpochTime { get; set; }
+        public int? ConsentId { get; set; }
     }
 }

@@ -42,9 +42,9 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Required(ErrorMessage = "Report URL is required.")]
         public string ReportUrl { get; set; } = null!;
 
-        [Required(ErrorMessage = "Report type is required.")]
+       
         [MaxLength(50, ErrorMessage = "Report type must not exceed 50 characters.")]
-        public string ReportType { get; set; } = null!;
+        public string? ReportType { get; set; }
 
         [Required(ErrorMessage = "File size is required.")]
         public long FileSize { get; set; }

@@ -32,25 +32,19 @@ namespace HFiles_Backend.API.Controllers.Clinics
         /// <param name="request">Form data payload</param>
         [HttpPost("clinics/{clinicId}/users/{userId}/high5-forms")]
         public async Task<IActionResult> CreateOrUpdateForm(
-      [FromRoute] int clinicId,
-      [FromRoute] int userId,
-      [FromBody] High5ChocheFormCreateRequest request)
+        [FromRoute] int clinicId,
+        [FromRoute] int userId,
+        [FromBody] High5ChocheFormCreateRequest request)
         {
             HttpContext.Items["Log-Category"] = "High5 Form Create/Update";
 
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
-                _logger.LogWarning("Validation failed for High5 form. Errors: {@Errors}", errors);
-                return BadRequest(ApiResponseFactory.Fail(errors));
+                return BadRequest(ApiResponseFactory.Fail(ModelState));
             }
 
             try
             {
-                // Check if a form already exists for this clinic, user, and form name
                 var existingForm = await _formRepository.GetByClinicUserAndFormNameAsync(
                     clinicId,
                     userId,
@@ -58,26 +52,20 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 );
 
                 High5ChocheForm savedForm;
-                string message;
 
                 if (existingForm != null)
                 {
-                    // Update existing form
+                    // UPDATE
                     existingForm.JsonData = request.JsonData;
                     existingForm.IsSend = request.IsSend ?? existingForm.IsSend;
+                    existingForm.ConsentId = request.ConsentId; // ✅ ADD
                     existingForm.EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
                     savedForm = await _formRepository.UpdateAsync(existingForm);
-                    message = "High5 form updated successfully.";
-
-                    _logger.LogInformation(
-                        "High5 form updated successfully. Form ID: {FormId}, Clinic ID: {ClinicId}, User ID: {UserId}",
-                        savedForm.Id, clinicId, userId
-                    );
                 }
                 else
                 {
-                    // Create new form
+                    // CREATE
                     var form = new High5ChocheForm
                     {
                         ClinicId = clinicId,
@@ -85,19 +73,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         FormName = request.FormName,
                         JsonData = request.JsonData,
                         IsSend = request.IsSend ?? false,
+                        ConsentId = request.ConsentId, // ✅ ADD
                         EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
                     };
 
                     savedForm = await _formRepository.SaveAsync(form);
-                    message = "High5 form created successfully.";
-
-                    _logger.LogInformation(
-                        "High5 form created successfully. Form ID: {FormId}, Clinic ID: {ClinicId}, User ID: {UserId}",
-                        savedForm.Id, clinicId, userId
-                    );
                 }
 
-                var response = new High5ChocheFormResponse
+                return Ok(ApiResponseFactory.Success(new High5ChocheFormResponse
                 {
                     Id = savedForm.Id,
                     ClinicId = savedForm.ClinicId,
@@ -105,52 +88,48 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     FormName = savedForm.FormName,
                     JsonData = savedForm.JsonData,
                     IsSend = savedForm.IsSend,
-                    EpochTime = savedForm.EpochTime,
-                };
-
-                return Ok(ApiResponseFactory.Success(response, message));
+                    ConsentId = savedForm.ConsentId, // ✅ ADD
+                    EpochTime = savedForm.EpochTime
+                }, "Form saved successfully."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating/updating High5 form for Clinic ID {ClinicId}, User ID {UserId}",
-                    clinicId, userId);
-                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while processing the form."));
+                _logger.LogError(ex, "Error saving High5 form");
+                return StatusCode(500, ApiResponseFactory.Fail("Internal server error"));
             }
         }
+
 
 
         /// <summary>
         /// Get a specific form by Form Name (NEW ENDPOINT)
         /// </summary>
-        [HttpGet("clinics/{clinicId}/users/{userId}/high5-forms/{formName}")]
+        [HttpGet("clinics/{clinicId}/users/{userId}/high5-forms/{formName}/consent/{consentId}")]
         public async Task<IActionResult> GetFormByName(
-            [FromRoute] int clinicId,
-            [FromRoute] int userId,
-            [FromRoute] string formName)
+    [FromRoute] int clinicId,
+    [FromRoute] int userId,
+    [FromRoute] string formName,
+    [FromRoute] int consentId)
         {
-            HttpContext.Items["Log-Category"] = "High5 Form Get By Name";
+            HttpContext.Items["Log-Category"] = "High5 Form Get";
 
             try
             {
-                // ✅ Decode %20 → space
                 var decodedFormName = Uri.UnescapeDataString(formName).Trim();
 
-                var form = await _formRepository.GetByClinicUserAndFormNameAsync(
+                var form = await _formRepository.GetByClinicUserFormAndConsentAsync(
                     clinicId,
                     userId,
-                    decodedFormName
+                    decodedFormName,
+                    consentId
                 );
 
                 if (form == null)
                 {
-                    _logger.LogWarning(
-                        "Form not found. Clinic ID: {ClinicId}, User ID: {UserId}, Form Name: {FormName}",
-                        clinicId, userId, decodedFormName
-                    );
                     return NotFound(ApiResponseFactory.Fail("Form not found."));
                 }
 
-                var response = new High5ChocheFormResponse
+                return Ok(ApiResponseFactory.Success(new High5ChocheFormResponse
                 {
                     Id = form.Id,
                     ClinicId = form.ClinicId,
@@ -158,25 +137,17 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     FormName = form.FormName,
                     JsonData = form.JsonData,
                     IsSend = form.IsSend,
-                    EpochTime = form.EpochTime,
-                };
-
-                _logger.LogInformation(
-                    "Form retrieved successfully. Form ID: {FormId}, Form Name: {FormName}",
-                    form.Id, decodedFormName
-                );
-
-                return Ok(ApiResponseFactory.Success(response, "Form retrieved successfully."));
+                    ConsentId = form.ConsentId,
+                    EpochTime = form.EpochTime
+                }, "Form retrieved successfully."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex,
-                    "Error retrieving form. Clinic ID: {ClinicId}, User ID: {UserId}, Form Name: {FormName}",
-                    clinicId, userId, formName
-                );
-                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while retrieving the form."));
+                _logger.LogError(ex, "Error retrieving form");
+                return StatusCode(500, ApiResponseFactory.Fail("Internal server error"));
             }
         }
+
 
 
         /// <summary>

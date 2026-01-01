@@ -34,10 +34,7 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Appointment
         [MaxLength(10, ErrorMessage = "Country code cannot exceed 10 characters.")]
         public string? CountryCode { get; set; }
 
-        // Appointment details
-        [Required(ErrorMessage = "Consent form names are required.")]
-        [MinLength(1, ErrorMessage = "At least one consent form must be selected.")]
-        public List<string> ConsentFormTitles { get; set; } = new();
+        public List<string>? ConsentFormTitles { get; set; } = new();
 
         [Required(ErrorMessage = "Appointment date is required.")]
         [RegularExpression(@"^\d{2}-\d{2}-\d{4}$", ErrorMessage = "Date must be in dd-MM-yyyy format.")]

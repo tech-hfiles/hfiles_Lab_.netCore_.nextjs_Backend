@@ -19,6 +19,7 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Hifi5_Packges
         public string IncludesPhysio { get; set; } = null!;
         public int PhysioSessions { get; set; }
         public string ExtensionAllowed { get; set; } = null!;
+        public string? HSN { get; set; }
         public long EpochTime { get; set; }
     }
 }

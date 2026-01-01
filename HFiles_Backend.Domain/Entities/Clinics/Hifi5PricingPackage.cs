@@ -65,6 +65,12 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Column("Extension_Allowed")]
         public string ExtensionAllowed { get; set; } = null!;
 
+        [Required(ErrorMessage = "HSN is required.")]
+        [StringLength(8, MinimumLength = 4, ErrorMessage = "HSN must be 4 to 8 digits.")]
+        [Column("HSN")]
+        public string? HsnNumber { get; set; } = null!;
+
+
         [Required(ErrorMessage = "EpochTime is required.")]
         [Range(1, long.MaxValue, ErrorMessage = "EpochTime must be a valid timestamp.")]
         public long EpochTime { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();

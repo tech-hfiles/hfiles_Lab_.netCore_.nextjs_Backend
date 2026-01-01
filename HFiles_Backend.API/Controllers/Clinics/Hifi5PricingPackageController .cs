@@ -310,6 +310,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 IncludesPhysio = package.IncludesPhysio,
                 PhysioSessions = package.PhysioSessions,
                 ExtensionAllowed = package.ExtensionAllowed,
+                HSN = package.HsnNumber,  
                 EpochTime = package.EpochTime
             };
         }
@@ -328,6 +329,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 IncludesPhysio = dto.IncludesPhysio,
                 PhysioSessions = dto.PhysioSessions,
                 ExtensionAllowed = dto.ExtensionAllowed,
+                HsnNumber = dto.HSN,  // ✅ This will work once entity is properly nullable
                 EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
             };
         }

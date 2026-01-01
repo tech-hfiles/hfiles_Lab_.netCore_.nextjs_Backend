@@ -48,5 +48,6 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Hifi5_Packges
         [Required(ErrorMessage = "Extension Allowed is required.")]
         [MaxLength(10, ErrorMessage = "Extension Allowed must not exceed 10 characters.")]
         public string ExtensionAllowed { get; set; } = null!;
+        public string HSN { get; set; }
     }
 }

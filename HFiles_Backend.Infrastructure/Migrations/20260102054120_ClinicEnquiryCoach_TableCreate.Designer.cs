@@ -3,6 +3,7 @@ using System;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260102054120_ClinicEnquiryCoach_TableCreate")]
+    partial class ClinicEnquiryCoachTableCreate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -111,9 +114,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ClinicId")
                         .HasColumnType("int");
 
                     b.Property<string>("Title")
@@ -224,7 +224,7 @@ namespace HFilesBackend.Infrastructure.Migrations
 
                     b.HasIndex("EnquiryId");
 
-                    b.ToTable("ClinicEnquiryCoaches");
+                    b.ToTable("ClinicEnquiryCoach");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicGoogleToken", b =>
@@ -382,6 +382,7 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .HasColumnType("varchar(255)");
 
                     b.Property<string>("ReportType")
+                        .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)");
 
@@ -917,9 +918,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("varchar(2048)");
 
-                    b.Property<long>("EpochTime")
-                        .HasColumnType("bigint");
-
                     b.Property<bool>("IsVerified")
                         .HasColumnType("tinyint(1)");
 
@@ -1058,9 +1056,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.Property<int>("ClinicId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ConsentId")
                         .HasColumnType("int");
 
                     b.Property<long>("EpochTime")
@@ -1999,21 +1994,21 @@ namespace HFilesBackend.Infrastructure.Migrations
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicEnquiryCoach", b =>
                 {
-                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicMember", "ClinicMember")
+                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicMemberRecord", "CoachRecord")
                         .WithMany()
                         .HasForeignKey("CoachId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicEnquiry", "ClinicEnquiry")
-                        .WithMany("AssignedCoaches")
+                        .WithMany()
                         .HasForeignKey("EnquiryId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("ClinicEnquiry");
 
-                    b.Navigation("ClinicMember");
+                    b.Navigation("CoachRecord");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicGoogleToken", b =>
@@ -2401,11 +2396,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Users");
-                });
-
-            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicEnquiry", b =>
-                {
-                    b.Navigation("AssignedCoaches");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicPatient", b =>

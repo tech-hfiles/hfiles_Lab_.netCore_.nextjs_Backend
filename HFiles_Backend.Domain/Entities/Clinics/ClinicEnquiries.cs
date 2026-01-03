@@ -76,5 +76,9 @@
 			[Required(ErrorMessage = "EpochTime is required.")]
 			[Range(1, long.MaxValue, ErrorMessage = "EpochTime must be a valid timestamp.")]
 			public long EpochTime { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-		}
+
+		// Add this at the end of your ClinicEnquiry class
+		public virtual ICollection<ClinicEnquiryCoach> AssignedCoaches { get; set; } = new List<ClinicEnquiryCoach>();
+
+	}
 	}

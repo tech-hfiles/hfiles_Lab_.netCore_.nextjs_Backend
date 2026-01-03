@@ -60,6 +60,9 @@ namespace HFiles_Backend.Infrastructure.Repositories
 		public async Task<ClinicEnquiry?> GetByIdAsync(int id)
 		{
 			return await _context.clinicEnquiry
+				.Include(e => e.AssignedCoaches)           // Include junction table
+					//.ThenInclude(ec => ec.CoachMember)     // Include clinicmembers
+						//.ThenInclude(cm => cm.User)        // Include users
 				.FirstOrDefaultAsync(e => e.Id == id);
 		}
 
@@ -108,5 +111,55 @@ namespace HFiles_Backend.Infrastructure.Repositories
 				.OrderBy(e => e.AppointmentTime)
 				.ToListAsync();
 		}
+
+		public async Task AssignCoachAsync(int enquiryId, int coachId)
+		{
+			try
+			{
+				// Optional: Remove existing assignments for this enquiry
+				var existing = await _context.ClinicEnquiryCoaches
+					.Where(x => x.EnquiryId == enquiryId)
+					.ToListAsync();
+
+				if (existing.Any())
+					_context.ClinicEnquiryCoaches.RemoveRange(existing);
+
+				// Validate that the coach exists
+				var validCoach = await _context.ClinicMembers
+					.FirstOrDefaultAsync(c => c.Id == coachId);
+
+				if (validCoach == null)
+					throw new Exception($"Invalid Coach ID: {coachId}");
+
+				// Create new mapping
+				var record = new ClinicEnquiryCoach
+				{
+					EnquiryId = enquiryId,
+					CoachId = coachId,
+					EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+				};
+
+				await _context.ClinicEnquiryCoaches.AddAsync(record);
+				await _context.SaveChangesAsync();
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Failed to assign coach for EnquiryId {EnquiryId}", enquiryId);
+				throw;
+			}
+		}
+
+		// Get all coaches assigned to a specific enquiry
+		public async Task<List<ClinicEnquiryCoach>> GetEnquiryCoachesAsync(int enquiryId)
+		{
+			return await _context.ClinicEnquiryCoaches
+				.AsNoTracking()
+				.Include(ec => ec.ClinicMember)         // Include clinic member details
+					.ThenInclude(cm => cm.User)        // Include linked user info if applicable
+				.Where(ec => ec.EnquiryId == enquiryId)
+				.ToListAsync();
+		}
+
+
 	}
 }

@@ -175,5 +175,12 @@ namespace HFiles_Backend.Infrastructure.Repositories
         }
 
         public void Add(ClinicMember member) => _context.ClinicMembers.Add(member);
-    }
+
+		public async Task<List<ClinicMember>> GetMembersByClinicIdAsync(int clinicId, string role)
+		{
+			return await _context.ClinicMembers
+				.Where(m => m.ClinicId == clinicId && m.Role == role && m.DeletedBy == 0)
+				.ToListAsync();
+		}
+	}
 }

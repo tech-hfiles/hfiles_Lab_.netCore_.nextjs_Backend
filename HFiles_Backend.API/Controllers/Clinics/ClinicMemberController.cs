@@ -83,13 +83,91 @@ namespace HFiles_Backend.API.Controllers.Clinics
             string joinedNames = string.Join(", ", names);
             return $"{joinedNames} were promoted to Admin by {promoter}.";
         }
+		// Get Members by Clinic ID
+		[HttpGet("clinics/{clinicId}/members")]
+		[Authorize(Policy = "SuperAdminOrAdminPolicy")]
+		public async Task<IActionResult> GetClinicMembers([FromRoute][Range(1, int.MaxValue)] int clinicId)
+		{
+			HttpContext.Items["Log-Category"] = "User Management";
+			_logger.LogInformation("Fetching members for Clinic ID: {ClinicId}", clinicId);
+
+			var userClinicIdStr = User.FindFirst("UserId")?.Value;
+			if (!int.TryParse(userClinicIdStr, out int userClinicId))
+			{
+				_logger.LogWarning("Member fetch failed: Invalid or missing ClinicId claim.");
+				return Unauthorized(ApiResponseFactory.Fail("Invalid or missing ClinicId claim."));
+			}
+
+			if (!await _clinicAuthorizationService.IsClinicAuthorized(userClinicId, User))
+			{
+				_logger.LogWarning("Unauthorized access attempt for Clinic ID {ClinicId}", userClinicId);
+				return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main clinic or its branches."));
+			}
+
+			try
+			{
+				var loggedInClinic = await _clinicRepository.GetByIdAsync(userClinicId);
+				if (loggedInClinic == null)
+				{
+					_logger.LogWarning("Member fetch failed: Clinic ID {ClinicId} not found.", userClinicId);
+					return BadRequest(ApiResponseFactory.Fail("Clinic not found"));
+				}
+
+				int mainClinicId = loggedInClinic.ClinicReference == 0 ? userClinicId : loggedInClinic.ClinicReference;
+				var branchIds = await _clinicRepository.GetBranchIdsAsync(mainClinicId);
+				branchIds.Add(mainClinicId);
+
+				// Verify the requested clinicId is within authorized branches
+				if (!branchIds.Contains(clinicId))
+				{
+					_logger.LogWarning("Clinic ID {ClinicId} is not within authorized branches", clinicId);
+					return Unauthorized(ApiResponseFactory.Fail("You can only view members from your clinic or its branches."));
+				}
+
+				// Get members with role "Member" for the specific clinic
+				var members = await _clinicMemberRepository.GetMembersByClinicIdAsync(clinicId, "Member");
+
+				if (!members.Any())
+				{
+					_logger.LogInformation("No members found for Clinic ID {ClinicId}.", clinicId);
+					return Ok(ApiResponseFactory.Success(new { Members = new List<object>() }, "No members found for this clinic."));
+				}
+
+				var memberList = new List<object>();
+				foreach (var member in members)
+				{
+					var user = await _userRepository.GetByIdAsync(member.UserId);
+					if (user != null && user.DeletedBy == 0)
+					{
+						memberList.Add(new
+						{
+							MemberId = member.Id,
+							UserId = member.UserId,
+							Name = $"{user.FirstName} {user.LastName}".Trim(),
+							Email = user.Email,
+							Role = member.Role,
+							ClinicId = member.ClinicId,
+							Coach = member.Coach,
+							CreatedAt = member.EpochTime
+						});
+					}
+				}
+
+				_logger.LogInformation("Members fetched: Clinic ID {ClinicId}, Count = {Count}", clinicId, memberList.Count);
+				return Ok(ApiResponseFactory.Success(new { Members = memberList }, "Members fetched successfully."));
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error fetching members for Clinic ID {ClinicId}", clinicId);
+				return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching members."));
+			}
+		}
 
 
 
 
-
-        // Add Members
-        [HttpPost("clinics/members")]
+		// Add Members
+		[HttpPost("clinics/members")]
         [Authorize(Policy = "SuperAdminOrAdminPolicy")]
         public async Task<IActionResult> AddClinicMember([FromBody] CreateClinicMember dto)
         {

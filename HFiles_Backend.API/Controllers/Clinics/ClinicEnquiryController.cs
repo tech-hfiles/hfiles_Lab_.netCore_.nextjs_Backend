@@ -1,4 +1,5 @@
-﻿using HFiles_Backend.API.Interfaces;
+﻿using HFiles_Backend.API.DTOs.Clinics;
+using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Enums;
@@ -264,6 +265,96 @@ public class ClinicEnquiryController : ControllerBase
 		var enquiries = await _repo.GetTodayAppointmentsAsync(clinicId, today);
 
 		return Ok(ApiResponseFactory.Success(enquiries));
+	}
+
+	// =====================================================
+	// GET : Get Assigned Coaches for an Enquiry
+	// =====================================================
+	[HttpGet("{id}/coaches")]
+	public async Task<IActionResult> GetEnquiryCoaches(int id)
+	{
+		HttpContext.Items["Log-Category"] = "Clinic Enquiry Coach";
+
+		// Check if the enquiry exists
+		var enquiry = await _repo.GetByIdAsync(id);
+		if (enquiry == null)
+			return NotFound(ApiResponseFactory.Fail("Enquiry not found."));
+
+		// Authorization check
+		bool isAuthorized = await _clinicAuthorizationService
+			.IsClinicAuthorized(enquiry.ClinicId, User);
+
+		if (!isAuthorized)
+		{
+			_logger.LogWarning("Unauthorized coach list access. EnquiryId {Id}", id);
+			return Unauthorized(ApiResponseFactory.Fail("Not authorized."));
+		}
+
+		// Get all assigned coaches for this enquiry
+		var coaches = await _repo.GetEnquiryCoachesAsync(id);
+
+		// Map to API response
+		var result = coaches.Select(ec => new
+		{
+			MappingId = ec.Id,
+			ClinicMemberId = ec.CoachId,
+			UserId = ec.ClinicMember?.UserId,
+			CoachName = $"{ec.ClinicMember?.User?.FirstName} {ec.ClinicMember?.User?.LastName}".Trim(),
+			Email = ec.ClinicMember?.User?.Email,
+			Contact = ec.ClinicMember?.User?.PhoneNumber,
+			CoachType = ec.ClinicMember?.Coach,   // e.g., "Personal Trainer"
+			Role = ec.ClinicMember?.Role,
+			AssignedAt = DateTimeOffset.FromUnixTimeSeconds(ec.EpochTime).UtcDateTime
+		});
+
+		return Ok(ApiResponseFactory.Success(result));
+	}
+
+
+
+
+
+
+
+
+	[HttpPost("assign-coach")]
+	public async Task<IActionResult> AssignCoach([FromBody] AddEnquiryCoachRequest request)
+	{
+		HttpContext.Items["Log-Category"] = "Clinic Enquiry Coach";
+
+		if (request == null)
+			return BadRequest(ApiResponseFactory.Fail("Request body is null or invalid."));
+
+		if (!ModelState.IsValid)
+			return BadRequest(ApiResponseFactory.Fail(ModelState.Values
+				.SelectMany(v => v.Errors)
+				.Select(e => e.ErrorMessage)
+				.ToList()));
+
+		var enquiry = await _repo.GetByIdAsync(request.ClinicEnquiryId);
+		if (enquiry == null)
+			return NotFound(ApiResponseFactory.Fail("Enquiry not found."));
+
+		bool isAuthorized = await _clinicAuthorizationService
+			.IsClinicAuthorized(enquiry.ClinicId, User);
+
+		if (!isAuthorized)
+			return Unauthorized(ApiResponseFactory.Fail("Not authorized to assign coaches."));
+
+		try
+		{
+			await _repo.AssignCoachAsync(request.ClinicEnquiryId, request.CoachId);
+		}
+		catch (Exception ex)
+		{
+			return BadRequest(ApiResponseFactory.Fail(ex.Message));
+		}
+
+		return Ok(ApiResponseFactory.Success(new
+		{
+			EnquiryId = request.ClinicEnquiryId,
+			AssignedCoachId = request.CoachId
+		}, "Coach assigned successfully."));
 	}
 
 

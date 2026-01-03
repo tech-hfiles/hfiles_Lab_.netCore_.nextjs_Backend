@@ -453,5 +453,8 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<High5ChocheForm> high5ChocheForms { get; set; }
 		public DbSet<High5Appointment> High5Appointments { get; set; }
 
+		public DbSet<ClinicEnquiryCoach> ClinicEnquiryCoaches { get; set; }
+
+
 	}
 }

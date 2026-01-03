@@ -138,27 +138,27 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			public PaymentStatus? PaymentStatus { get; set; }
 		}
 
-		[HttpGet("clinic/{clinicId}/all-appointments")]
-		public async Task<IActionResult> GetAllAppointmentsByClinic(
-		int clinicId,
-		[FromQuery] int page = 1,	
-		[FromQuery] int pageSize = 10,
-		[FromQuery] EnquiryStatus? status = null,
-		[FromQuery] PaymentStatus? paymentStatus = null,
-		[FromQuery] DateTime? startDate = null,
-		[FromQuery] DateTime? endDate = null)
-		{
-			try
+			[HttpGet("clinic/{clinicId}/all-appointments")]
+			public async Task<IActionResult> GetAllAppointmentsByClinic(
+			int clinicId,
+			[FromQuery] int page = 1,	
+			[FromQuery] int pageSize = 100,
+			[FromQuery] EnquiryStatus? status = null,
+			[FromQuery] PaymentStatus? paymentStatus = null,
+			[FromQuery] DateTime? startDate = null,
+			[FromQuery] DateTime? endDate = null)
 			{
-				// Use provided dates or default to today
-				var filterStartDate = startDate?.Date ?? DateTime.Today;
-				var filterEndDate = endDate?.Date ?? DateTime.Today;
-
-				// Ensure startDate is not after endDate
-				if (filterStartDate > filterEndDate)
+				try
 				{
-					return BadRequest(ApiResponseFactory.Fail("Start date cannot be after end date"));
-				}
+					// Use provided dates or default to today
+					var filterStartDate = startDate?.Date ?? DateTime.Today;
+					var filterEndDate = endDate?.Date ?? DateTime.Today;
+
+					// Ensure startDate is not after endDate
+					if (filterStartDate > filterEndDate)
+					{
+						return BadRequest(ApiResponseFactory.Fail("Start date cannot be after end date"));
+					}
 
 				// --- High5Appointments (Filtered by date range) --- 
 				var high5Result = await _appointmentService.GetAppointmentsByClinicIdWithUserAsync(clinicId);
@@ -189,19 +189,19 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						PaymentStatus = null
 					}).ToList();
 
-				// --- Enquiries (Filtered by date range) --- 
-				var enquiriesResult = await _enquiryRepo.GetAllAsync(clinicId);
-				var filteredEnquiries = enquiriesResult
-					.Where(e => e.Status != EnquiryStatus.Member)
-					.Where(e => e.AppointmentDate.HasValue &&
-							   e.AppointmentDate.Value.Date >= filterStartDate &&
-							   e.AppointmentDate.Value.Date <= filterEndDate);
+					// --- Enquiries (Filtered by date range) --- 
+					var enquiriesResult = await _enquiryRepo.GetAllAsync(clinicId);
+					var filteredEnquiries = enquiriesResult
+						.Where(e => e.Status != EnquiryStatus.Member)
+						.Where(e => e.AppointmentDate.HasValue &&
+								   e.AppointmentDate.Value.Date >= filterStartDate &&
+								   e.AppointmentDate.Value.Date <= filterEndDate);
 
-				if (status != null)
-					filteredEnquiries = filteredEnquiries.Where(e => e.Status == status.Value);
+					if (status != null)
+						filteredEnquiries = filteredEnquiries.Where(e => e.Status == status.Value);
 
-				if (paymentStatus != null)
-					filteredEnquiries = filteredEnquiries.Where(e => e.Payment == paymentStatus.Value);
+					if (paymentStatus != null)
+						filteredEnquiries = filteredEnquiries.Where(e => e.Payment == paymentStatus.Value);
 
 				var enquiryList = filteredEnquiries.Select(e => new AppointmentMergedDto
 				{
@@ -222,39 +222,39 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					PaymentStatus = e.Payment
 				}).ToList();
 
-				// --- Merge --- 
-				var mergedList = high5List
-					.Concat(enquiryList)
-					.OrderBy(x => x.Date)
-					.ThenBy(x => x.Time)
-					.ToList();
+					// --- Merge --- 
+					var mergedList = high5List
+						.Concat(enquiryList)
+						.OrderBy(x => x.Date)
+						.ThenBy(x => x.Time)
+						.ToList();
 
-				// --- Pagination --- 
-				int totalRecords = mergedList.Count;
-				var pagedData = mergedList
-					.Skip((page - 1) * pageSize)
-					.Take(pageSize)
-					.ToList();
+					// --- Pagination --- 
+					int totalRecords = mergedList.Count;
+					var pagedData = mergedList
+						.Skip((page - 1) * pageSize)
+						.Take(pageSize)
+						.ToList();
 
-				var result = new
+					var result = new
+					{
+						Page = page,
+						PageSize = pageSize,
+						TotalRecords = totalRecords,
+						TotalPages = (int)Math.Ceiling((double)totalRecords / pageSize),
+						StartDate = filterStartDate,
+						EndDate = filterEndDate,
+						Data = pagedData
+					};
+
+					return Ok(ApiResponseFactory.Success(result));
+				}
+				catch (Exception ex)
 				{
-					Page = page,
-					PageSize = pageSize,
-					TotalRecords = totalRecords,
-					TotalPages = (int)Math.Ceiling((double)totalRecords / pageSize),
-					StartDate = filterStartDate,
-					EndDate = filterEndDate,
-					Data = pagedData
-				};
-
-				return Ok(ApiResponseFactory.Success(result));
+					_logger.LogError(ex, "Error fetching appointments for ClinicId {ClinicId}", clinicId);
+					return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
+				}
 			}
-			catch (Exception ex)
-			{
-				_logger.LogError(ex, "Error fetching appointments for ClinicId {ClinicId}", clinicId);
-				return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
-			}
-		}
 
 		// Add these methods to your existing controller
 
@@ -277,7 +277,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					})
 					.OrderByDescending(x => x.Year)
 					.ThenByDescending(x => x.Month)
-					.Take(12)
 					.ToList();
 
 				// Get Enquiries stats
@@ -294,7 +293,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					})
 					.OrderByDescending(x => x.Year)
 					.ThenByDescending(x => x.Month)
-					.Take(12)
 					.ToList();
 
 				// Merge monthly counts
@@ -310,7 +308,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					})
 					.OrderByDescending(x => x.Year)
 					.ThenByDescending(x => x.Month)
-					.Take(12)
 					.ToList();
 
 				var result = new
@@ -397,7 +394,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				return await GetAllAppointmentsByClinic(
 					clinicId,
 					page: 1,
-					pageSize: 100, // Get all appointments for the day
+					pageSize: 1000000000, // Get all appointments for the day
 					status: null,
 					paymentStatus: null,
 					startDate: date.Date,

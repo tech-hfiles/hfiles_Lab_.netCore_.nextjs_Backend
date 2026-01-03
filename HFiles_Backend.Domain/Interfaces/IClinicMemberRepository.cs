@@ -19,5 +19,7 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<ClinicMember?> GetDeletedMemberByUserIdAsync(int userId, List<int> branchIds);
         Task<ClinicMember?> GetActiveMemberAsync(int userId, int clinicId);
         void Add(ClinicMember member);
-    }
+
+		Task<List<ClinicMember>> GetMembersByClinicIdAsync(int clinicId, string role);
+	}
 }

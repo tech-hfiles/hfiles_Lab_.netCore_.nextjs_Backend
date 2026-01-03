@@ -3,6 +3,7 @@ using System;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,14 +11,43 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260102091415_updated_colume_in_ClinicEnquiryCoach")]
+    partial class updatedcolumeinClinicEnquiryCoach
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
                 .HasAnnotation("ProductVersion", "7.0.2")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
+
+            modelBuilder.Entity("ClinicEnquiryCoach", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    b.Property<int>("CoachId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CoachMemberId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("EnquiryId")
+                        .HasColumnType("int");
+
+                    b.Property<long>("EpochTime")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CoachMemberId");
+
+                    b.HasIndex("EnquiryId");
+
+                    b.ToTable("ClinicEnquiryCoaches");
+                });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.BlacklistedToken", b =>
                 {
@@ -113,9 +143,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    b.Property<int?>("ClinicId")
-                        .HasColumnType("int");
-
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -203,30 +230,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.ToTable("clinicEnquiry");
                 });
 
-            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicEnquiryCoach", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    b.Property<int>("CoachId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("EnquiryId")
-                        .HasColumnType("int");
-
-                    b.Property<long>("EpochTime")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CoachId");
-
-                    b.HasIndex("EnquiryId");
-
-                    b.ToTable("ClinicEnquiryCoaches");
-                });
-
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicGoogleToken", b =>
                 {
                     b.Property<int>("Id")
@@ -309,11 +312,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.Property<string>("Coach")
                         .HasColumnType("longtext");
 
-                    b.Property<string>("Color")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
                     b.Property<int>("CreatedBy")
                         .HasColumnType("int");
 
@@ -387,6 +385,7 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .HasColumnType("varchar(255)");
 
                     b.Property<string>("ReportType")
+                        .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)");
 
@@ -922,9 +921,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("varchar(2048)");
 
-                    b.Property<long>("EpochTime")
-                        .HasColumnType("bigint");
-
                     b.Property<bool>("IsVerified")
                         .HasColumnType("tinyint(1)");
 
@@ -1063,9 +1059,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.Property<int>("ClinicId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ConsentId")
                         .HasColumnType("int");
 
                     b.Property<long>("EpochTime")
@@ -1953,6 +1946,25 @@ namespace HFilesBackend.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("ClinicEnquiryCoach", b =>
+                {
+                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicMember", "CoachMember")
+                        .WithMany()
+                        .HasForeignKey("CoachMemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicEnquiry", "Enquiry")
+                        .WithMany("AssignedCoaches")
+                        .HasForeignKey("EnquiryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CoachMember");
+
+                    b.Navigation("Enquiry");
+                });
+
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.BlacklistedToken", b =>
                 {
                     b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicSignup", "Clinic")
@@ -2000,25 +2012,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.Navigation("Clinic");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicEnquiryCoach", b =>
-                {
-                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicMember", "ClinicMember")
-                        .WithMany()
-                        .HasForeignKey("CoachId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("HFiles_Backend.Domain.Entities.Clinics.ClinicEnquiry", "ClinicEnquiry")
-                        .WithMany("AssignedCoaches")
-                        .HasForeignKey("EnquiryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ClinicEnquiry");
-
-                    b.Navigation("ClinicMember");
                 });
 
             modelBuilder.Entity("HFiles_Backend.Domain.Entities.Clinics.ClinicGoogleToken", b =>

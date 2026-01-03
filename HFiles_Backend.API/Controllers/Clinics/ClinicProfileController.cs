@@ -186,7 +186,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 PhoneNumber = user.PhoneNumber,
                 City = user.City,
                 State = user.State,
-                //AmountDue = amountDue  // NEW: Include amount due from last receipt
+                AmountDue = amountDue  // NEW: Include amount due from last receipt
             };
 
             _logger.LogInformation("Fetched patient details for HFID {HfId} with AmountDue: {AmountDue}",

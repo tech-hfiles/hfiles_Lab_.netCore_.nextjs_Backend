@@ -129,7 +129,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			public string? phone { get; set; }
 			public int? CoachId { get; set; }
 			public string CoachName { get; set; }  // ADD THIS LINE
-			public string Status { get; set; }
+            public string? CoachColor { get; set; }
+            public string Status { get; set; }
 			public long? EpochTime { get; set; }
 			public string PatientName { get; set; }
 			public string Source { get; set; }
@@ -159,33 +160,34 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						return BadRequest(ApiResponseFactory.Fail("Start date cannot be after end date"));
 					}
 
-					// --- High5Appointments (Filtered by date range) --- 
-					var high5Result = await _appointmentService.GetAppointmentsByClinicIdWithUserAsync(clinicId);
-					var high5List = high5Result
-						.Where(h => h.PackageDate.Date >= filterStartDate && h.PackageDate.Date <= filterEndDate)
-						.Select(h => new AppointmentMergedDto
-						{
-							Id = h.Id,
-							HFID = h.User.HfId,
-							phone = h.User.PhoneNumber,
-							ClinicId = h.ClinicId,
-							UserId = h.UserId,
-							PackageId = h.PackageId,
-							PackageName = h.PackageName,
-							Date = h.PackageDate,
-							Time = h.PackageTime,
-							CoachId = h.CoachId,
-							CoachName = h.CoachMember?.User != null
-								? $"{h.CoachMember.User.FirstName} {h.CoachMember.User.LastName}".Trim()
-								: "N/A",
-							Status = h.Status.ToString(),
-							EpochTime = h.EpochTime,
-							PatientName = h.User != null
-								? $"{h.User.FirstName} {h.User.LastName}".Trim()
-								: "N/A",
-							Source = "High5Appointment",
-							PaymentStatus = null
-						}).ToList();
+				// --- High5Appointments (Filtered by date range) --- 
+				var high5Result = await _appointmentService.GetAppointmentsByClinicIdWithUserAsync(clinicId);
+				var high5List = high5Result
+					.Where(h => h.PackageDate.Date >= filterStartDate && h.PackageDate.Date <= filterEndDate)
+					.Select(h => new AppointmentMergedDto
+					{
+						Id = h.Id,
+						HFID = h.User.HfId,
+						phone = h.User.PhoneNumber,
+						ClinicId = h.ClinicId,
+						UserId = h.UserId,
+						PackageId = h.PackageId,
+						PackageName = h.PackageName,
+						Date = h.PackageDate,
+						Time = h.PackageTime,
+						CoachId = h.CoachId,
+						CoachName = h.CoachMember?.User != null
+							? $"{h.CoachMember.User.FirstName} {h.CoachMember.User.LastName}".Trim()
+							: "N/A",
+                        CoachColor = h.CoachMember?.Color ?? "rgba(0, 0, 0, 1)",
+                        Status = h.Status.ToString(),
+						EpochTime = h.EpochTime,
+						PatientName = h.User != null
+							? $"{h.User.FirstName} {h.User.LastName}".Trim()
+							: "N/A",
+						Source = "High5Appointment",
+						PaymentStatus = null
+					}).ToList();
 
 					// --- Enquiries (Filtered by date range) --- 
 					var enquiriesResult = await _enquiryRepo.GetAllAsync(clinicId);
@@ -201,23 +203,24 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					if (paymentStatus != null)
 						filteredEnquiries = filteredEnquiries.Where(e => e.Payment == paymentStatus.Value);
 
-					var enquiryList = filteredEnquiries.Select(e => new AppointmentMergedDto
-					{
-						Id = e.Id,
-						ClinicId = e.ClinicId,
-						UserId = null,
-						phone = e.Contact,
-						PackageId = null,
-						PackageName = null,
-						Date = e.AppointmentDate,
-						Time = e.AppointmentTime.Value,
-						CoachId = null,
-						Status = e.Status.ToString(),
-						EpochTime = null,
-						PatientName = e.Firstname + " " + e.Lastname,
-						Source = "Enquiry",
-						PaymentStatus = e.Payment
-					}).ToList();
+				var enquiryList = filteredEnquiries.Select(e => new AppointmentMergedDto
+				{
+					Id = e.Id,
+					ClinicId = e.ClinicId,
+					UserId = null,
+					phone = e.Contact,
+					PackageId = null,
+					PackageName = null,
+					Date = e.AppointmentDate,
+					Time = e.AppointmentTime.Value,
+					CoachId = null,
+                    CoachColor = "rgba(0, 0, 0, 1)",
+                    Status = e.Status.ToString(),
+					EpochTime = null,
+					PatientName = e.Firstname + " " + e.Lastname,
+					Source = "Enquiry",
+					PaymentStatus = e.Payment
+				}).ToList();
 
 					// --- Merge --- 
 					var mergedList = high5List

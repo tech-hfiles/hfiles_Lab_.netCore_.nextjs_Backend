@@ -1,4 +1,5 @@
-﻿using HFiles_Backend.API.Interfaces;
+﻿using HFiles_Backend.API.DTOs.Clinics;
+using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.Member;
 using HFiles_Backend.Application.DTOs.Labs;
@@ -234,6 +235,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     PasswordHash = _passwordHasher.HashPassword(null!, dto.Password),
                     CreatedBy = creatorSuperAdmin.UserId,
                     Coach = dto.Coach,
+                    Color = dto.Color ?? "rgba(0, 0, 0, 1)",
                     DeletedBy = 0
                 };
 
@@ -253,6 +255,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     CreatedBy = createdByName,
                     Role = newMember.Role,
                     Coach = newMember.Coach,
+                    Color = newMember.Color,
                     EpochTime = newMember.EpochTime,
                     BranchClinicId = newMember.ClinicId != clinicId ? newMember.ClinicId : 0,
                     NotificationMessage = $"{fullNames} was successfully added by {createdByName}"
@@ -642,6 +645,193 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
         }
 
+
+        // Update Member Details
+        [HttpPatch("clinics/members/update")]
+        [Authorize(Policy = "SuperAdminOrAdminPolicy")]
+        public async Task<IActionResult> UpdateClinicMemberDetails([FromBody] UpdateClinicMemberDetails dto)
+        {
+            HttpContext.Items["Log-Category"] = "User Management";
+            _logger.LogInformation("Request received to update clinic member ID: {MemberId}", dto.MemberId);
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+
+            try
+            {
+                var clinicIdClaim = User.FindFirst("UserId")?.Value;
+                if (clinicIdClaim == null || !int.TryParse(clinicIdClaim, out int clinicId))
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing ClinicId claim."));
+
+                if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))
+                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your clinic or its branches."));
+
+                var updatedByClaim = User.FindFirst("ClinicAdminId")?.Value;
+                if (updatedByClaim == null || !int.TryParse(updatedByClaim, out int updatedByAdminId))
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing ClinicAdminId in token."));
+
+                string? updatedByName = await ResolveUsernameFromClaims(HttpContext, _context);
+                if (string.IsNullOrWhiteSpace(updatedByName))
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve updater identity."));
+
+                // First, get the member to find which clinic they belong to
+                var member = await _clinicMemberRepository.GetByIdAsync(dto.MemberId);
+                if (member == null)
+                    return NotFound(ApiResponseFactory.Fail($"Member with ID {dto.MemberId} not found."));
+
+                // Now check authorization using the member's clinic
+                var memberClinic = await _clinicRepository.GetByIdAsync(member.ClinicId);
+                if (memberClinic == null)
+                    return NotFound(ApiResponseFactory.Fail("Member's clinic not found."));
+
+                // Get the logged-in user's clinic
+                var userClinic = await _clinicRepository.GetByIdAsync(clinicId);
+                if (userClinic == null)
+                    return NotFound(ApiResponseFactory.Fail("Your clinic not found."));
+
+                // Determine main clinic IDs for both
+                int memberMainClinicId = memberClinic.ClinicReference == 0 ? member.ClinicId : memberClinic.ClinicReference;
+                int userMainClinicId = userClinic.ClinicReference == 0 ? clinicId : userClinic.ClinicReference;
+
+                // Check if they belong to the same clinic family
+                if (memberMainClinicId != userMainClinicId)
+                    return Unauthorized(ApiResponseFactory.Fail("You can only update members from your clinic or its branches."));
+
+                // Check if member is deleted
+                if (member.DeletedBy != 0)
+                    return BadRequest(ApiResponseFactory.Fail("Cannot update a deleted member."));
+
+                // Get member user details
+                var memberUser = await _userRepository.GetByIdAsync(member.UserId);
+                if (memberUser == null)
+                    return NotFound(ApiResponseFactory.Fail("Member user details not found."));
+
+                // Track what was updated
+                var updatedFields = new List<string>();
+
+                // Validate and update HFID if provided
+                if (!string.IsNullOrWhiteSpace(dto.HFID) && memberUser.HfId != dto.HFID)
+                {
+                    var existingUserWithHFID = await _userRepository.GetUserByHFIDExcludingUserIdAsync(dto.HFID, memberUser.Id);
+                    if (existingUserWithHFID != null)
+                        return BadRequest(ApiResponseFactory.Fail($"HFID {dto.HFID} is already in use by another user."));
+
+                    memberUser.HfId = dto.HFID;
+                    updatedFields.Add("HFID");
+                }
+
+                // Validate and update Email if provided
+                if (!string.IsNullOrWhiteSpace(dto.Email) && memberUser.Email != dto.Email)
+                {
+                    var existingUserWithEmail = await _userRepository.GetUserByEmailExcludingUserIdAsync(dto.Email, memberUser.Id);
+                    if (existingUserWithEmail != null)
+                        return BadRequest(ApiResponseFactory.Fail($"Email {dto.Email} is already in use by another user."));
+
+                    memberUser.Email = dto.Email;
+                    updatedFields.Add("Email");
+                }
+
+                // Update First Name if provided
+                if (!string.IsNullOrWhiteSpace(dto.FirstName) && memberUser.FirstName != dto.FirstName)
+                {
+                    memberUser.FirstName = dto.FirstName;
+                    updatedFields.Add("First Name");
+                }
+
+                // Update Last Name if provided
+                if (!string.IsNullOrWhiteSpace(dto.LastName) && memberUser.LastName != dto.LastName)
+                {
+                    memberUser.LastName = dto.LastName;
+                    updatedFields.Add("Last Name");
+                }
+
+                // Update Coach if provided
+                if (dto.Coach != null && member.Coach != dto.Coach)
+                {
+                    member.Coach = dto.Coach;
+                    updatedFields.Add("Coach");
+                }
+
+                //Update Color if provided
+                if (!string.IsNullOrWhiteSpace(dto.Color) && member.Color != dto.Color)
+                {
+                    member.Color = dto.Color;
+                    updatedFields.Add("Color");
+                }
+
+                // Update Password if provided
+                if (!string.IsNullOrWhiteSpace(dto.Password))
+                {
+                    member.PasswordHash = _passwordHasher.HashPassword(member, dto.Password);
+                    updatedFields.Add("Password");
+                }
+
+                // Check if anything was actually updated
+                if (updatedFields.Count == 0)
+                {
+                    return BadRequest(ApiResponseFactory.Fail("No fields were updated. Please provide values to update."));
+                }
+
+                // Save changes to both User and ClinicMember
+                if (updatedFields.Any(f => f != "Coach" && f != "Password" && f != "Color"))
+                {
+                    await _userRepository.UpdateUserAsync(memberUser);
+                }
+
+                if (updatedFields.Any(f => f == "Coach" || f == "Password" || f == "Color"))
+                {
+                    await _clinicMemberRepository.UpdateAsync(member);
+                }
+
+                await _clinicRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                int? branchClinicId = member.ClinicId != clinicId ? member.ClinicId : null;
+                string memberName = $"{memberUser.FirstName} {memberUser.LastName}".Trim();
+
+                var response = new
+                {
+                    MemberId = member.Id,
+                    UserId = member.UserId,
+                    Name = memberName,
+                    Email = memberUser.Email,
+                    HFID = memberUser.HfId,
+                    ClinicId = member.ClinicId,
+                    BranchClinicId = branchClinicId,
+                    Role = member.Role,
+                    Coach = member.Coach,
+                    Color = member.Color,
+                    UpdatedBy = updatedByName,
+                    UpdatedFields = updatedFields,
+                    EpochTime = member.EpochTime,
+                    NotificationMessage = $"{member.Role} {memberName} was updated by {updatedByName}. Updated: {string.Join(", ", updatedFields)}."
+                };
+
+                _logger.LogInformation("Successfully updated clinic member ID: {MemberId}. Updated fields: {Fields}",
+                    member.Id, string.Join(", ", updatedFields));
+
+                return Ok(ApiResponseFactory.Success(response, $"{memberName} updated successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating clinic member ID: {MemberId}", dto.MemberId);
+                await transaction.RollbackAsync();
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while updating the clinic member."));
+            }
+            finally
+            {
+                if (transaction.GetDbTransaction().Connection != null)
+                {
+                    await transaction.DisposeAsync();
+                }
+            }
+        }
 
 
 

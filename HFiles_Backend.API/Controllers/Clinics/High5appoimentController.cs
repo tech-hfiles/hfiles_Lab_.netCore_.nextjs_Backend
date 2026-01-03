@@ -129,7 +129,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			public string? phone { get; set; }
 			public int? CoachId { get; set; }
 			public string CoachName { get; set; }  // ADD THIS LINE
-			public string Status { get; set; }
+            public string? CoachColor { get; set; }
+            public string Status { get; set; }
 			public long? EpochTime { get; set; }
 			public string PatientName { get; set; }
 			public string Source { get; set; }
@@ -178,7 +179,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						CoachName = h.CoachMember?.User != null
 							? $"{h.CoachMember.User.FirstName} {h.CoachMember.User.LastName}".Trim()
 							: "N/A",
-						Status = h.Status.ToString(),
+                        CoachColor = h.CoachMember?.Color ?? "rgba(0, 0, 0, 1)",
+                        Status = h.Status.ToString(),
 						EpochTime = h.EpochTime,
 						PatientName = h.User != null
 							? $"{h.User.FirstName} {h.User.LastName}".Trim()
@@ -212,7 +214,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					Date = e.AppointmentDate,
 					Time = e.AppointmentTime.Value,
 					CoachId = null,
-					Status = e.Status.ToString(),
+                    CoachColor = "rgba(0, 0, 0, 1)",
+                    Status = e.Status.ToString(),
 					EpochTime = null,
 					PatientName = e.Firstname + " " + e.Lastname,
 					Source = "Enquiry",

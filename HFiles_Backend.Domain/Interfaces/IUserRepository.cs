@@ -73,5 +73,9 @@ namespace HFiles_Backend.Domain.Interfaces
         /// <param name="endDate">End date of the range (exclusive).</param>
         /// <returns>List of user statistics.</returns>
         //Task<List<UserClinicStatDto>> GetNewClinicUsersDetailedAsync(int clinicId, DateTime startDate, DateTime endDate);
+
+        Task<User?> GetUserByHFIDExcludingUserIdAsync(string hfid, int excludeUserId);
+        Task<User?> GetUserByEmailExcludingUserIdAsync(string email, int excludeUserId);
+        Task UpdateUserAsync(User user);
     }
 }

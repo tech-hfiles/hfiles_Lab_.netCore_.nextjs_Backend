@@ -15,6 +15,11 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Member
         [MaxLength(100, ErrorMessage = "Coach name must not exceed 100 characters.")]
         public string? Coach { get; set; }
 
+        [MaxLength(50, ErrorMessage = "Color must not exceed 50 characters.")]
+        [RegularExpression(@"^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+))?\s*\)$",
+            ErrorMessage = "Color must be in valid RGB or RGBA format (e.g., 'rgba(255, 0, 0, 1)').")]
+        public string? Color { get; set; }
+
 
         [Required(ErrorMessage = "Password is required.")]
         [MinLength(6, ErrorMessage = "Password must be at least 6 characters.")]

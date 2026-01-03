@@ -8,7 +8,9 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<bool> MemberExistsAsync(int userId, int clinicId, string role);
         Task AddAsync(ClinicMember member);
         Task<Dictionary<int, ClinicMember>> GetAllMembersAsync();
+      
         Task<ClinicMember?> GetByIdInBranchesAsync(int memberId, List<int> branchIds);
+        Task<ClinicMember?> GetByIdAsync(int memberId);
         Task UpdateAsync(ClinicMember member);
         void Update(ClinicMember member);
         Task<ClinicMember?> GetDeletedMemberByIdAsync(int memberId, int clinicId);

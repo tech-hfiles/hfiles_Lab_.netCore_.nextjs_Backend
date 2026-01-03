@@ -39,6 +39,9 @@ namespace HFiles_Backend.Domain.Entities.Clinics
 
         public string? Coach { get; set; }
 
+        [MaxLength(50, ErrorMessage = "Color must not exceed 50 characters.")]
+        public string Color { get; set; } = "rgba(0, 0, 0, 1)";
+
         [ForeignKey(nameof(CreatedBy))]
         public User CreatedByUser { get; set; } = null!;
 

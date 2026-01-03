@@ -86,6 +86,14 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .FirstOrDefaultAsync(m => m.Id == memberId && branchIds.Contains(m.ClinicId) && m.DeletedBy == 0);
         }
 
+
+        public async Task<ClinicMember?> GetByIdAsync(int memberId)
+        {
+            return await _context.ClinicMembers
+                .FirstOrDefaultAsync(m => m.Id == memberId && m.DeletedBy == 0);
+        }
+
+
         public async Task<List<DeletedClinicMemberDto>> GetDeletedMembersWithDetailsAsync(int clinicId, List<int> branchIds)
         {
             var query = from m in _context.ClinicMembers

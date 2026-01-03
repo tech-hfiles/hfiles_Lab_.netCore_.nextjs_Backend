@@ -627,5 +627,64 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 throw;
             }
         }
+
+        /// <summary>
+        /// Retrieves a user by HFID excluding a specific user ID (for unique validation during updates).
+        /// </summary>
+        public async Task<User?> GetUserByHFIDExcludingUserIdAsync(string hfid, int excludeUserId)
+        {
+            try
+            {
+                return await _context.Users
+                    .FirstOrDefaultAsync(u =>
+                        u.HfId == hfid &&
+                        u.Id != excludeUserId &&
+                        u.DeletedBy == 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user by HFID excluding user ID: {HFID}, {UserId}", hfid, excludeUserId);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Retrieves a user by email excluding a specific user ID (for unique validation during updates).
+        /// </summary>
+        public async Task<User?> GetUserByEmailExcludingUserIdAsync(string email, int excludeUserId)
+        {
+            try
+            {
+                return await _context.Users
+                    .FirstOrDefaultAsync(u =>
+                        u.Email == email &&
+                        u.Id != excludeUserId &&
+                        u.DeletedBy == 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user by email excluding user ID: {Email}, {UserId}", email, excludeUserId);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Updates an existing user entity.
+        /// </summary>
+        public async Task UpdateUserAsync(User user)
+        {
+            try
+            {
+                _context.Users.Update(user);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("User updated successfully. UserId: {UserId}", user.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating user ID: {UserId}", user.Id);
+                throw;
+            }
+        }
     }
 }

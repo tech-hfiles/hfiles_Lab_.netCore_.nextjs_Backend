@@ -571,5 +571,140 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
             }
         }
+
+
+        // GET: api/clinic/{clinicId}/consent-forms
+        [HttpGet("clinic/{clinicId}/consent-forms")]
+        [Authorize]
+        public async Task<IActionResult> GetConsentFormsByClinicId([FromRoute] int clinicId)
+        {
+            HttpContext.Items["Log-Category"] = "Consent Forms Retrieval";
+
+            try
+            {
+                // Check clinic authorization
+                bool isAuthorized = await _clinicRepository.IsClinicAuthorizedAsync(clinicId, User);
+                if (!isAuthorized)
+                {
+                    _logger.LogWarning("Unauthorized access attempt for Clinic ID {ClinicId}", clinicId);
+                    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to access this clinic's consent forms."));
+                }
+
+                var forms = await _clinicRepository.GetConsentFormsByClinicIdAsync(clinicId);
+
+                if (!forms.Any())
+                {
+                    _logger.LogInformation("No consent forms found for Clinic ID {ClinicId}", clinicId);
+                    return NotFound(ApiResponseFactory.Fail($"No consent forms found for clinic ID {clinicId}"));
+                }
+
+                var response = forms.Select(f => new
+                {
+                    Id = f.Id,
+                    Title = f.Title,
+                    ClinicId = f.ClinicId
+                }).ToList();
+
+                _logger.LogInformation("Retrieved {Count} consent forms for Clinic ID {ClinicId}", forms.Count(), clinicId);
+
+                return Ok(ApiResponseFactory.Success(response, "Consent forms retrieved successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving consent forms for Clinic ID {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while retrieving consent forms."));
+            }
+        }
+
+        // PUT: api/clinic/{clinicId}/consent-forms/{consentFormId}
+        [HttpPut("clinic/{clinicId}/consent-forms/{consentFormId}")]
+        [Authorize]
+        public async Task<IActionResult> UpdateConsentForm(
+            [FromRoute] int clinicId,
+            [FromRoute] int consentFormId,
+            [FromBody] UpdateConsentFormRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Consent Form Update";
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+
+                _logger.LogWarning("Validation failed for updating consent form. Errors: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                // Check clinic authorization
+                bool isAuthorized = await _clinicRepository.IsClinicAuthorizedAsync(clinicId, User);
+                if (!isAuthorized)
+                {
+                    _logger.LogWarning("Unauthorized update attempt for Clinic ID {ClinicId}", clinicId);
+                    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to update this clinic's consent forms."));
+                }
+
+                // Get the consent form
+                var consentForm = await _clinicRepository.GetConsentFormByIdAsync(consentFormId);
+
+                if (consentForm == null)
+                {
+                    _logger.LogWarning("Consent form ID {ConsentFormId} not found", consentFormId);
+                    return NotFound(ApiResponseFactory.Fail($"Consent form with ID {consentFormId} not found."));
+                }
+
+                // Verify the consent form belongs to the specified clinic
+                if (consentForm.ClinicId != clinicId)
+                {
+                    _logger.LogWarning(
+                        "Consent form ID {ConsentFormId} does not belong to Clinic ID {ClinicId}",
+                        consentFormId, clinicId);
+                    return BadRequest(ApiResponseFactory.Fail("This consent form does not belong to the specified clinic."));
+                }
+
+                // Store old title for logging
+                var oldTitle = consentForm.Title;
+
+                // Update the title
+                consentForm.Title = request.Title.Trim();
+
+                // Save changes
+                await _clinicRepository.UpdateConsentFormAsync(consentForm);
+                await transaction.CommitAsync();
+                committed = true;
+
+                var response = new
+                {
+                    Id = consentForm.Id,
+                    Title = consentForm.Title,
+                    ClinicId = consentForm.ClinicId
+                };
+
+                _logger.LogInformation(
+                    "Consent form ID {ConsentFormId} updated. Title changed from '{OldTitle}' to '{NewTitle}' for Clinic ID {ClinicId}",
+                    consentFormId, oldTitle, consentForm.Title, clinicId);
+
+                return Ok(ApiResponseFactory.Success(response, "Consent form updated successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error updating consent form ID {ConsentFormId} for Clinic ID {ClinicId}",
+                    consentFormId, clinicId);
+
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while updating the consent form."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
     }
 }

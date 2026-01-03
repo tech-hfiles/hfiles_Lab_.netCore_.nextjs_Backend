@@ -106,16 +106,20 @@ namespace HFiles_Backend.API.Controllers.Clinics
         /// </summary>
         [HttpGet("clinics/{clinicId}/users/{userId}/high5-forms/{formName}/consent/{consentId}")]
         public async Task<IActionResult> GetFormByName(
-    [FromRoute] int clinicId,
-    [FromRoute] int userId,
-    [FromRoute] string formName,
-    [FromRoute] int consentId)
+            [FromRoute] int clinicId,
+            [FromRoute] int userId,
+            [FromRoute] string formName,
+            [FromRoute] int consentId)
         {
             HttpContext.Items["Log-Category"] = "High5 Form Get";
-
             try
             {
                 var decodedFormName = Uri.UnescapeDataString(formName).Trim();
+
+                _logger.LogInformation(
+                    "🔍 Searching for form - ClinicId: {ClinicId}, UserId: {UserId}, FormName: '{FormName}', ConsentId: {ConsentId}",
+                    clinicId, userId, decodedFormName, consentId
+                );
 
                 var form = await _formRepository.GetByClinicUserFormAndConsentAsync(
                     clinicId,
@@ -124,7 +128,25 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     consentId
                 );
 
-               
+                // ✅ If form is null (first time), return empty/default response
+                if (form == null)
+                {
+                    _logger.LogInformation("📝 Form not found - returning empty form for first-time creation");
+
+                    return Ok(ApiResponseFactory.Success(new High5ChocheFormResponse
+                    {
+                        Id = 0, // ✅ Default ID
+                        ClinicId = clinicId,
+                        UserId = userId,
+                        FormName = decodedFormName,
+                        JsonData = "{}", // ✅ Empty JSON object
+                        IsSend = false,
+                        ConsentId = consentId,
+                        EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds() // ✅ Current time
+                    }, "Form not found - new form can be created."));
+                }
+
+                _logger.LogInformation("✅ Form retrieved successfully");
 
                 return Ok(ApiResponseFactory.Success(new High5ChocheFormResponse
                 {
@@ -140,7 +162,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving form");
+                _logger.LogError(ex, "❌ Error retrieving form");
                 return StatusCode(500, ApiResponseFactory.Fail("Internal server error"));
             }
         }

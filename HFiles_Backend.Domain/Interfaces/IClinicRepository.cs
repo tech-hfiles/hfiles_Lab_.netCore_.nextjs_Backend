@@ -46,5 +46,8 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<ClinicVisit?> GetVisitAsync(int clinicId, int patientId, DateTime visitDate);
         Task<List<ClinicVisitConsentForm>> GetConsentFormsForVisitAsync(int visitId);
         Task SaveChangesAsync();
+        Task<IEnumerable<ClinicConsentForm>> GetConsentFormsByClinicIdAsync(int clinicId);
+        Task<ClinicConsentForm?> GetConsentFormByIdAsync(int consentFormId);
+        Task UpdateConsentFormAsync(ClinicConsentForm consentForm);
     }
 }

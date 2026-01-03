@@ -25,7 +25,7 @@ namespace HFiles_Backend.Application.DTOs.Clinics.ConsentForm
         public int Id { get; set; }
         public int ClinicId { get; set; }
         public int UserId { get; set; }
-        public string FormName { get; set; } = null!;
+        public string? FormName { get; set; } = null!;
         public string JsonData { get; set; } = null!;
         public bool? IsSend { get; set; }
         public long EpochTime { get; set; }

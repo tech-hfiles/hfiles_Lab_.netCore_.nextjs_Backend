@@ -327,5 +327,24 @@ namespace HFiles_Backend.Infrastructure.Repositories
         {
             await _context.SaveChangesAsync();
         }
+
+        public async Task<IEnumerable<ClinicConsentForm>> GetConsentFormsByClinicIdAsync(int clinicId)
+        {
+            return await _context.ClinicConsentForms
+                .Where(f => f.ClinicId == clinicId)
+                .ToListAsync();
+        }
+
+        public async Task<ClinicConsentForm?> GetConsentFormByIdAsync(int consentFormId)
+        {
+            return await _context.ClinicConsentForms
+                .FirstOrDefaultAsync(f => f.Id == consentFormId);
+        }
+
+        public async Task UpdateConsentFormAsync(ClinicConsentForm consentForm)
+        {
+            _context.ClinicConsentForms.Update(consentForm);
+            await _context.SaveChangesAsync();
+        }
     }
 }

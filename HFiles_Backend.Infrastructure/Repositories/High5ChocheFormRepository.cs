@@ -91,12 +91,12 @@ namespace HFiles_Backend.Infrastructure.Repositories
      int consentId)
         {
             return await _context.high5ChocheForms
-                .FirstOrDefaultAsync(f =>
-                    f.ClinicId == clinicId &&
-                    f.UserId == userId &&
-                    f.FormName == formName &&
-                    f.ConsentId == consentId
-                );
+                 .FirstOrDefaultAsync(f =>
+            f.ClinicId == clinicId &&
+            f.UserId == userId &&
+            f.FormName == formName && // ⚠️ Case-sensitive? Trim issues?
+            f.ConsentId == consentId
+        );
         }
 
     }

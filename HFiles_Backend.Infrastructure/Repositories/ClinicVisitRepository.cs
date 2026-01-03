@@ -116,5 +116,28 @@ namespace HFiles_Backend.Infrastructure.Repositories
             _context.ClinicVisits.Remove(visit);
             await _context.SaveChangesAsync();
         }
+
+        // In your ClinicVisitRepository.cs implementation file:
+
+        public async Task<ClinicVisitConsentForm?> GetByVisitIdAndConsentFormAsync(int clinicVisitId, int consentFormId)
+        {
+            return await _context.ClinicVisitConsentForms
+                .FirstOrDefaultAsync(x => x.ClinicVisitId == clinicVisitId && x.ConsentFormId == consentFormId);
+        }
+
+        public async Task DeleteAsync(int id)
+        {
+            var entity = await _context.ClinicVisitConsentForms.FindAsync(id);
+            if (entity != null)
+            {
+                _context.ClinicVisitConsentForms.Remove(entity);
+                await _context.SaveChangesAsync();
+            }
+        }
+        public async Task DeleteConsentFormAsync(ClinicVisitConsentForm consentForm)
+        {
+            _context.ClinicVisitConsentForms.Remove(consentForm);
+            await _context.SaveChangesAsync();
+        }
     }
 }

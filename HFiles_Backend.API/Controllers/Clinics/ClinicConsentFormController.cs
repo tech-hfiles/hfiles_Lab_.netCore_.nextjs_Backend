@@ -405,11 +405,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     }
                     else if (consentFormName.Contains("registration"))
                     {
-                        formUrl =  "high5RegistrationForm";
+                        formUrl = "high5RegistrationForm";
                     }
                     else if (consentFormName.Contains("waiver"))
                     {
-                        formUrl =  "high5WavierForm";
+                        formUrl = "high5WavierForm";
                     }
                     else if (consentFormName.Contains("terms") || consentFormName.Contains("conditions"))
                     {
@@ -540,7 +540,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     "{Count} consent form(s) sent to Patient {PatientName} (HFID: {HFID}) for Clinic {ClinicId}. Forms: {Forms}. Email sent: {EmailSent}",
                     consentFormEntries.Count, targetPatient.PatientName, targetPatient.HFID, clinicId, consentFormNames, emailSent);
 
-                return Ok(ApiResponseFactory.Success(response, "Consent forms sent successfully to patient."));
+                return Ok(ApiResponseFactory.Success(response, "Consent forms sent successfully."));
             }
             catch (Exception ex)
             {
@@ -704,6 +704,42 @@ namespace HFiles_Backend.API.Controllers.Clinics
             {
                 if (!committed && transaction.GetDbTransaction().Connection != null)
                     await transaction.RollbackAsync();
+            }
+        }
+
+
+        /// <summary>
+        /// Delete a Clinic Visit Consent Form by its primary Id
+        /// </summary>
+        /// <param name="id">The Clinic Visit Consent Form Id (Primary Key)</param>
+        [HttpDelete("clinic-visit-consent-forms/{id}")]
+        [Authorize]
+        public async Task<IActionResult> DeleteConsentForm([FromRoute] int id)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Visit Consent Form Delete";
+
+            try
+            {
+                _logger.LogInformation("Attempting to delete consent form with Id: {Id}", id);
+
+                var consentForm = await _clinicVisitRepository.GetVisitConsentFormAsync(id);
+
+                if (consentForm == null)
+                {
+                    _logger.LogWarning("Consent form not found with Id: {Id}", id);
+                    return NotFound(ApiResponseFactory.Fail("Consent form not found."));
+                }
+
+                await _clinicVisitRepository.DeleteAsync(id);
+
+                _logger.LogInformation("Consent form deleted successfully - Id: {Id}", id);
+
+                return Ok(ApiResponseFactory.Success("Consent form deleted successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting consent form with Id: {Id}", id);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while deleting the consent form."));
             }
         }
     }

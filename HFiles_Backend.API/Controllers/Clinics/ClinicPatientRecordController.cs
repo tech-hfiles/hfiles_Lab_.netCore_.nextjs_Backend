@@ -1,6 +1,4 @@
-﻿using System.Globalization;
-using System.Text;
-using HFiles_Backend.API.Controllers.Labs;
+﻿using HFiles_Backend.API.Controllers.Labs;
 using HFiles_Backend.API.DTOs.Clinics;
 using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.API.Services;
@@ -20,7 +18,12 @@ using Newtonsoft.Json;
 using OfficeOpenXml;
 using PuppeteerSharp;
 using PuppeteerSharp.Media;
+using System.Globalization;
+using System.Text;
 using static Google.Apis.Requests.BatchRequest;
+using static HFiles_Backend.API.DTOs.Clinics.ReceiptDocumentDTOs;
+using static System.Net.Mime.MediaTypeNames;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -9306,6 +9309,354 @@ public class AppointmentRequest
                 _logger.LogError(ex, "Error deleting record {RecordId} for Clinic {ClinicId}, Patient {PatientId}, Visit {VisitId}",
                     recordId, clinicId, patientId, clinicVisitId);
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while deleting the record."));
+            }
+        }
+
+
+       
+        /// Upload documents and attach to a receipt (Clinic ID 36 only)
+       
+        [HttpPost("clinic/receipt/documents/upload")]
+        [Authorize]
+        public async Task<IActionResult> UploadReceiptDocuments([FromForm] ReceiptDocumentUploadRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Receipt Document Upload";
+
+            // Validate clinic ID is 36 (High5 Performance)
+            if (request.ClinicId != 36)
+            {
+                _logger.LogWarning("Receipt document upload attempted for non-High5 clinic: {ClinicId}", request.ClinicId);
+                return BadRequest(ApiResponseFactory.Fail("Receipt document attachment is only available for High5 Performance clinic."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed for receipt document upload. Errors: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            // Authorization check
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized receipt document upload attempt for Clinic ID {ClinicId}", request.ClinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to upload documents for this clinic."));
+            }
+
+            // Validate file types and sizes
+            var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx" };
+            foreach (var file in request.Documents)
+            {
+                var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+                var fileSize = file.Length;
+
+                if (fileSize > 50 * 1024 * 1024) // 50MB limit
+                {
+                    return BadRequest(ApiResponseFactory.Fail($"File {file.FileName} exceeds the 50MB limit."));
+                }
+
+                if (!allowedExtensions.Contains(extension))
+                {
+                    _logger.LogWarning("Invalid file type attempted: {FileName} with extension: {Extension}",
+                        file.FileName, extension);
+                    return BadRequest(ApiResponseFactory.Fail(
+                        $"Unsupported file type for {file.FileName}. Only PDF, JPG, JPEG, PNG, DOC, and DOCX files are allowed."));
+                }
+            }
+
+            // Verify visit exists
+            var visit = await _clinicVisitRepository.GetByIdAsync(request.VisitId);
+            if (visit == null || visit.ClinicId != request.ClinicId)
+            {
+                return NotFound(ApiResponseFactory.Fail("Clinic visit not found."));
+            }
+
+            // Verify patient exists
+            var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(request.PatientId);
+            if (clinicPatient == null)
+            {
+                return NotFound(ApiResponseFactory.Fail("Patient not found."));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var uploadedUrls = new List<string>();
+
+                // Upload each document to S3
+                foreach (var file in request.Documents)
+                {
+                    var fileName = $"receipt_{request.ReceiptNumber}_{request.ClinicId}_{request.PatientId}_{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+                    var tempPath = Path.Combine(Path.GetTempPath(), fileName);
+
+                    // Save to temp file
+                    using (var stream = new FileStream(tempPath, FileMode.Create))
+                    {
+                        await file.CopyToAsync(stream);
+                    }
+
+                    // Upload to S3
+                    var s3Url = await _s3StorageService.UploadFileToS3(tempPath, $"clinic/receipts/{fileName}");
+
+                    if (s3Url != null)
+                    {
+                        uploadedUrls.Add(s3Url);
+                    }
+
+                    // Delete temp file
+                    System.IO.File.Delete(tempPath);
+                }
+
+                if (!uploadedUrls.Any())
+                {
+                    return StatusCode(500, ApiResponseFactory.Fail("Failed to upload files to S3."));
+                }
+
+                // Check if receipt document record already exists
+                var existingRecord = await _clinicPatientRecordRepository
+                    .GetReceiptDocumentByReceiptNumberAsync(request.ClinicId, request.ReceiptNumber);
+
+                if (existingRecord != null)
+                {
+                    // Append new URLs to existing record
+                    var existingUrls = System.Text.Json.JsonSerializer.Deserialize<List<string>>(existingRecord.JsonData) ?? new List<string>();
+                    existingUrls.AddRange(uploadedUrls);
+                    existingRecord.JsonData = System.Text.Json.JsonSerializer.Serialize(existingUrls);
+                    existingRecord.EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+                    await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
+
+                    _logger.LogInformation("Updated existing receipt document record for Receipt {ReceiptNumber}", request.ReceiptNumber);
+                }
+                else
+                {
+                    // Create new record
+                    var record = new ClinicPatientRecord
+                    {
+                        ClinicId = request.ClinicId,
+                        PatientId = request.PatientId,
+                        ClinicVisitId = request.VisitId,
+                        Type = RecordType.Images,
+                        UniqueRecordId = request.ReceiptNumber,
+                        JsonData = System.Text.Json.JsonSerializer.Serialize(uploadedUrls),
+                        SendToPatient = false,
+                        EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                    };
+
+                    await _clinicPatientRecordRepository.SaveAsync(record);
+
+                    _logger.LogInformation("Created new receipt document record for Receipt {ReceiptNumber}", request.ReceiptNumber);
+                }
+
+                await transaction.CommitAsync();
+                committed = true;
+
+                // Invalidate cache
+                _cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+                var response = new ReceiptDocumentUploadResponse
+                {
+                    ReceiptNumber = request.ReceiptNumber,
+                    ClinicId = request.ClinicId,
+                    PatientId = request.PatientId,
+                    VisitId = request.VisitId,
+                    TotalDocumentsUploaded = uploadedUrls.Count,
+                    DocumentUrls = uploadedUrls,
+                    Message = $"Successfully uploaded {uploadedUrls.Count} document(s) for receipt {request.ReceiptNumber}."
+                };
+
+                _logger.LogInformation(
+                    "Uploaded {Count} documents for Receipt {ReceiptNumber}, Clinic {ClinicId}, Patient {PatientId}, Visit {VisitId}",
+                    uploadedUrls.Count, request.ReceiptNumber, request.ClinicId, request.PatientId, request.VisitId);
+
+                return Ok(ApiResponseFactory.Success(response, response.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error uploading receipt documents for Receipt {ReceiptNumber}, Clinic {ClinicId}",
+                    request.ReceiptNumber, request.ClinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while uploading documents."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
+
+
+        /// Get all receipt documents for a specific visit (Clinic ID 36 only)
+      
+        [HttpGet("clinic/{clinicId}/patient/{patientId}/visit/{visitId}/receipt-documents")]
+        [Authorize]
+        public async Task<IActionResult> GetReceiptDocuments(
+            [FromRoute] int clinicId,
+            [FromRoute] int patientId,
+            [FromRoute] int visitId)
+        {
+            HttpContext.Items["Log-Category"] = "Receipt Document Fetch";
+
+            // Validate clinic ID is 36
+            if (clinicId != 36)
+            {
+                _logger.LogWarning("Receipt document fetch attempted for non-High5 clinic: {ClinicId}", clinicId);
+                return BadRequest(ApiResponseFactory.Fail("Receipt document attachment is only available for High5 Performance clinic."));
+            }
+
+            if (clinicId <= 0 || patientId <= 0 || visitId <= 0)
+            {
+                _logger.LogWarning("Invalid IDs. ClinicId: {ClinicId}, PatientId: {PatientId}, VisitId: {VisitId}",
+                    clinicId, patientId, visitId);
+                return BadRequest(ApiResponseFactory.Fail("Clinic ID, Patient ID, and Visit ID must be positive integers."));
+            }
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized receipt document fetch attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view documents for this clinic."));
+            }
+
+            try
+            {
+                var records = await _clinicPatientRecordRepository
+                    .GetReceiptDocumentsByVisitAsync(clinicId, patientId, visitId);
+
+                var documentInfoList = records.Select(r =>
+                {
+                    var urls = System.Text.Json.JsonSerializer.Deserialize<List<string>>(r.JsonData) ?? new List<string>();
+
+                    return new DocumentInfo
+                    {
+                        RecordId = r.Id,
+                        ReceiptNumber = r.UniqueRecordId ?? "",
+                        DocumentUrls = urls,
+                        UploadedAt = r.EpochTime
+                    };
+                }).ToList();
+
+                var response = new ReceiptDocumentGetResponse
+                {
+                    ClinicId = clinicId,
+                    PatientId = patientId,
+                    VisitId = visitId,
+                    Documents = documentInfoList
+                };
+
+                _logger.LogInformation(
+                    "Fetched {Count} receipt document records for Clinic {ClinicId}, Patient {PatientId}, Visit {VisitId}",
+                    documentInfoList.Count, clinicId, patientId, visitId);
+
+                return Ok(ApiResponseFactory.Success(response, "Receipt documents fetched successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching receipt documents for Clinic {ClinicId}, Patient {PatientId}, Visit {VisitId}",
+                    clinicId, patientId, visitId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching receipt documents."));
+            }
+        }
+
+        /// Delete receipt documents by receipt number (Clinic ID 36 only)
+
+        /// <summary>
+        /// Delete receipt documents by record ID (Clinic ID 36 only)
+        /// </summary>
+        [HttpDelete("clinic/receipt/documents/{recordId}")]
+        [Authorize]
+        public async Task<IActionResult> DeleteReceiptDocuments(
+            [FromRoute] int recordId,
+            [FromQuery] int clinicId)
+        {
+            HttpContext.Items["Log-Category"] = "Receipt Document Delete";
+
+            // Validate clinic ID is 36
+            if (clinicId != 36)
+            {
+                _logger.LogWarning("Receipt document delete attempted for non-High5 clinic: {ClinicId}", clinicId);
+                return BadRequest(ApiResponseFactory.Fail("Receipt document attachment is only available for High5 Performance clinic."));
+            }
+
+            if (recordId <= 0)
+            {
+                return BadRequest(ApiResponseFactory.Fail("Record ID must be a positive integer."));
+            }
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized receipt document delete attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to delete documents for this clinic."));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                // Get the record first to verify it exists and belongs to the clinic
+                var record = await _clinicPatientRecordRepository.GetRecordByIdAsync(recordId);
+
+                if (record == null)
+                {
+                    _logger.LogWarning("Receipt document record {RecordId} not found", recordId);
+                    return NotFound(ApiResponseFactory.Fail($"Receipt document with ID {recordId} not found."));
+                }
+
+                // Verify it belongs to the correct clinic and is an Images type
+                if (record.ClinicId != clinicId)
+                {
+                    _logger.LogWarning("Receipt document record {RecordId} does not belong to Clinic {ClinicId}",
+                        recordId, clinicId);
+                    return NotFound(ApiResponseFactory.Fail($"Receipt document with ID {recordId} not found."));
+                }
+
+                if (record.Type != RecordType.Images)
+                {
+                    _logger.LogWarning("Record {RecordId} is not an Images type (Type: {Type})",
+                        recordId, record.Type);
+                    return BadRequest(ApiResponseFactory.Fail("This record is not a receipt document."));
+                }
+
+                // Delete the record
+                bool deleted = await _clinicPatientRecordRepository.DeleteDocumentsAsync(recordId);
+
+                if (!deleted)
+                {
+                    return NotFound(ApiResponseFactory.Fail($"Receipt document with ID {recordId} not found or already deleted."));
+                }
+
+                await transaction.CommitAsync();
+                committed = true;
+
+                // Invalidate cache
+                _cacheService.InvalidateClinicStatistics(clinicId);
+
+                var response = new ReceiptDocumentDeleteResponse
+                {
+                    ReceiptNumber = record.UniqueRecordId ?? "",
+                    DeletedCount = 1,
+                    Message = $"Successfully deleted receipt document (Record ID: {recordId}, Receipt: {record.UniqueRecordId})."
+                };
+
+                _logger.LogInformation("Deleted receipt document record {RecordId} for Receipt {ReceiptNumber}, Clinic {ClinicId}",
+                    recordId, record.UniqueRecordId, clinicId);
+
+                return Ok(ApiResponseFactory.Success(response, response.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting receipt document record {RecordId}, Clinic {ClinicId}",
+                    recordId, clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while deleting receipt documents."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
             }
         }
 

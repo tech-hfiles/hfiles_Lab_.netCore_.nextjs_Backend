@@ -18,5 +18,6 @@ namespace HFiles_Backend.Application.DTOs.Labs
         public string PromotedByName { get; set; } = "Not Promoted Yet";
         public string CreatedByName { get; set; } = "Unknown";
         public string ProfilePhoto { get; set; } = "No image preview available";
+        public string? Color { get; set; }
     }
 }

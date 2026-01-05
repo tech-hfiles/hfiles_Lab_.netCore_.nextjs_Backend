@@ -68,7 +68,8 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     PromotedByName = promotedByName,
                     ProfilePhoto = string.IsNullOrEmpty(m.User?.ProfilePhoto)
                         ? "No image preview available"
-                        : m.User.ProfilePhoto
+                        : m.User.ProfilePhoto,
+                    Color = m.Color
                 });
             }
 

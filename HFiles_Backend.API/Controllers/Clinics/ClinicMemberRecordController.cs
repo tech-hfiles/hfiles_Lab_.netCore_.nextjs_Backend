@@ -179,12 +179,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 // Get records by clinic member ID (only specific columns)
                 var result = await _repository.GetRecordsByClinicMemberAsync(clinicMemberId);
 
-                if (result == null || !result.Any())
-                {
-                    return NotFound(ApiResponseFactory.Fail(
-                        "No Documents found for this clinic member."
-                    ));
-                }
+                //if (result == null || !result.Any())
+                //{
+                //    return NotFound(ApiResponseFactory.Fail(
+                //        "No Documents found for this clinic member."
+                //    ));
+                //}
 
                 // Map to response DTO with only required fields
                 var response = result.Select(r => new

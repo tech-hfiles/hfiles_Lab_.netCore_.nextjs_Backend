@@ -5,6 +5,7 @@ using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Buffers.Text;
 using System.Text.Json;
 using static System.Net.Mime.MediaTypeNames;
 
@@ -708,6 +709,43 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 _logger.LogError(ex, "Error fetching latest package name for PatientId {PatientId}", patientId);
                 return null;
             }
+        }
+
+        //receipt upload doc 
+        public async Task<ClinicPatientRecord?> GetReceiptDocumentByReceiptNumberAsync(int clinicId, string receiptNumber)
+        {
+            return await _context.ClinicPatientRecords
+                .FirstOrDefaultAsync(r =>
+                    r.ClinicId == clinicId &&
+                    r.UniqueRecordId == receiptNumber &&
+                    r.Type == RecordType.Images);
+        }
+
+        public async Task<List<ClinicPatientRecord>> GetReceiptDocumentsByVisitAsync(int clinicId, int patientId, int visitId)
+        {
+            return await _context.ClinicPatientRecords
+                .Where(r =>
+                    r.ClinicId == clinicId &&
+                    r.PatientId == patientId &&
+                    r.ClinicVisitId == visitId &&
+                    r.Type == RecordType.Images)
+                .OrderByDescending(r => r.EpochTime)
+                .ToListAsync();
+        }
+
+        
+
+        public async Task<bool> DeleteDocumentsAsync(int recordId)
+        {
+            var record = await _context.ClinicPatientRecords
+                .FirstOrDefaultAsync(r => r.Id == recordId);
+
+            if (record == null)
+                return false;
+
+            _context.ClinicPatientRecords.Remove(record);
+            await _context.SaveChangesAsync();
+            return true;
         }
 
     }

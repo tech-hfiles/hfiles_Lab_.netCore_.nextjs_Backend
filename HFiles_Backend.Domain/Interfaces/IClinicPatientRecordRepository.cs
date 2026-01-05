@@ -35,7 +35,14 @@ namespace HFiles_Backend.Domain.Interfaces
         // Task<decimal> GetLastReceiptAmountDueByHfIdAsync(string hfId);
         Task<decimal> GetTotalAmountDueByHfIdAsync(string hfId);
         Task<string?> GetLatestPackageNameByPatientIdAsync(int patientId);
+        // Get receipt documents by receipt number
+        Task<ClinicPatientRecord?> GetReceiptDocumentByReceiptNumberAsync(int clinicId, string receiptNumber);
 
+        // Get all receipt documents for a visit
+        Task<List<ClinicPatientRecord>> GetReceiptDocumentsByVisitAsync(int clinicId, int patientId, int visitId);
+
+    
+        Task<bool> DeleteDocumentsAsync(int recordId);
 
     }
 }

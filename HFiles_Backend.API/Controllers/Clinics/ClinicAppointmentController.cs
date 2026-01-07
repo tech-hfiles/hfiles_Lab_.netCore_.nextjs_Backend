@@ -1777,7 +1777,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     user.HfId, clinicId, isPatientNewlyCreated, consentFormLinks.Count);
 
                 var successMessage = isPatientNewlyCreated
-                    ? "Patient registered and appointment created successfully."
+                    ? "Registration and appointment created successfully."
                     : "Appointment created successfully.";
 
                 return Ok(ApiResponseFactory.Success(response, successMessage));

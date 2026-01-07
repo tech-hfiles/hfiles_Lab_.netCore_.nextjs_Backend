@@ -26,5 +26,34 @@ namespace HFiles_Backend.API.Interfaces
            string clinicName,
            string appointmentDate,
            string appointmentTime, int clinicId = 0);
+        string GenerateFirstSessionConfirmationEmailTemplate(
+string patientName,
+string coachName,
+string sessionDate,
+string sessionTime,
+string clinicName
+);
+
+        string GenerateSessionEndingSoonEmailTemplate(
+            string patientName,
+            string programName,
+            int daysRemaining,
+            string clinicName,
+            string teamName,
+            int clinicId = 0);
+
+        string GenerateSessionLastDayEmailTemplate(
+    string patientName,
+    string programName,
+    string clinicName,
+    string teamName,
+    int clinicId = 0);
+
+
+
     }
+
+
+
 }
+

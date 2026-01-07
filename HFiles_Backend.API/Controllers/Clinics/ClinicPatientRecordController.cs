@@ -322,6 +322,7 @@ public class TreatmentInfo
     public string name { get; set; }
     public int coachId { get; set; }
     public int packageID { get; set; }
+    public string? coach { get; set; }
     public List<string> sessionDates { get; set; }
     public List<string> sessionTimes { get; set; }
 }
@@ -1069,32 +1070,101 @@ public class AppointmentRequest
                         {
                             var packageRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(invoiceRecord.Reference_Id.Value);
 
-							// After updating Package/MEP (around line 56)
-							if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
-							{
-								packageRecord.payment_verify = true;
-								packageRecord.Is_editable = true;
-								await _clinicPatientRecordRepository.UpdateAsync(packageRecord);
+                            // After updating Package/MEP (around line 56)
+                            if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
+                            {
+                                packageRecord.payment_verify = true;
+                                packageRecord.Is_editable = true;
+                                await _clinicPatientRecordRepository.UpdateAsync(packageRecord);
 
-								// Extract the data you need here
-								string packageJsonData = packageRecord.JsonData;
-								string packageUniqueRecordId = packageRecord.UniqueRecordId;
-								string packageId = packageRecord.Id.ToString();
-								int clinicId = 36; // or get from receiptRecord if it has a ClinicId property
+                                // Extract the data you need here
+                                string packageJsonData = packageRecord.JsonData;
+                                string packageUniqueRecordId = packageRecord.UniqueRecordId;
+                                string packageId = packageRecord.Id.ToString();
+                                int clinicId = 36; // or get from receiptRecord if it has a ClinicId property
 
-								// Create appointments
-								Task.Run(async () => await CreateAppointmentsFromMepData(
-									packageJsonData,
-									packageId,
-									clinicId
-								));
-							}
-							//if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
-       //                     {
-       //                         packageRecord.payment_verify = true;
-       //                         packageRecord.Is_editable = true;
-       //                         await _clinicPatientRecordRepository.UpdateAsync(packageRecord);
-       //                     }
+                                // Create appointments
+                                Task.Run(async () => await CreateAppointmentsFromMepData(
+                                    packageJsonData,
+                                    packageId,
+                                    clinicId
+                                ));
+
+                                try
+                                {
+                                    // Parse JSON data
+                                    // Use System.Text.Json (built-in)
+                                    var mepData = System.Text.Json.JsonSerializer.Deserialize<MepJsonData>(
+                                                    packageJsonData,
+                                                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                                    );
+                                    if (mepData?.treatments != null && mepData.treatments.Count > 0)
+                                    {
+                                        var firstTreatment = mepData.treatments[0];
+                                        var firstSessionDate = firstTreatment.sessionDates?.FirstOrDefault();
+                                        var firstSessionTime = firstTreatment.sessionTimes?.FirstOrDefault();
+
+                                        if (!string.IsNullOrEmpty(firstSessionDate) && !string.IsNullOrEmpty(firstSessionTime))
+                                        {
+                                            // Get clinic details
+                                            var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
+
+                                            // Format date (convert from yyyy-MM-dd to dd-MM-yyyy)
+                                            DateTime.TryParseExact(firstSessionDate, "yyyy-MM-dd", null,
+                                                System.Globalization.DateTimeStyles.None, out var parsedDate);
+                                            var formattedDate = parsedDate.ToString("dd-MM-yyyy");
+
+                                            // Format time (HH:mm:ss to hh:mm tt)
+                                            TimeSpan.TryParse(firstSessionTime, out var parsedTime);
+                                            var formattedTime = DateTime.Today.Add(parsedTime).ToString("hh:mm tt");
+
+                                            // Generate email template
+                                            var emailTemplate = _emailTemplateService.GenerateFirstSessionConfirmationEmailTemplate(
+                                                mepData.patient.name,
+                                                mepData.treatments[0].coach,
+                                                formattedDate,
+                                                formattedTime,
+                                                clinic?.ClinicName ?? "High 5"
+                                            );
+
+                                            // Get user email from HFID
+                                            var user = await _userRepository.GetUserByHFIDAsync(mepData.patient.hfid);
+                                            if (user != null && !string.IsNullOrEmpty(user.Email))
+                                            {
+                                                await _emailService.SendEmailAsync(
+                                                    user.Email,
+                                                    "Your Fitness Journey Begins Today! 🔥",
+                                                    emailTemplate
+                                                );
+
+                                                _logger.LogInformation(
+                                                    "First session confirmation email sent to {Email} for {Date} at {Time}",
+                                                    user.Email,
+                                                    formattedDate,
+                                                    formattedTime
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                                catch (Exception emailEx)
+                                {
+                                    _logger.LogError(
+                                                    emailEx,
+                                                    "Failed to send first session confirmation email for package {PackageId}",
+                                                    packageId
+                                    );
+                                    // Don't fail the entire operation if email fails
+                                }
+
+
+                            }
+                            //if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
+                            //                     {
+                            //                         packageRecord.payment_verify = true;
+                            //                         packageRecord.Is_editable = true;
+                            //                         await _clinicPatientRecordRepository.UpdateAsync(packageRecord);
+                            //                     }
                         }
                     }
                 }

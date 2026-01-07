@@ -1,5 +1,7 @@
 ﻿
 using HFiles_Backend.API.Controllers.Clinics;
+using HFiles_Backend.API.Interfaces;
+using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Domain.DTOs.Clinics;
 using HFiles_Backend.Domain.Entities.Clinics;
@@ -19,21 +21,34 @@ namespace HFiles_Backend.API.Controllers.Clinics
 		private readonly IClinicHigh5AppointmentService _appointmentService;
 		private readonly ILogger<High5AppointmentController> _logger;
 		private readonly IClinicEnquiryRepository _enquiryRepo; // Add this
+        private readonly IEmailTemplateService _emailTemplateService;
+        private readonly EmailService _emailService;
+        private readonly ISessionReminderLogRepository _reminderLogRepo; // ADD THIS
 
 
-		public High5AppointmentController(
+        public High5AppointmentController(
 			IClinicHigh5AppointmentService appointmentService,
 			ILogger<High5AppointmentController> logger,
-			IClinicEnquiryRepository enquiryRepo
-			)
+			IClinicEnquiryRepository enquiryRepo,
+            IEmailTemplateService emailTemplateService,
+        EmailService emailService,
+            ISessionReminderLogRepository reminderLogRepo // ADD THIS
+
+
+            )
 		{
-			_appointmentService = appointmentService;
+			_emailTemplateService = emailTemplateService;
+
+			_emailService = emailService;
+            _appointmentService = appointmentService;
 			_logger = logger;
 			_enquiryRepo = enquiryRepo;
-		}
+            _reminderLogRepo = reminderLogRepo; // ADD THIS
 
-		// ================= Create =================
-		[HttpPost]
+        }
+
+        // ================= Create =================
+        [HttpPost]
 		public async Task<IActionResult> Create([FromBody] High5AppointmentDto dto)
 		{
 			//if (!ModelState.IsValid)
@@ -229,8 +244,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						.ThenBy(x => x.Time)
 						.ToList();
 
-					// --- Pagination --- 
-					int totalRecords = mergedList.Count;
+               
+
+                // --- Pagination --- 
+                int totalRecords = mergedList.Count;
 					var pagedData = mergedList
 						.Skip((page - 1) * pageSize)
 						.Take(pageSize)
@@ -256,10 +273,296 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				}
 			}
 
-		// Add these methods to your existing controller
 
-		// ⭐ NEW: Get monthly statistics for calendar
-		[HttpGet("clinic/{clinicId}/calendar-stats")]
+
+
+        // ================= NEW: Send Session Ending Reminders (5 Days & 1 Day) with Duplicate Prevention =================
+        [HttpPost("clinic/{clinicId}/send-session-reminders")]
+        public async Task<IActionResult> SendSessionEndingReminders(int clinicId)
+        {
+            try
+            {
+                _logger.LogInformation("Starting session reminder check for ClinicId {ClinicId}", clinicId);
+
+                // Get all appointments with user data
+                var high5Result = await _appointmentService.GetAppointmentsByClinicIdWithUserAsync(clinicId);
+
+                if (!high5Result.Any())
+                {
+                    return Ok(ApiResponseFactory.Success(new
+                    {
+                        Message = "No appointments found for this clinic",
+                        EmailsSent = 0,
+                        EmailsFailed = 0,
+                        TotalChecked = 0,
+                        Skipped = 0
+                    }));
+                }
+
+                // Find sessions ending in 5 days or 1 day
+                var lastSessionCheck = high5Result
+                    .Where(h => h.UserId > 0 && h.PackageId > 0)
+                    .Where(h => h.PackageDate.Date >= DateTime.Today)
+                    .GroupBy(h => new { h.UserId, h.PackageId, h.PackageName })
+                    .Select(g => new
+                    {
+                        UserId = g.Key.UserId,
+                        PackageId = g.Key.PackageId,
+                        PackageName = g.Key.PackageName,
+                        LastSession = g.OrderByDescending(x => x.PackageDate).First(),
+                        LastSessionDate = g.Max(x => x.PackageDate),
+                        DaysRemaining = (g.Max(x => x.PackageDate).Date - DateTime.Today).Days,
+                        TotalSessions = g.Count()
+                    })
+                    .Where(x => x.DaysRemaining == 5 || x.DaysRemaining == 1)
+                    .ToList();
+
+                var emailsSent = 0;
+                var emailsFailed = 0;
+                var emailsSkipped = 0; // NEW
+                var emailResults = new List<object>();
+
+                // Send email reminders
+                foreach (var check in lastSessionCheck)
+                {
+                    try
+                    {
+                        var reminderType = check.DaysRemaining == 1 ? "1-Day" : "5-Day";
+
+                        // Check if reminder already sent
+                        var alreadySent = await _reminderLogRepo.HasReminderBeenSentAsync(
+                            check.UserId,
+                            check.PackageId,
+                            reminderType,
+                            check.LastSessionDate
+                        );
+
+                        if (alreadySent)
+                        {
+                            emailsSkipped++;
+                            emailResults.Add(new
+                            {
+                                UserId = check.UserId,
+                                PackageId = check.PackageId,
+                                PackageName = check.PackageName ?? "N/A",
+                                PatientName = check.LastSession.User != null
+                                    ? $"{check.LastSession.User.FirstName} {check.LastSession.User.LastName}".Trim()
+                                    : "Unknown",
+                                Email = check.LastSession.User?.Email ?? "N/A",
+                                DaysRemaining = check.DaysRemaining,
+                                LastSessionDate = check.LastSessionDate.ToString("yyyy-MM-dd"),
+                                ReminderType = reminderType,
+                                Status = "Skipped",
+                                ErrorMessage = "Email already sent for this session"
+                            });
+
+                            _logger.LogInformation(
+                                "{ReminderType} reminder already sent for UserId {UserId}, PackageId {PackageId}. Skipping.",
+                                reminderType,
+                                check.UserId,
+                                check.PackageId
+                            );
+                            continue;
+                        }
+
+                        // Validate user and email
+                        if (check.LastSession.User == null)
+                        {
+                            emailsFailed++;
+                            emailResults.Add(new
+                            {
+                                UserId = check.UserId,
+                                PackageId = check.PackageId,
+                                PackageName = check.PackageName ?? "N/A",
+                                PatientName = "Unknown",
+                                Email = "N/A",
+                                DaysRemaining = check.DaysRemaining,
+                                LastSessionDate = check.LastSessionDate.ToString("yyyy-MM-dd"),
+                                ReminderType = reminderType,
+                                Status = "Failed",
+                                ErrorMessage = "User not found"
+                            });
+
+                            _logger.LogWarning(
+                                "User {UserId} not found for PackageId {PackageId}",
+                                check.UserId,
+                                check.PackageId
+                            );
+                            continue;
+                        }
+
+                        if (string.IsNullOrEmpty(check.LastSession.User.Email))
+                        {
+                            emailsFailed++;
+                            var userName = $"{check.LastSession.User.FirstName} {check.LastSession.User.LastName}".Trim();
+                            emailResults.Add(new
+                            {
+                                UserId = check.UserId,
+                                PackageId = check.PackageId,
+                                PackageName = check.PackageName ?? "N/A",
+                                PatientName = userName,
+                                Email = "N/A",
+                                DaysRemaining = check.DaysRemaining,
+                                LastSessionDate = check.LastSessionDate.ToString("yyyy-MM-dd"),
+                                ReminderType = reminderType,
+                                Status = "Failed",
+                                ErrorMessage = "Email not found"
+                            });
+
+                            _logger.LogWarning(
+                                "User {UserId} ({Name}) has no email for PackageId {PackageId}",
+                                check.UserId,
+                                userName,
+                                check.PackageId
+                            );
+                            continue;
+                        }
+
+                        var user = check.LastSession.User;
+                        var patientName = $"{user.FirstName} {user.LastName}".Trim();
+                        var clinicName = check.LastSession.Clinic?.ClinicName ?? "High 5";
+
+                        string emailTemplate;
+                        string emailSubject;
+
+                        // Choose template based on days remaining
+                        if (check.DaysRemaining == 1)
+                        {
+                            emailTemplate = _emailTemplateService.GenerateSessionLastDayEmailTemplate(
+                                patientName: patientName,
+                                programName: check.PackageName ?? "Program",
+                                clinicName: clinicName,
+                                teamName: $"Team {clinicName}",
+                                clinicId: clinicId
+                            );
+                            emailSubject = "⚡ Last Day of Your Session — Ready for What's Next?";
+                        }
+                        else
+                        {
+                            emailTemplate = _emailTemplateService.GenerateSessionEndingSoonEmailTemplate(
+                                patientName: patientName,
+                                programName: check.PackageName ?? "Program",
+                                daysRemaining: 5,
+                                clinicName: clinicName,
+                                teamName: $"Team {clinicName}",
+                                clinicId: clinicId
+                            );
+                            emailSubject = "⏳ Your Session is Ending Soon — Let's Keep the Momentum Going!";
+                        }
+
+                        // Send email
+                        await _emailService.SendEmailAsync(
+                            user.Email,
+                            emailSubject,
+                            emailTemplate
+                        );
+
+                        // Log the sent email to prevent duplicates
+                        await _reminderLogRepo.CreateReminderLogAsync(new SessionReminderLog
+                        {
+                            ClinicId = clinicId,
+                            UserId = check.UserId,
+                            PackageId = check.PackageId,
+                            ReminderType = reminderType,
+                            LastSessionDate = check.LastSessionDate,
+                            EmailSentTo = user.Email,
+                            PackageName = check.PackageName,
+                            SentAt = DateTime.UtcNow
+                        });
+
+                        emailsSent++;
+                        emailResults.Add(new
+                        {
+                            UserId = check.UserId,
+                            PackageId = check.PackageId,
+                            PackageName = check.PackageName ?? "N/A",
+                            PatientName = patientName,
+                            Email = user.Email,
+                            DaysRemaining = check.DaysRemaining,
+                            LastSessionDate = check.LastSessionDate.ToString("yyyy-MM-dd"),
+                            ReminderType = reminderType,
+                            Status = "Sent",
+                            ErrorMessage = ""
+                        });
+
+                        _logger.LogInformation(
+                            "{ReminderType} reminder email sent to {Email} ({Name}) for Package '{Package}'. Days remaining: {Days}",
+                            reminderType,
+                            user.Email,
+                            patientName,
+                            check.PackageName,
+                            check.DaysRemaining
+                        );
+                    }
+                    catch (Exception emailEx)
+                    {
+                        emailsFailed++;
+                        var userName = check.LastSession.User != null
+                            ? $"{check.LastSession.User.FirstName} {check.LastSession.User.LastName}".Trim()
+                            : "Unknown";
+                        var userEmail = check.LastSession.User?.Email ?? "N/A";
+                        var reminderType = check.DaysRemaining == 1 ? "1-Day" : "5-Day";
+
+                        emailResults.Add(new
+                        {
+                            UserId = check.UserId,
+                            PackageId = check.PackageId,
+                            PackageName = check.PackageName ?? "N/A",
+                            PatientName = userName,
+                            Email = userEmail,
+                            DaysRemaining = check.DaysRemaining,
+                            LastSessionDate = check.LastSessionDate.ToString("yyyy-MM-dd"),
+                            ReminderType = reminderType,
+                            Status = "Failed",
+                            ErrorMessage = emailEx.Message
+                        });
+
+                        _logger.LogError(
+                            emailEx,
+                            "Failed to send {ReminderType} reminder email for PackageId {PackageId}, UserId {UserId}",
+                            reminderType,
+                            check.PackageId,
+                            check.UserId
+                        );
+                    }
+                }
+
+                var response = new
+                {
+                    Message = $"Session reminder check completed for {high5Result.Count()} total appointments",
+                    EmailsSent = emailsSent,
+                    EmailsFailed = emailsFailed,
+                    EmailsSkipped = emailsSkipped,
+                    TotalChecked = lastSessionCheck.Count,
+                    FiveDayReminders = lastSessionCheck.Count(x => x.DaysRemaining == 5),
+                    OneDayReminders = lastSessionCheck.Count(x => x.DaysRemaining == 1),
+                    CheckedAt = DateTime.UtcNow,
+                    Details = emailResults
+                };
+
+                return Ok(ApiResponseFactory.Success(response));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending session reminders for ClinicId {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail($"Error sending session reminders: {ex.Message}"));
+            }
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+        // ⭐ NEW: Get monthly statistics for calendar
+        [HttpGet("clinic/{clinicId}/calendar-stats")]
 		public async Task<IActionResult> GetCalendarStats(int clinicId)
 		{
 			try

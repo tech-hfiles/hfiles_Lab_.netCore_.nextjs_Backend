@@ -13,6 +13,7 @@ using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Domain.Interfaces.Clinics;
 using HFiles_Backend.Infrastructure.Data;
 using HFiles_Backend.Infrastructure.Repositories;
+using HFiles_Backend.Infrastructure.Repositories.Clinics;
 using HFiles_Main.API.Middlewares;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -257,6 +258,8 @@ try
     builder.Services.AddHostedService<GoogleTokenRefreshService>();
 
 
+
+    builder.Services.AddScoped<ISessionReminderLogRepository, SessionReminderLogRepository>();
     // DbContext
     builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(

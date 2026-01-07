@@ -2,8 +2,8 @@
 
 public interface IClinicEnquiryRepository
 {
-	// Get all enquiries for a clinic
-	Task<List<ClinicEnquiry>> GetAllAsync(int clinicId);
+	// Get all enquiries for a clinic - CHANGED to IEnumerable for flexibility
+	Task<IEnumerable<ClinicEnquiry>> GetAllAsync(int clinicId);
 
 	// Get a specific enquiry by Id
 	Task<ClinicEnquiry?> GetByIdAsync(int id);
@@ -22,4 +22,7 @@ public interface IClinicEnquiryRepository
 
 	// Get all coaches assigned to a specific enquiry
 	Task<List<ClinicEnquiryCoach>> GetEnquiryCoachesAsync(int enquiryId);
+
+	Task SyncCoachesAsync(int enquiryId, List<int> coachIds);
+
 }

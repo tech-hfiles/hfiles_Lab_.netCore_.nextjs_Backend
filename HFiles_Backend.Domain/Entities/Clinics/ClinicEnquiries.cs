@@ -80,5 +80,14 @@
 		// Add this at the end of your ClinicEnquiry class
 		public virtual ICollection<ClinicEnquiryCoach> AssignedCoaches { get; set; } = new List<ClinicEnquiryCoach>();
 
+		// ================= Pricing Package (Nullable FK) =================
+		public int? PricingPackageId { get; set; }
+
+		[ForeignKey(nameof(PricingPackageId))]
+		public Hifi5PricingPackage? PricingPackage { get; set; }
+
+
+
+
 	}
-	}
+}

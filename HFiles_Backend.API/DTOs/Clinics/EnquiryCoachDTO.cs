@@ -8,3 +8,10 @@ public class AddEnquiryCoachRequest
 	[Required]
 	public int CoachId { get; set; }
 }
+
+
+public class SyncEnquiryCoachesRequest
+{
+	public List<int> CoachIds { get; set; } = new();
+}
+

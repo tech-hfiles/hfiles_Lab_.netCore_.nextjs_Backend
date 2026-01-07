@@ -45,12 +45,16 @@ namespace HFiles_Backend.Infrastructure.Repositories
 			}
 		}
 
-		public async Task<List<ClinicEnquiry>> GetAllAsync(int clinicId)
+		// In your repository
+		public async Task<IEnumerable<ClinicEnquiry>> GetAllAsync(int clinicId)
 		{
 			return await _context.clinicEnquiry
-				.AsNoTracking()
 				.Where(e => e.ClinicId == clinicId)
-				.OrderByDescending(e => e.EpochTime)
+				.Include(e => e.AssignedCoaches)
+					.ThenInclude(ac => ac.ClinicMember)
+						.ThenInclude(cm => cm.User)
+				.Include(e => e.PricingPackage) // ✅ ADD THIS LINE
+
 				.ToListAsync();
 		}
 
@@ -110,6 +114,33 @@ namespace HFiles_Backend.Infrastructure.Repositories
 				)
 				.OrderBy(e => e.AppointmentTime)
 				.ToListAsync();
+		}
+		public async Task SyncCoachesAsync(int enquiryId, List<int> coachIds)
+		{
+			var existing = await _context.ClinicEnquiryCoaches
+				.Where(x => x.EnquiryId == enquiryId)
+				.ToListAsync();
+
+			var existingIds = existing.Select(x => x.CoachId).ToHashSet();
+
+			// ➕ ADD new coaches
+			var toAdd = coachIds
+				.Where(id => !existingIds.Contains(id))
+				.Select(id => new ClinicEnquiryCoach
+				{
+					EnquiryId = enquiryId,
+					CoachId = id,
+					EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+				});
+
+			// ❌ DELETE removed coaches
+			var toDelete = existing
+				.Where(x => !coachIds.Contains(x.CoachId));
+
+			_context.ClinicEnquiryCoaches.AddRange(toAdd);
+			_context.ClinicEnquiryCoaches.RemoveRange(toDelete);
+
+			await _context.SaveChangesAsync();
 		}
 
 		public async Task AssignCoachAsync(int enquiryId, int coachId)

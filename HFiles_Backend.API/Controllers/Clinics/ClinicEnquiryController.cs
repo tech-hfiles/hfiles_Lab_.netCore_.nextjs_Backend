@@ -1,8 +1,10 @@
 ﻿using HFiles_Backend.API.DTOs.Clinics;
 using HFiles_Backend.API.Interfaces;
+using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Enums;
+using HFiles_Backend.Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -15,37 +17,47 @@ public class ClinicEnquiryController : ControllerBase
     private readonly IClinicEnquiryRepository _repo;
     private readonly IClinicAuthorizationService _clinicAuthorizationService;
     private readonly ILogger<ClinicEnquiryController> _logger;
+	private readonly IEmailTemplateService _emailTemplateService;
+	private readonly EmailService _emailService;
+	private readonly IClinicRepository _clinicRepository;  // ADD THIS LINE
 
-    public ClinicEnquiryController(
-        IClinicEnquiryRepository repo,
+	public ClinicEnquiryController(
+		IEmailTemplateService emailTemplateService,
+			IClinicRepository clinicRepository,  // ADD THIS PARAMETER
+
+	 EmailService emailService,
+		IClinicEnquiryRepository repo,
         IClinicAuthorizationService clinicAuthorizationService,
         ILogger<ClinicEnquiryController> logger
     )
     {
-        _repo = repo;
+		_emailTemplateService = emailTemplateService;
+		_emailService = emailService;
+		_repo = repo;
         _clinicAuthorizationService = clinicAuthorizationService;
         _logger = logger;
-    }
+		_clinicRepository = clinicRepository;  // ADD THIS ASSIGNMENT
+
+	}
 
 	// =====================================================
 	// GET : All Enquiries (Filter + Pagination)
 	// =====================================================
 	[HttpGet("{clinicId}")]
 	public async Task<IActionResult> GetAll(
-	 int clinicId,
-	 [FromQuery] int page = 1,
-	 [FromQuery] int pageSize = 10,
-	 [FromQuery] EnquiryStatus? status = null,
-	 [FromQuery] PaymentStatus? paymentStatus = null
- )
+		int clinicId,
+		[FromQuery] int page = 1,
+		[FromQuery] int pageSize = 10,
+		[FromQuery] EnquiryStatus? status = null,
+		[FromQuery] PaymentStatus? paymentStatus = null,
+		[FromQuery] int? coachId = null
+	)
 	{
 		HttpContext.Items["Log-Category"] = "Clinic Enquiry";
-
 		try
 		{
 			bool isAuthorized = await _clinicAuthorizationService
 				.IsClinicAuthorized(clinicId, User);
-
 			if (!isAuthorized)
 			{
 				_logger.LogWarning("Unauthorized enquiry list access for ClinicId {ClinicId}", clinicId);
@@ -55,45 +67,83 @@ public class ClinicEnquiryController : ControllerBase
 			if (page < 1) page = 1;
 			if (pageSize < 1) pageSize = 10;
 
-			// -----------------
-			// Fetch
-			// -----------------
+			// Fetch with coach data
 			var enquiries = await _repo.GetAllAsync(clinicId);
 
-			// -----------------
-			// FILTERING
-			// -----------------
+			// Filtering
 			var filteredEnquiries = enquiries
 				.Where(e => e.Status != EnquiryStatus.Member);
 
-            if (status!=null)
-            {
-                filteredEnquiries = filteredEnquiries
-                    .Where(e => e.Status == status.Value);
-            }
+			if (status != null)
+			{
+				filteredEnquiries = filteredEnquiries
+					.Where(e => e.Status == status.Value);
+			}
 
-            if (paymentStatus != null)
-            {
-                filteredEnquiries = filteredEnquiries
-                    .Where(e => e.Payment == paymentStatus.Value);
-            }
-			// -----------------
-			// COUNT AFTER FILTER
-			// -----------------
+			if (paymentStatus != null)
+			{
+				filteredEnquiries = filteredEnquiries
+					.Where(e => e.Payment == paymentStatus.Value);
+			}
+
+			// Filter by coach if coachId is provided
+			if (coachId != null)
+			{
+				filteredEnquiries = filteredEnquiries
+					.Where(e => e.AssignedCoaches.Any(ac => ac.CoachId == coachId.Value));
+			}
+
+			// Count after filter
 			int totalRecords = filteredEnquiries.Count();
-			filteredEnquiries = filteredEnquiries.OrderBy(e => e.FollowUpDate).ToList();
-			// -----------------
-			// PAGINATION (FILTERED!)
-			// -----------------
-			var today = DateTime.Today;
 
+			// Pagination
+			var today = DateTime.Today;
 			var pagedData = filteredEnquiries
 				.OrderByDescending(e => e.FollowUpDate.HasValue && e.FollowUpDate.Value.Date == today)
 				.ThenByDescending(e => e.FollowUpDate)
 				.Skip((page - 1) * pageSize)
 				.Take(pageSize)
+				.Select(e => new
+				{
+					e.Id,
+					e.Firstname,
+					e.Lastname,
+					e.Email,
+					e.Contact,
+					e.DateOfBirth,
+					e.Source,
+					e.FollowUpDate,
+					e.FitnessGoal,
+					e.Status,
+					e.Payment,
+					e.AppointmentDate,
+					e.AppointmentTime,
+					e.FirstCall,
+					e.SecondCall,
+					e.Remark,
+					e.EpochTime,
+					PricingPackage = e.PricingPackageId == null
+		? null
+		: new
+		{
+			e.PricingPackage.Id,
+			e.PricingPackage.ProgramCategory,
+			e.PricingPackage.ProgramName,
+			e.PricingPackage.DurationMonths,
+			e.PricingPackage.PriceInr
+		},
+					// Map assigned coaches - following the correct navigation path
+					AssignedCoaches = e.AssignedCoaches.Select(ac => new
+					{
+						MappingId = ac.Id,
+						ClinicMemberId = ac.CoachId,
+						CoachType = ac.ClinicMember?.Coach,
+						CoachName = $"{ac.ClinicMember?.User?.FirstName} {ac.ClinicMember?.User?.LastName}".Trim(),
+						Email = ac.ClinicMember?.User?.Email,
+						Contact = ac.ClinicMember?.User?.PhoneNumber
+					}).ToList()
+				})
 				.ToList();
-
 
 			var result = new
 			{
@@ -179,12 +229,60 @@ public class ClinicEnquiryController : ControllerBase
             AppointmentDate = dto.AppointmentDate,
             AppointmentTime = dto.AppointmentTime,
             Remark = dto.Remark,
-            FirstCall = false,
+			PricingPackageId = dto.PricingPackageId,
+
+			FirstCall = false,
             SecondCall = false,
             EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
         };
+		// trial done 
+		if (true)
+		{
+			try
+			{
+				// Get clinic details
+				var clinic = await _clinicRepository.GetClinicByIdAsync(dto.ClinicId);
 
-        await _repo.AddAsync(enquiry);
+				// Format date and time
+				var appointmentDateFormatted = dto.AppointmentDate.Value.ToString("dd-MM-yyyy");
+				var appointmentTimeFormatted = dto.AppointmentTime.Value.ToString(@"hh\:mm");
+
+				// Generate email template
+				var emailTemplate = _emailTemplateService.GenerateTrialAppointmentConfirmationEmailTemplate(
+					dto.Firstname,
+					clinic?.ClinicName ?? "Clinic",
+					appointmentDateFormatted,
+					appointmentTimeFormatted,
+					dto.FitnessGoal
+				);
+
+				// Send email
+				await _emailService.SendEmailAsync(
+					dto.Email,
+					$"Trial Appointment Confirmation - {clinic?.ClinicName}",
+					emailTemplate
+				);
+
+				_logger.LogInformation(
+					"Trial appointment confirmation email sent to {Email} for {Date} at {Time}",
+					dto.Email,
+					appointmentDateFormatted,
+					appointmentTimeFormatted
+				);
+			}
+			catch (Exception emailEx)
+			{
+				_logger.LogError(
+					emailEx,
+					"Failed to send trial appointment email to {Email}",
+					dto.Email
+				);
+				// Don't fail the entire operation if email fails
+			}
+		}
+
+
+		await _repo.AddAsync(enquiry);
 
         return Ok(ApiResponseFactory.Success(enquiry, "Enquiry created successfully."));
     }
@@ -195,24 +293,15 @@ public class ClinicEnquiryController : ControllerBase
 
 	[HttpPut("{id}")]
 	public async Task<IActionResult> Update(
-		int id,
-		[FromBody] CreateClinicEnquiryDto dto)
+	int id,
+	[FromBody] UpdateClinicEnquiryDto dto)
 	{
-		HttpContext.Items["Log-Category"] = "Clinic Enquiry";
+		if (dto == null)
+			return BadRequest("Request body is required.");
 
 		var enquiry = await _repo.GetByIdAsync(id);
 		if (enquiry == null)
-			return NotFound(ApiResponseFactory.Fail("Enquiry not found."));
-
-		bool isAuthorized = await _clinicAuthorizationService
-			.IsClinicAuthorized(enquiry.ClinicId, User);
-
-		if (!isAuthorized)
-			return Unauthorized(ApiResponseFactory.Fail("Not authorized."));
-
-		// ================================
-		// 🔹 UPDATE ONLY WHAT IS SENT
-		// ================================
+			return NotFound();
 
 		if (dto.Status.HasValue)
 			enquiry.Status = dto.Status.Value;
@@ -226,23 +315,23 @@ public class ClinicEnquiryController : ControllerBase
 		if (dto.SecondCall.HasValue)
 			enquiry.SecondCall = dto.SecondCall.Value;
 
-		if (dto.Remark != null)
+		if (!string.IsNullOrWhiteSpace(dto.Remark))
 			enquiry.Remark = dto.Remark;
-		if (dto.AppointmentDate != null)
-			enquiry.AppointmentDate = dto.AppointmentDate;
-		if (dto.AppointmentTime != null)
-			enquiry.AppointmentTime = dto.AppointmentTime;
 
-		// ❌ Ignore ClinicId & UserId in UPDATE
-		// ❌ Ignore other fields intentionally
+		if (dto.AppointmentDate.HasValue)
+			enquiry.AppointmentDate = dto.AppointmentDate.Value;
+
+		if (dto.AppointmentTime.HasValue)
+			enquiry.AppointmentTime = dto.AppointmentTime.Value;
+
+		if (dto.FollowUpDate.HasValue)
+			enquiry.FollowUpDate = dto.FollowUpDate.Value;
 
 		await _repo.UpdateAsync(enquiry);
 
-		return Ok(ApiResponseFactory.Success(
-			enquiry,
-			"Enquiry updated successfully."
-		));
+		return Ok(ApiResponseFactory.Success(enquiry, "Updated"));
 	}
+
 	// =====================================================
 	// GET : TODAY APPOINTMENTS (NO DATE FROM FRONTEND)
 	// =====================================================
@@ -358,6 +447,29 @@ public class ClinicEnquiryController : ControllerBase
 	}
 
 
+
+	[HttpPut("{enquiryId}/coaches")]
+	public async Task<IActionResult> SyncCoaches(
+	int enquiryId,
+	[FromBody] SyncEnquiryCoachesRequest request)
+	{
+		if (request == null || request.CoachIds == null)
+			return BadRequest(ApiResponseFactory.Fail("CoachIds required"));
+
+		var enquiry = await _repo.GetByIdAsync(enquiryId);
+		if (enquiry == null)
+			return NotFound(ApiResponseFactory.Fail("Enquiry not found"));
+
+		bool isAuthorized = await _clinicAuthorizationService
+			.IsClinicAuthorized(enquiry.ClinicId, User);
+
+		if (!isAuthorized)
+			return Unauthorized(ApiResponseFactory.Fail("Not authorized"));
+
+		await _repo.SyncCoachesAsync(enquiryId, request.CoachIds);
+
+		return Ok(ApiResponseFactory.Success("Coaches synced successfully"));
+	}
 
 
 }

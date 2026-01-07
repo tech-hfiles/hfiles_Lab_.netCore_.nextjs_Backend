@@ -103,24 +103,32 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			return Ok(ApiResponseFactory.Success(result));
 		}
 
-		// ================= Update =================
+
+		//update
 		[HttpPut("{id:int}")]
-		public async Task<IActionResult> Update(
-	int id,
-	[FromBody] High5AppointmentUpdateDto dto)	
+		public async Task<IActionResult> Update(int id, [FromBody] High5AppointmentUpdateDto dto)
 		{
 			var existing = await _appointmentService.GetAppointmentByIdAsync(id);
-
 			if (existing == null)
 				return NotFound(ApiResponseFactory.Fail("High5 appointment not found."));
 
-			// Only update fields that are present in the payload
-			if (dto.PackageDate.HasValue) existing.PackageDate = dto.PackageDate.Value;
-			if (dto.PackageTime.HasValue) existing.PackageTime = dto.PackageTime.Value;
-			if (!string.IsNullOrEmpty(dto.PackageName)) existing.PackageName = dto.PackageName;
-			if (dto.PackageId.HasValue) existing.PackageId = dto.PackageId.Value;
-			if (dto.CoachId.HasValue) existing.CoachId = dto.CoachId.Value;
-			if (dto.Status.HasValue) existing.Status = dto.Status.Value;
+			if (dto.PackageId.HasValue)
+				existing.PackageId = dto.PackageId.Value;
+
+			if (!string.IsNullOrWhiteSpace(dto.PackageName))
+				existing.PackageName = dto.PackageName;
+
+			if (dto.PackageDate.HasValue && dto.PackageDate.Value != DateTime.MinValue)
+				existing.PackageDate = dto.PackageDate.Value;
+
+			if (dto.PackageTime.HasValue)
+				existing.PackageTime = dto.PackageTime.Value;
+
+			if (dto.CoachId.HasValue)
+				existing.CoachId = dto.CoachId.Value;
+
+			if (dto.Status.HasValue)
+				existing.Status = dto.Status.Value;
 
 			var updated = await _appointmentService.UpdateAppointmentAsync(existing);
 
@@ -139,10 +147,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			public int? PackageId { get; set; }
 			public string? PackageName { get; set; }
 			public DateTime? Date { get; set; }
+
+			public DateTime? followup { get; set; }
 			public TimeSpan? Time { get; set; }
 
 			public string? phone { get; set; }
-			public int? CoachId { get; set; }
+			public string? CoachId { get; set; }
 			public string CoachName { get; set; }  // ADD THIS LINE
             public string? CoachColor { get; set; }
             public string Status { get; set; }
@@ -153,64 +163,77 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			public PaymentStatus? PaymentStatus { get; set; }
 		}
 
-			[HttpGet("clinic/{clinicId}/all-appointments")]
-			public async Task<IActionResult> GetAllAppointmentsByClinic(
-			int clinicId,
-			[FromQuery] int page = 1,	
-			[FromQuery] int pageSize = 100,
-			[FromQuery] EnquiryStatus? status = null,
-			[FromQuery] PaymentStatus? paymentStatus = null,
-			[FromQuery] DateTime? startDate = null,
-			[FromQuery] DateTime? endDate = null)
+		[HttpGet("clinic/{clinicId}/all-appointments")]
+		public async Task<IActionResult> GetAllAppointmentsByClinic(
+int clinicId,
+[FromQuery] int page = 1,
+[FromQuery] int pageSize = 100,
+[FromQuery] EnquiryStatus? status = null,
+[FromQuery] PaymentStatus? paymentStatus = null,
+[FromQuery] DateTime? startDate = null,
+[FromQuery] DateTime? endDate = null,
+[FromQuery] string? type = null,
+[FromQuery] int? coachId = null
+)
+		{
+			try
 			{
-				try
+				// Use provided dates or default to today
+				var filterStartDate = startDate?.Date ?? DateTime.Today;
+				var filterEndDate = endDate?.Date ?? DateTime.Today;
+				var normalizedType = type?.ToLower();
+
+				if (filterStartDate > filterEndDate)
 				{
-					// Use provided dates or default to today
-					var filterStartDate = startDate?.Date ?? DateTime.Today;
-					var filterEndDate = endDate?.Date ?? DateTime.Today;
+					return BadRequest(ApiResponseFactory.Fail("Start date cannot be after end date"));
+				}
 
-					// Ensure startDate is not after endDate
-					if (filterStartDate > filterEndDate)
-					{
-						return BadRequest(ApiResponseFactory.Fail("Start date cannot be after end date"));
-					}
+				// --- High5Appointments ---
+				List<AppointmentMergedDto> high5List = new();
+				if (normalizedType == null || normalizedType == "appointment")
+				{
+					var high5Result = await _appointmentService.GetAppointmentsByClinicIdWithUserAsync(clinicId);
 
-				// --- High5Appointments (Filtered by date range) --- 
-				var high5Result = await _appointmentService.GetAppointmentsByClinicIdWithUserAsync(clinicId);
-				var high5List = high5Result
-					.Where(h => h.PackageDate.Date >= filterStartDate && h.PackageDate.Date <= filterEndDate)
-					.Select(h => new AppointmentMergedDto
-					{
-						Id = h.Id,
-						HFID = h.User.HfId,
-						phone = h.User.PhoneNumber,
-						ClinicId = h.ClinicId,
-						UserId = h.UserId,
-						PackageId = h.PackageId,
-						PackageName = h.PackageName,
-						Date = h.PackageDate,
-						Time = h.PackageTime,
-						CoachId = h.CoachId,
-						CoachName = h.CoachMember?.User != null
-							? $"{h.CoachMember.User.FirstName} {h.CoachMember.User.LastName}".Trim()
-							: "N/A",
-                        CoachColor = h.CoachMember?.Color ?? "rgba(0, 0, 0, 1)",
-                        Status = h.Status.ToString(),
-						EpochTime = h.EpochTime,
-						PatientName = h.User != null
-							? $"{h.User.FirstName} {h.User.LastName}".Trim()
-							: "N/A",
-						Source = "High5Appointment",
-						PaymentStatus = null
-					}).ToList();
+					high5List = high5Result
+						.Where(h => h.PackageDate.Date >= filterStartDate &&
+									h.PackageDate.Date <= filterEndDate)
+						.Where(h => coachId == null || h.CoachId == coachId)
+						.Select(h => new AppointmentMergedDto
+						{
+							Id = h.Id,
+							HFID = h.User.HfId,
+							phone = h.User.PhoneNumber,
+							ClinicId = h.ClinicId,
+							UserId = h.UserId,
+							PackageId = h.PackageId,
+							PackageName = h.PackageName,
+							Date = h.PackageDate,
+							followup = null,
+							Time = h.PackageTime,
+							CoachId = h.CoachId.ToString(),
+							CoachName = h.CoachMember?.User != null
+								? $"{h.CoachMember.User.FirstName} {h.CoachMember.User.LastName}".Trim()
+								: "N/A",
+							CoachColor = h.CoachMember?.Color ?? "rgba(0, 0, 0, 1)",
+							Status = h.Status.ToString(),
+							EpochTime = h.EpochTime,
+							PatientName = h.User != null
+								? $"{h.User.FirstName} {h.User.LastName}".Trim()
+								: "N/A",
+							Source = "High5Appointment",
+							PaymentStatus = null
+						})
+						.ToList();
+				}
 
-					// --- Enquiries (Filtered by date range) --- 
+				// --- Enquiries ---
+				List<AppointmentMergedDto> enquiryList = new();
+				if (normalizedType == null || normalizedType == "enquiry")
+				{
 					var enquiriesResult = await _enquiryRepo.GetAllAsync(clinicId);
+
 					var filteredEnquiries = enquiriesResult
-						.Where(e => e.Status != EnquiryStatus.Member)
-						.Where(e => e.AppointmentDate.HasValue &&
-								   e.AppointmentDate.Value.Date >= filterStartDate &&
-								   e.AppointmentDate.Value.Date <= filterEndDate);
+						.Where(e => e.Status != EnquiryStatus.Member);
 
 					if (status != null)
 						filteredEnquiries = filteredEnquiries.Where(e => e.Status == status.Value);
@@ -218,31 +241,148 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					if (paymentStatus != null)
 						filteredEnquiries = filteredEnquiries.Where(e => e.Payment == paymentStatus.Value);
 
-				var enquiryList = filteredEnquiries.Select(e => new AppointmentMergedDto
-				{
-					Id = e.Id,
-					ClinicId = e.ClinicId,
-					UserId = null,
-					phone = e.Contact,
-					PackageId = null,
-					PackageName = null,
-					Date = e.AppointmentDate,
-					Time = e.AppointmentTime.Value,
-					CoachId = null,
-                    CoachColor = "rgba(0, 0, 0, 1)",
-                    Status = e.Status.ToString(),
-					EpochTime = null,
-					PatientName = e.Firstname + " " + e.Lastname,
-					Source = "Enquiry",
-					PaymentStatus = e.Payment
-				}).ToList();
+					if (coachId != null)
+						filteredEnquiries = filteredEnquiries
+							.Where(e => e.AssignedCoaches != null && e.AssignedCoaches.Any(ac => ac.CoachId == coachId.Value));
 
-					// --- Merge --- 
-					var mergedList = high5List
-						.Concat(enquiryList)
-						.OrderBy(x => x.Date)
-						.ThenBy(x => x.Time)
-						.ToList();
+					foreach (var e in filteredEnquiries)
+					{
+						// AppointmentDate entry
+						if (e.AppointmentDate.HasValue &&
+							e.AppointmentDate.Value.Date >= filterStartDate &&
+							e.AppointmentDate.Value.Date <= filterEndDate)
+						{
+							enquiryList.Add(new AppointmentMergedDto
+							{
+								Id = e.Id,
+								ClinicId = e.ClinicId,
+								UserId = null,
+								phone = e.Contact,
+								PackageId = e.PricingPackageId,
+								PackageName = e.PricingPackage?.ProgramName,
+								Date = e.AppointmentDate,
+								followup = e.FollowUpDate,
+								Time = e.AppointmentTime ?? TimeSpan.Zero,
+								CoachId = e.AssignedCoaches != null && e.AssignedCoaches.Any()
+									? string.Join(",", e.AssignedCoaches.Select(ac => ac.CoachId))
+									: null,
+								CoachName = e.AssignedCoaches != null && e.AssignedCoaches.Any()
+									? string.Join(",", e.AssignedCoaches
+										.Where(ac => ac.ClinicMember != null && ac.ClinicMember.User != null)
+										.Select(ac => $"{ac.ClinicMember.User.FirstName} {ac.ClinicMember.User.LastName}"))
+									: "N/A",
+								CoachColor = "rgba(0, 0, 0, 1)",
+								Status = e.Status.ToString(),
+								EpochTime = null,
+								PatientName = $"{e.Firstname} {e.Lastname}",
+								Source = "Enquiry",
+								PaymentStatus = e.Payment
+							});
+						}
+
+						// FollowUpDate entry
+						if (e.FollowUpDate.HasValue &&
+							e.FollowUpDate.Value.Date >= filterStartDate &&
+							e.FollowUpDate.Value.Date <= filterEndDate)
+						{
+							enquiryList.Add(new AppointmentMergedDto
+							{
+								Id = e.Id,
+								ClinicId = e.ClinicId,
+								UserId = null,
+								phone = e.Contact,
+								PackageId = e.PricingPackageId,
+								PackageName = e.PricingPackage?.ProgramName,
+								Date = e.FollowUpDate,
+								followup = e.FollowUpDate,
+								Time = e.AppointmentTime ?? TimeSpan.Zero,
+								CoachId = e.AssignedCoaches != null && e.AssignedCoaches.Any()
+									? string.Join(",", e.AssignedCoaches.Select(ac => ac.CoachId))
+									: null,
+								CoachName = e.AssignedCoaches != null && e.AssignedCoaches.Any()
+									? string.Join(",", e.AssignedCoaches
+										.Where(ac => ac.ClinicMember != null && ac.ClinicMember.User != null)
+										.Select(ac => $"{ac.ClinicMember.User.FirstName} {ac.ClinicMember.User.LastName}"))
+									: "N/A",
+								CoachColor = "rgba(0, 0, 0, 1)",
+								Status = e.Status.ToString(),
+								EpochTime = null,
+								PatientName = $"{e.Firstname} {e.Lastname}",
+								Source = "Enquiry",
+								PaymentStatus = e.Payment
+							});
+						}
+
+						// Epoch fallback
+						if ((!e.AppointmentDate.HasValue || e.AppointmentDate.Value.Date < filterStartDate || e.AppointmentDate.Value.Date > filterEndDate) &&
+							(!e.FollowUpDate.HasValue || e.FollowUpDate.Value.Date < filterStartDate || e.FollowUpDate.Value.Date > filterEndDate))
+						{
+							var epochDate = DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).Date;
+							if (epochDate >= filterStartDate && epochDate <= filterEndDate)
+							{
+								enquiryList.Add(new AppointmentMergedDto
+								{
+									Id = e.Id,
+									ClinicId = e.ClinicId,
+									UserId = null,
+									phone = e.Contact,
+									PackageId = e.PricingPackageId,
+									PackageName = e.PricingPackage?.ProgramName,
+									Date = epochDate,
+									followup = null,
+									Time = e.AppointmentTime ?? TimeSpan.Zero,
+									CoachId = e.AssignedCoaches != null && e.AssignedCoaches.Any()
+										? string.Join(",", e.AssignedCoaches.Select(ac => ac.CoachId))
+										: null,
+									CoachName = e.AssignedCoaches != null && e.AssignedCoaches.Any()
+										? string.Join(",", e.AssignedCoaches
+											.Where(ac => ac.ClinicMember != null && ac.ClinicMember.User != null)
+											.Select(ac => $"{ac.ClinicMember.User.FirstName} {ac.ClinicMember.User.LastName}"))
+										: "N/A",
+									CoachColor = "rgba(0, 0, 0, 1)",
+									Status = e.Status.ToString(),
+									EpochTime = e.EpochTime,
+									PatientName = $"{e.Firstname} {e.Lastname}",
+									Source = "Enquiry",
+									PaymentStatus = e.Payment
+								});
+							}
+						}
+					}
+				}
+
+				// --- Merge High5 + Enquiries ---
+				var mergedList = high5List
+					.Concat(enquiryList)
+					.OrderBy(x => x.Date)
+					.ThenBy(x => x.Time)
+					.ToList();
+				var lastSessionCheck = high5List
+	.Where(x => x.Date.HasValue) // safety
+	.GroupBy(x => new { x.UserId, x.PackageId })
+	.Select(g =>
+	{
+		var lastDate = g.Max(x => x.Date!.Value);
+
+		return new
+		{
+			UserId = g.Key.UserId,
+			PackageId = g.Key.PackageId,
+			LastSessionDate = lastDate,
+			IsWithin5Days = (lastDate.Date - DateTime.Today).TotalDays <= 5
+		};
+	})
+	.ToList();
+				// --- Log if 5 days remain ---
+				foreach (var check in lastSessionCheck)
+				{
+					if (check.IsWithin5Days)
+					{
+						_logger.LogInformation(
+							"UserId {UserId}, PackageId {PackageId}: Yes, 5 days remaining. Last session on {LastSessionDate}",
+							check.UserId, check.PackageId, check.LastSessionDate.ToString("yyyy-MM-dd"));
+					}
+				}
 
                
 
@@ -253,16 +393,16 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						.Take(pageSize)
 						.ToList();
 
-					var result = new
-					{
-						Page = page,
-						PageSize = pageSize,
-						TotalRecords = totalRecords,
-						TotalPages = (int)Math.Ceiling((double)totalRecords / pageSize),
-						StartDate = filterStartDate,
-						EndDate = filterEndDate,
-						Data = pagedData
-					};
+				var result = new
+				{
+					Page = page,
+					PageSize = pageSize,
+					TotalRecords = totalRecords,
+					TotalPages = (int)Math.Ceiling((double)totalRecords / pageSize),
+					StartDate = filterStartDate,
+					EndDate = filterEndDate,
+					Data = pagedData
+				};
 
 					return Ok(ApiResponseFactory.Success(result));
 				}
@@ -628,7 +768,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			}
 		}
 
-		// ⭐ NEW: Get daily appointment counts for a specific month
 		[HttpGet("clinic/{clinicId}/calendar-daily/{year}/{month}")]
 		public async Task<IActionResult> GetDailyAppointments(int clinicId, int year, int month)
 		{
@@ -645,33 +784,49 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					.Select(g => new
 					{
 						Date = g.Key,
-						Count = g.Count(),
+						Count = g.Count()
 					});
 
 				// Get Enquiries
 				var enquiriesResult = await _enquiryRepo.GetAllAsync(clinicId);
-				var enquiryDaily = enquiriesResult
-					.Where(e => e.Status != EnquiryStatus.Member)
-					.Where(e => e.AppointmentDate.HasValue &&
-							   e.AppointmentDate.Value.Date >= startDate &&
-							   e.AppointmentDate.Value.Date <= endDate)
-					.GroupBy(e => e.AppointmentDate.Value.Date)
+
+				// Create a list of dates for counting
+				var enquiryDates = new List<DateTime>();
+
+				foreach (var e in enquiriesResult)
+				{
+					if (e.Status == EnquiryStatus.Member) continue;
+
+					// Add AppointmentDate if exists
+					if (e.AppointmentDate.HasValue)
+						enquiryDates.Add(e.AppointmentDate.Value.Date);
+
+					// Add FollowUpDate if exists
+					if (e.FollowUpDate.HasValue)
+						enquiryDates.Add(e.FollowUpDate.Value.Date);
+
+					// If neither exists, fallback to EpochTime
+					if (!e.AppointmentDate.HasValue && !e.FollowUpDate.HasValue)
+						enquiryDates.Add(DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).Date);
+				}
+
+				var enquiryDaily = enquiryDates
+					.Where(d => d >= startDate && d <= endDate)
+					.GroupBy(d => d)
 					.Select(g => new
 					{
 						Date = g.Key,
-						Count = g.Count(),
-						
+						Count = g.Count()
 					});
 
-				// Merge daily data
+				// Merge High5 + Enquiry counts
 				var mergedDaily = high5Daily
 					.Concat(enquiryDaily)
 					.GroupBy(d => d.Date)
 					.Select(g => new
 					{
 						Date = g.Key.ToString("yyyy-MM-dd"),
-						Count = g.Sum(x => x.Count),
-						
+						Count = g.Sum(x => x.Count)
 					})
 					.OrderBy(d => d.Date)
 					.ToList();
@@ -684,6 +839,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
 			}
 		}
+
 
 		// ⭐ NEW: Get appointments for a specific date (reuse existing with single date)
 		[HttpGet("clinic/{clinicId}/appointments-by-date")]

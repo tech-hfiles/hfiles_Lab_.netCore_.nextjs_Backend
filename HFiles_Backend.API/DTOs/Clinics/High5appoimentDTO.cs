@@ -8,7 +8,7 @@ namespace HFiles_Backend.Domain.DTOs.Clinics
 {
 	public class High5AppointmentDto
 	{
-		public int Id { get; set; }
+		public int? Id { get; set; }
 
 		// ================= Clinic =================
 		[Required(ErrorMessage = "Clinic ID is required.")]

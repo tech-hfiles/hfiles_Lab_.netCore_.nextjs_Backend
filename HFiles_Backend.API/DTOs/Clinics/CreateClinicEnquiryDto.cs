@@ -20,10 +20,26 @@ public class CreateClinicEnquiryDto
 
 	public DateTime? AppointmentDate { get; set; }
 	public TimeSpan? AppointmentTime { get; set; }
+	public int? PricingPackageId { get; set; }
 
 	public string? Remark { get; set; }
 
 	// 🔹 CALL STATUS (IMPORTANT)
+	public bool? FirstCall { get; set; }
+	public bool? SecondCall { get; set; }
+}
+public class UpdateClinicEnquiryDto
+{
+	public EnquiryStatus? Status { get; set; }
+	public PaymentStatus? Payment { get; set; }
+
+	public DateTime? AppointmentDate { get; set; }
+	public TimeSpan? AppointmentTime { get; set; }
+
+	public string? Remark { get; set; }
+	public DateTime? FollowUpDate { get; set; }
+
+
 	public bool? FirstCall { get; set; }
 	public bool? SecondCall { get; set; }
 }

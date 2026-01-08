@@ -9497,22 +9497,22 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 					await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
 
-					_logger.LogInformation("Updated existing receipt document record for Receipt {ReceiptNumber}", request.ReceiptNumber);
-				}
-				else
-				{
-					// Create new record
-					var record = new ClinicPatientRecord
-					{
-						ClinicId = request.ClinicId,
-						PatientId = request.PatientId,
-						ClinicVisitId = request.VisitId,
-						Type = RecordType.Images,
-						UniqueRecordId = request.ReceiptNumber,
-						JsonData = System.Text.Json.JsonSerializer.Serialize(uploadedUrls),
-						SendToPatient = false,
-						EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-					};
+                    _logger.LogInformation("Updated existing receipt document record for Receipt {ReceiptNumber}", request.ReceiptNumber);
+                }
+                else
+                {
+                    // Create new record
+                    var record = new ClinicPatientRecord
+                    {
+                        ClinicId = request.ClinicId,
+                        PatientId = request.PatientId,
+                        ClinicVisitId = request.VisitId,
+                        Type = RecordType.Images,
+                        UniqueRecordId = request.ReceiptNumber,
+                        JsonData = System.Text.Json.JsonSerializer.Serialize(uploadedUrls),
+                        SendToPatient = false,
+                        EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                    };
 
 					await _clinicPatientRecordRepository.SaveAsync(record);
 
@@ -9682,12 +9682,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					return NotFound(ApiResponseFactory.Fail($"Receipt document with ID {recordId} not found."));
 				}
 
-				if (record.Type != RecordType.Images)
-				{
-					_logger.LogWarning("Record {RecordId} is not an Images type (Type: {Type})",
-						recordId, record.Type);
-					return BadRequest(ApiResponseFactory.Fail("This record is not a receipt document."));
-				}
+                if (record.Type != RecordType.Images)
+                {
+                    _logger.LogWarning("Record {RecordId} is not an Images type (Type: {Type})",
+                        recordId, record.Type);
+                    return BadRequest(ApiResponseFactory.Fail("This record is not a receipt document."));
+                }
 
 				// Delete the record
 				bool deleted = await _clinicPatientRecordRepository.DeleteDocumentsAsync(recordId);
@@ -9728,5 +9728,5 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			}
 		}
 
-	}
+    }
 }

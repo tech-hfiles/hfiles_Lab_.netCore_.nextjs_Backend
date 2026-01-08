@@ -718,7 +718,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 .FirstOrDefaultAsync(r =>
                     r.ClinicId == clinicId &&
                     r.UniqueRecordId == receiptNumber &&
-                    r.Type == RecordType.Images);
+                    r.Type == RecordType.ReceiptDocuments);
         }
 
         public async Task<List<ClinicPatientRecord>> GetReceiptDocumentsByVisitAsync(int clinicId, int patientId, int visitId)
@@ -728,7 +728,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     r.ClinicId == clinicId &&
                     r.PatientId == patientId &&
                     r.ClinicVisitId == visitId &&
-                    r.Type == RecordType.Images)
+                    r.Type == RecordType.ReceiptDocuments)
                 .OrderByDescending(r => r.EpochTime)
                 .ToListAsync();
         }

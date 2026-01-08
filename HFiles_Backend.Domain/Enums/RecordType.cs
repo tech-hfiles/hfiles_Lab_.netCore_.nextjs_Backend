@@ -10,7 +10,8 @@
         SymptomDiary = 6,
         HfPdf = 7,
         MembershipPlan = 8,
-        PhysiotherapyForm = 9
+        PhysiotherapyForm = 9,
+        ReceiptDocuments = 10
     }
 }
 

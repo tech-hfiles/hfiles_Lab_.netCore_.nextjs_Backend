@@ -415,6 +415,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     {
                         formUrl = "high5TermsConditionsForm";
                     }
+                    else if (consentFormName.Contains("athlete monitoring sheet"))  // ← Fixed: lowercase
+                    {
+                        formUrl = "PublicAthleteMonitoringSheet";
+                    }
                     else if (consentFormName.Contains("postnatal"))
                     {
                         formUrl = "high5PostNatalAssessmentForm";
@@ -427,10 +431,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     {
                         formUrl = "PublicHigh5GoalSettingForm";
                     }
+                   
                     else
                     {
                         // Default fallback
-                        formUrl = "PublicTMDConsentForm";
+                        formUrl = "formNotFound";
                     }
 
                     var consentFormLink = $"{baseUrl}/{formUrl}?ConsentId={entry.Id}&ConsentName={encodedConsentName}&hfid={targetPatient.HFID}";

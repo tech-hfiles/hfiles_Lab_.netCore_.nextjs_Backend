@@ -1099,7 +1099,22 @@ namespace HFiles_Backend.API.Controllers.Clinics
 									);
 									if (mepData?.treatments != null && mepData.treatments.Count > 0)
 									{
-										var firstTreatment = mepData.treatments[0];
+                                        string coachName = "";
+                                        int coachIndex = packageJsonData.IndexOf("\"coach\":");
+                                        if (coachIndex != -1)
+                                        {
+                                            int startQuote = packageJsonData.IndexOf("\"", coachIndex + 8);
+                                            if (startQuote != -1)
+                                            {
+                                                int endQuote = packageJsonData.IndexOf("\"", startQuote + 1);
+                                                if (endQuote != -1)
+                                                {
+                                                    coachName = packageJsonData.Substring(startQuote + 1, endQuote - startQuote - 1);
+                                                }
+                                            }
+                                        }
+
+                                        var firstTreatment = mepData.treatments[0];
 										var firstSessionDate = firstTreatment.sessionDates?.FirstOrDefault();
 										var firstSessionTime = firstTreatment.sessionTimes?.FirstOrDefault();
 
@@ -1120,7 +1135,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 											// Generate email template
 											var emailTemplate = _emailTemplateService.GenerateFirstSessionConfirmationEmailTemplate(
 												mepData.patient.name,
-												mepData.treatments[0].couch,
+                                                coachName,
 												formattedDate,
 												formattedTime,
 												clinic?.ClinicName ?? "High 5"

@@ -1089,7 +1089,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
 									packageId,
 									clinicId
 								));
-								try
+                                if (clinicId != 36)
+                                {
+                                    try
 								{
 									// Parse JSON data
 									// Use System.Text.Json (built-in)
@@ -1170,8 +1172,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
 									);
 									// Don't fail the entire operation if email fails
 								}
+                                }
+                                else
+                                {
+                                    _logger.LogInformation("Email sending skipped for clinicId {ClinicId}", clinicId);
+                                }
 
-							}
+                            }
 							//if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
 							//                     {
 							//                         packageRecord.payment_verify = true;

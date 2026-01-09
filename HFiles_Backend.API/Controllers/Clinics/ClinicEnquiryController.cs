@@ -236,7 +236,7 @@ public class ClinicEnquiryController : ControllerBase
             EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
         };
 		// trial done 
-		if (true)
+		if (false)
 		{
 			try
 			{

@@ -43,7 +43,7 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Required(ErrorMessage = "Total Sessions is required.")]
         [Range(1, int.MaxValue, ErrorMessage = "Total Sessions must be greater than zero.")]
         [Column("Total_Sessions")]
-        public int TotalSessions { get; set; }
+        public int? TotalSessions { get; set; }
 
         [Required(ErrorMessage = "Price in INR is required.")]
         [Range(0.01, 9999999999.99, ErrorMessage = "Price must be between 0.01 and 9999999999.99.")]

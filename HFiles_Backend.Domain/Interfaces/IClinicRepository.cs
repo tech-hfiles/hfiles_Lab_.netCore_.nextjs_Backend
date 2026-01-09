@@ -49,5 +49,10 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<IEnumerable<ClinicConsentForm>> GetConsentFormsByClinicIdAsync(int clinicId);
         Task<ClinicConsentForm?> GetConsentFormByIdAsync(int consentFormId);
         Task UpdateConsentFormAsync(ClinicConsentForm consentForm);
+        Task<High5FormImages> SaveHigh5FormImageAsync(High5FormImages formImage);
+        Task<List<High5FormImages>> GetHigh5FormImagesByVisitIdAsync(int visitId);
+        Task<High5FormImages?> GetHigh5FormImageByIdAsync(int id);
+        Task<ClinicPatient?> GetPatientByIdAsync(int patientId);
+        Task DeleteHigh5FormImageAsync(int imageId);
     }
 }

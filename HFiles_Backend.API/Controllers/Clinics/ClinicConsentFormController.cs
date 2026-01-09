@@ -10,6 +10,7 @@ using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 using System.Web;
 
 namespace HFiles_Backend.API.Controllers.Clinics
@@ -1069,5 +1070,307 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while deleting the consent form."));
             }
         }
+
+
+        /// <summary>
+        /// Upload consent form images/PDFs to S3 and save to High5FormImages table
+        /// </summary>
+        [HttpPost("clinics/{clinicId}/patients/{patientId}/visits/{visitId}/consent-form-images")]
+        [Authorize]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadConsentFormImages(
+            [FromRoute] int clinicId,
+            [FromRoute] int patientId,
+            [FromRoute] int visitId,
+            [FromForm] High5ConsentFormImageUploadRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "High5 Consent Form Image Upload";
+
+            // Validate clinic ID is 36 (High5 Performance)
+            if (clinicId != 36)
+            {
+                _logger.LogWarning("Consent form image upload attempted for non-High5 clinic: {ClinicId}", clinicId);
+                return BadRequest(ApiResponseFactory.Fail("Consent form image upload is only available for High5 Performance clinic."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed for consent form image upload. Errors: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            // Authorization check
+            bool isAuthorized = await _clinicRepository.IsClinicAuthorizedAsync(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized consent form image upload attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to upload images for this clinic."));
+            }
+
+            // Validate file types and sizes
+            var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg" };
+            foreach (var file in request.Files)
+            {
+                var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+                var fileSize = file.Length;
+
+                if (fileSize > 50 * 1024 * 1024) // 50MB limit
+                {
+                    return BadRequest(ApiResponseFactory.Fail($"File {file.FileName} exceeds the 50MB limit."));
+                }
+
+                if (!allowedExtensions.Contains(extension))
+                {
+                    _logger.LogWarning("Invalid file type attempted: {FileName} with extension: {Extension}",
+                        file.FileName, extension);
+                    return BadRequest(ApiResponseFactory.Fail(
+                        $"Unsupported file type for {file.FileName}. Only PDF, JPG, JPEG, and PNG files are allowed."));
+                }
+            }
+
+            // Verify visit exists
+            var visit = await _clinicVisitRepository.GetByIdAsync(visitId);
+            if (visit == null || visit.ClinicId != clinicId)
+            {
+                return NotFound(ApiResponseFactory.Fail("Clinic visit not found."));
+            }
+
+            // Verify patient exists
+            var patient = await _clinicRepository.GetPatientByIdAsync(patientId);
+
+            // Verify consent form exists (optional validation)
+            if (request.ConsentFormId.HasValue)
+            {
+                var consentForm = await _clinicRepository.GetConsentFormByIdAsync(request.ConsentFormId.Value);
+                if (consentForm == null || consentForm.ClinicId != clinicId)
+                {
+                    return NotFound(ApiResponseFactory.Fail("Consent form not found."));
+                }
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var uploadedRecords = new List<object>();
+
+                // Upload each file to S3
+                foreach (var file in request.Files)
+                {
+                    var fileExtension = Path.GetExtension(file.FileName);
+                    var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+                    var sanitizedTitle = request.ConsentFormTitle?.Replace(" ", "_") ?? "consent";
+                    var fileName = $"high5_consent_{clinicId}_{patientId}_{visitId}_{sanitizedTitle}_{Guid.NewGuid()}{fileExtension}";
+                    var tempPath = Path.Combine(Path.GetTempPath(), fileName);
+
+                    // Save to temp file
+                    using (var stream = new FileStream(tempPath, FileMode.Create))
+                    {
+                        await file.CopyToAsync(stream);
+                    }
+
+                    // Upload to S3
+                    var s3Key = $"clinic/high5/consent-forms/{fileName}";
+                    var s3Url = await _s3StorageService.UploadFileToS3(tempPath, s3Key);
+
+                    // Delete temp file
+                    System.IO.File.Delete(tempPath);
+
+                    if (string.IsNullOrEmpty(s3Url))
+                    {
+                        return StatusCode(500, ApiResponseFactory.Fail($"Failed to upload file {file.FileName} to S3."));
+                    }
+
+                    // Create High5FormImages record
+                    var formImage = new High5FormImages
+                    {
+                        ClinicId = clinicId,
+                        PatientId = patientId,
+                        ClinicVisitId = visitId,
+                        FileUrl = s3Url,
+                        ConsentFormId = request.ConsentFormId,
+                        ConsentFormTitle = request.ConsentFormTitle,
+                        EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                    };
+
+                    await _clinicRepository.SaveHigh5FormImageAsync(formImage);
+
+                    uploadedRecords.Add(new
+                    {
+                        Id = formImage.Id,
+                        FileName = file.FileName,
+                        FileUrl = s3Url,
+                        ConsentFormId = request.ConsentFormId,
+                        ConsentFormTitle = request.ConsentFormTitle
+                    });
+
+                    _logger.LogInformation(
+                        "Uploaded consent form image: {FileName} for Clinic {ClinicId}, Patient {PatientId}, Visit {VisitId}",
+                        file.FileName, clinicId, patientId, visitId);
+                }
+
+                await transaction.CommitAsync();
+                committed = true;
+
+                var response = new
+                {
+                    ClinicId = clinicId,
+                    PatientId = patientId,
+                    VisitId = visitId,
+                    ConsentFormId = request.ConsentFormId,
+                    ConsentFormTitle = request.ConsentFormTitle,
+                    TotalFilesUploaded = uploadedRecords.Count,
+                    UploadedFiles = uploadedRecords,
+                    Message = $"Successfully uploaded {uploadedRecords.Count} consent form image(s)."
+                };
+
+                _logger.LogInformation(
+                    "Uploaded {Count} consent form images for Clinic {ClinicId}, Patient {PatientId}, Visit {VisitId}",
+                    uploadedRecords.Count, clinicId, patientId, visitId);
+
+                return Ok(ApiResponseFactory.Success(response, response.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error uploading consent form images for Clinic {ClinicId}, Patient {PatientId}, Visit {VisitId}",
+                    clinicId, patientId, visitId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while uploading consent form images."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
+
+
+        /// <summary>
+        /// Get all consent form images for a specific visit
+        /// </summary>
+        [HttpGet("clinics/{clinicId}/patients/{patientId}/visits/{visitId}/consent-form-images")]
+        [Authorize]
+        public async Task<IActionResult> GetConsentFormImages(
+            [FromRoute] int clinicId,
+            [FromRoute] int patientId,
+            [FromRoute] int visitId)
+        {
+            HttpContext.Items["Log-Category"] = "High5 Consent Form Image Retrieval";
+
+            // Validate clinic ID is 36 (High5 Performance)
+            if (clinicId != 36)
+            {
+                _logger.LogWarning("Consent form image retrieval attempted for non-High5 clinic: {ClinicId}", clinicId);
+                return BadRequest(ApiResponseFactory.Fail("Consent form images are only available for High5 Performance clinic."));
+            }
+
+            // Authorization check
+            bool isAuthorized = await _clinicRepository.IsClinicAuthorizedAsync(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized consent form image retrieval attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view images for this clinic."));
+            }
+
+            try
+            {
+                var formImages = await _clinicRepository.GetHigh5FormImagesByVisitIdAsync(visitId);
+
+                if (!formImages.Any())
+                {
+                    return Ok(ApiResponseFactory.Success(new List<object>(), "No consent form images found for this visit."));
+                }
+
+                var response = formImages.Select(img => new
+                {
+                    Id = img.Id,
+                    FileUrl = img.FileUrl,
+                    ConsentFormId = img.ConsentFormId,
+                    ConsentFormTitle = img.ConsentFormTitle,
+                    UploadedAt = DateTimeOffset.FromUnixTimeSeconds(img.EpochTime).DateTime,
+                    EpochTime = img.EpochTime
+                }).ToList();
+
+                _logger.LogInformation("Retrieved {Count} consent form images for Visit {VisitId}");
+
+                return Ok(ApiResponseFactory.Success(response, $"Found {response.Count} consent form image(s)."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error retrieving consent form images for Visit {VisitId}",
+                    visitId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while retrieving consent form images."));
+            }
+        }
+
+
+        /// <summary>
+        /// Delete a consent form image
+        /// </summary>
+        [HttpDelete("clinics/{clinicId}/consent-form-images/{imageId}")]
+        [Authorize]
+        public async Task<IActionResult> DeleteConsentFormImage(
+            [FromRoute] int clinicId,
+            [FromRoute] int imageId)
+        {
+            HttpContext.Items["Log-Category"] = "High5 Consent Form Image Delete";
+
+            // Validate clinic ID is 36 (High5 Performance)
+            if (clinicId != 36)
+            {
+                return BadRequest(ApiResponseFactory.Fail("This operation is only available for High5 Performance clinic."));
+            }
+
+            // Authorization check
+            bool isAuthorized = await _clinicRepository.IsClinicAuthorizedAsync(clinicId, User);
+            if (!isAuthorized)
+            {
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to delete images for this clinic."));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var formImage = await _clinicRepository.GetHigh5FormImageByIdAsync(imageId);
+
+                if (formImage == null)
+                {
+                    return NotFound(ApiResponseFactory.Fail("Consent form image not found."));
+                }
+
+                if (formImage.ClinicId != clinicId)
+                {
+                    return BadRequest(ApiResponseFactory.Fail("This image does not belong to the specified clinic."));
+                }
+
+                await _clinicRepository.DeleteHigh5FormImageAsync(imageId);
+                await transaction.CommitAsync();
+                committed = true;
+
+                _logger.LogInformation(
+                    "Deleted consent form image {ImageId} for Clinic {ClinicId}",
+                    imageId, clinicId);
+
+                return Ok(ApiResponseFactory.Success("Consent form image deleted successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error deleting consent form image {ImageId}",
+                    imageId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while deleting the consent form image."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
+
     }
 }

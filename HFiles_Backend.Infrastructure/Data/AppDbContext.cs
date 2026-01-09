@@ -456,6 +456,7 @@ namespace HFiles_Backend.Infrastructure.Data
 		public DbSet<ClinicEnquiryCoach> ClinicEnquiryCoaches { get; set; }
 
         public DbSet<SessionReminderLog> SessionReminderLogs { get; set; }
+        public DbSet<High5FormImages> High5FormImages { get; set; }
 
 
 

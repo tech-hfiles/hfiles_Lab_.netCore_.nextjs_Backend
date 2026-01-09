@@ -346,5 +346,51 @@ namespace HFiles_Backend.Infrastructure.Repositories
             _context.ClinicConsentForms.Update(consentForm);
             await _context.SaveChangesAsync();
         }
+
+        public async Task<High5FormImages> SaveHigh5FormImageAsync(High5FormImages formImage)
+        {
+            await _context.High5FormImages.AddAsync(formImage);
+            await _context.SaveChangesAsync();
+            return formImage;
+        }
+
+        public async Task<List<High5FormImages>> GetHigh5FormImagesByVisitIdAsync(int visitId)
+        {
+            return await _context.High5FormImages
+                .Include(x => x.ConsentForm)
+                .Include(x => x.Patient)
+                .Include(x => x.Visit)
+                .Where(x => x.ClinicVisitId == visitId)
+                .OrderByDescending(x => x.EpochTime)
+                .ToListAsync();
+        }
+
+        public async Task<High5FormImages?> GetHigh5FormImageByIdAsync(int id)
+        {
+            return await _context.High5FormImages
+                .Include(x => x.ConsentForm)
+                .Include(x => x.Patient)
+                .Include(x => x.Visit)
+                .FirstOrDefaultAsync(x => x.Id == id);
+        }
+
+        public async Task<ClinicPatient?> GetPatientByIdAsync(int patientId)
+        {
+            return await _context.ClinicPatients
+                .FirstOrDefaultAsync(p => p.Id == patientId);
+        }
+
+        public async Task DeleteHigh5FormImageAsync(int imageId)
+        {
+            var formImage = await _context.High5FormImages.FindAsync(imageId);
+            if (formImage != null)
+            {
+                _context.High5FormImages.Remove(formImage);
+                await _context.SaveChangesAsync();
+            }
+        }
+
+
+
     }
 }

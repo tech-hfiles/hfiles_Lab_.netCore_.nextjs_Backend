@@ -9529,7 +9529,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         ClinicId = request.ClinicId,
                         PatientId = request.PatientId,
                         ClinicVisitId = request.VisitId,
-                        Type = RecordType.Images,
+                        Type = RecordType.ReceiptDocuments,
                         UniqueRecordId = request.ReceiptNumber,
                         JsonData = System.Text.Json.JsonSerializer.Serialize(uploadedUrls),
                         SendToPatient = false,
@@ -9704,7 +9704,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					return NotFound(ApiResponseFactory.Fail($"Receipt document with ID {recordId} not found."));
 				}
 
-                if (record.Type != RecordType.Images)
+                if (record.Type != RecordType.ReceiptDocuments)
                 {
                     _logger.LogWarning("Record {RecordId} is not an Images type (Type: {Type})",
                         recordId, record.Type);
@@ -9749,6 +9749,200 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					await transaction.RollbackAsync();
 			}
 		}
+
+
+        [HttpPost("clinic/patient/documents/resend/{recordId}")]
+        [Authorize]
+        public async Task<IActionResult> ResendPdfDocument([FromRoute] int recordId)
+        {
+            HttpContext.Items["Log-Category"] = "PDF Document Resend";
+
+            if (recordId <= 0)
+            {
+                return BadRequest(ApiResponseFactory.Fail("Record ID must be a positive integer."));
+            }
+
+            try
+            {
+                // 1. FETCH THE EXISTING RECORD FROM DATABASE
+                var record = await _clinicPatientRecordRepository.GetRecordByIdAsync(recordId);
+
+                if (record == null)
+                {
+                    _logger.LogWarning("Record {RecordId} not found for resend", recordId);
+                    return NotFound(ApiResponseFactory.Fail($"Record with ID {recordId} not found."));
+                }
+
+                // 2. AUTHORIZATION CHECK
+                bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(record.ClinicId, User);
+                if (!isAuthorized)
+                {
+                    _logger.LogWarning("Unauthorized resend attempt for Record {RecordId}, Clinic {ClinicId}",
+                        recordId, record.ClinicId);
+                    return Unauthorized(ApiResponseFactory.Fail("You are not authorized to resend documents for this clinic."));
+                }
+
+                // 3. VALIDATE RECORD HAS SendToPatient = true (PDF was already generated)
+                if (!record.SendToPatient)
+                {
+                    return BadRequest(ApiResponseFactory.Fail("This record does not have a generated PDF yet. Please generate the PDF first."));
+                }
+
+                // 4. PARSE THE EXISTING URL FROM JsonData
+                string pdfUrl;
+                try
+                {
+                    var jsonData = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(record.JsonData);
+                    pdfUrl = jsonData?.GetValueOrDefault("url") ?? "";
+
+                    if (string.IsNullOrWhiteSpace(pdfUrl))
+                    {
+                        return BadRequest(ApiResponseFactory.Fail("Record does not contain a valid PDF URL."));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to parse JSON data for Record {RecordId}", recordId);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid JSON data format in the record."));
+                }
+
+                // 5. GET RELATED DATA FOR EMAIL
+                var visit = await _clinicVisitRepository.GetByIdAsync(record.ClinicVisitId);
+                if (visit == null)
+                {
+                    return NotFound(ApiResponseFactory.Fail("Visit not found."));
+                }
+
+                var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(record.PatientId);
+                if (clinicPatient == null)
+                {
+                    return NotFound(ApiResponseFactory.Fail("Patient not found."));
+                }
+
+                var user = await _userRepository.GetUserByHFIDAsync(clinicPatient.HFID);
+                if (user == null)
+                {
+                    return NotFound(ApiResponseFactory.Fail("User not found for HFID."));
+                }
+
+                var clinic = await _clinicRepository.GetByIdAsync(record.ClinicId);
+                if (clinic == null)
+                {
+                    return NotFound(ApiResponseFactory.Fail($"Clinic with ID {record.ClinicId} not found."));
+                }
+
+                // 6. PREPARE EMAIL DATA
+                var clinicName = clinic.ClinicName ?? "Clinic";
+                var patientName = clinicPatient?.PatientName ?? $"{user?.FirstName} {user?.LastName}" ?? "N/A";
+                string appointmentDate = visit?.AppointmentDate != null
+                    ? visit.AppointmentDate.ToString("dd-MM-yyyy")
+                    : "N/A";
+                string appointmentTime = visit != null
+                    ? visit.AppointmentTime.ToString(@"hh\:mm")
+                    : "N/A";
+
+                // Determine document type and category
+                string documentType = record.Type.ToString();
+                string categoryName = record.Type switch
+                {
+                    RecordType.Prescription => "Medications/Prescription",
+                    RecordType.Treatment => "Lab Reports",
+                    RecordType.Invoice => "Invoices/Insurance",
+                    RecordType.Receipt => "Invoices/Insurance",
+                    RecordType.MembershipPlan => "Membership Plans",
+                    RecordType.Images => "Lab Reports",
+                    RecordType.HfPdf => "Special Report",
+                    _ => "Unknown"
+                };
+
+                // 7. SEND EMAIL WITH EXISTING URL
+                bool emailSent = false;
+                string? emailSentTo = null;
+
+                if (!string.IsNullOrWhiteSpace(user?.Email))
+                {
+                    try
+                    {
+                        var patientFirstName = user.FirstName ?? "Patient";
+
+                        // Create document info for email template
+                        var patientDocumentInfo = new PatientDocumentInfo
+                        {
+                            DocumentType = documentType,
+                            Category = categoryName,
+                            DocumentUrl = pdfUrl  // ← EXISTING URL FROM DATABASE
+                        };
+
+                        var emailTemplate = _emailTemplateService.GeneratePatientDocumentsUploadedEmailTemplate(
+                            patientFirstName,
+                            new List<PatientDocumentInfo> { patientDocumentInfo },
+                            clinicName,
+                            appointmentDate,
+                            appointmentTime
+                        );
+
+                        await _emailService.SendEmailAsync(
+                            user.Email,
+                            $"Document Resent - {clinicName}",
+                            emailTemplate
+                        );
+
+                        emailSent = true;
+                        emailSentTo = user.Email;
+
+                        _logger.LogInformation(
+                            "Resend email sent successfully to {Email} for Record {RecordId}, URL: {Url}",
+                            user.Email, recordId, pdfUrl);
+                    }
+                    catch (Exception emailEx)
+                    {
+                        _logger.LogError(emailEx,
+                            "Failed to send resend email to {Email} for Record {RecordId}",
+                            user.Email, recordId);
+                        // Don't fail the entire operation if email fails
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Email not provided for Patient {PatientName} (HFID: {HFID}). Skipping email notification.",
+                        patientName, clinicPatient?.HFID);
+                }
+
+                // 8. RETURN RESPONSE
+                var response = new
+                {
+                    RecordId = recordId,
+                    PatientName = patientName,
+                    PatientHFID = clinicPatient?.HFID,
+                    ClinicName = clinicName,
+                    Email = string.IsNullOrWhiteSpace(user?.Email) ? "Not provided" : user.Email,
+                    AppointmentDate = appointmentDate,
+                    AppointmentTime = appointmentTime,
+                    DocumentType = documentType,
+                    Category = categoryName,
+                    DocumentUrl = pdfUrl,  // ← EXISTING URL FROM DATABASE
+                    EmailSent = emailSent,
+                    SentToEmail = emailSentTo,
+                    ResentAt = DateTime.UtcNow,
+                    Message = emailSent
+                        ? $"Document successfully resent to {emailSentTo}"
+                        : "Document URL retrieved but email was not sent (no email provided or email failed)"
+                };
+
+                _logger.LogInformation(
+                    "Document resent for Record {RecordId}, Patient {PatientName}, Email sent: {EmailSent}, Existing URL: {Url}",
+                    recordId, patientName, emailSent, pdfUrl);
+
+                return Ok(ApiResponseFactory.Success(response, response.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resending document for Record {RecordId}", recordId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while resending the document."));
+            }
+        }
+
 
     }
 }

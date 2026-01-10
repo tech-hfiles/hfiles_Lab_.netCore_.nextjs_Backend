@@ -44,8 +44,15 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         public string JsonData { get; set; } = null!;
         public bool SendToPatient { get; set; }
 
-        [Required(ErrorMessage = "EpochTime is required.")]
+		[Required]
+		public bool IsGoalSettingRequired { get; set; } = true;
+
+
+		[Required(ErrorMessage = "EpochTime is required.")]
         [Range(1, long.MaxValue, ErrorMessage = "EpochTime must be a valid timestamp.")]
-        public long EpochTime { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+
+
+		public long EpochTime { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     }
 }

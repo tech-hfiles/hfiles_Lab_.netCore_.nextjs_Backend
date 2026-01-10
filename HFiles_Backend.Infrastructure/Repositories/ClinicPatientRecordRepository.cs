@@ -663,7 +663,56 @@ namespace HFiles_Backend.Infrastructure.Repositories
             }
         }
 
-        public async Task<string?> GetLatestPackageNameByPatientIdAsync(int patientId)
+
+		public async Task<string?> GetCouchnameLatestPackageNameByPatientIdAsync(int patientId)
+		{
+			try
+			{
+				// Get the latest membership plan for this patient
+				var latestMembershipPlan = await _context.ClinicPatientRecords
+					.AsNoTracking()
+					.Where(r => r.PatientId == patientId
+							 && r.Type == RecordType.MembershipPlan
+							 && !string.IsNullOrWhiteSpace(r.UniqueRecordId))
+					.OrderByDescending(r => r.EpochTime)
+					.FirstOrDefaultAsync();
+
+				if (latestMembershipPlan == null)
+					return null;
+
+				// Parse JSON to get coach names from treatments
+				using var doc = JsonDocument.Parse(latestMembershipPlan.JsonData);
+				var root = doc.RootElement;
+
+				if (root.TryGetProperty("treatments", out var treatments) &&
+					treatments.ValueKind == JsonValueKind.Array)
+				{
+					var coachNames = new List<string>();
+
+					foreach (var treatment in treatments.EnumerateArray())
+					{
+						if (treatment.TryGetProperty("coach", out var coachElement))
+						{
+							var coachName = coachElement.GetString();
+							if (!string.IsNullOrWhiteSpace(coachName) && !coachNames.Contains(coachName))
+								coachNames.Add(coachName);
+						}
+					}
+
+					if (coachNames.Any())
+						return string.Join(", ", coachNames);
+				}
+
+				return null;
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error fetching latest coach name for PatientId {PatientId}", patientId);
+				return null;
+			}
+		}
+
+		public async Task<string?> GetLatestPackageNameByPatientIdAsync(int patientId)
         {
             try
             {
@@ -748,5 +797,158 @@ namespace HFiles_Backend.Infrastructure.Repositories
             return true;
         }
 
-    }
+
+
+		public async Task<string?> GetLatestCoachNameByPatientIdAsync(int patientId)
+		{
+			try
+			{
+				// Get the latest membership plan for this patient
+				var latestMembershipPlan = await _context.ClinicPatientRecords
+					.AsNoTracking()
+					.Where(r => r.PatientId == patientId
+							 && r.Type == RecordType.MembershipPlan
+							 && !string.IsNullOrWhiteSpace(r.UniqueRecordId))
+					.OrderByDescending(r => r.EpochTime)
+					.FirstOrDefaultAsync();
+
+				if (latestMembershipPlan == null)
+					return null;
+
+				// Parse JSON to get coach name
+				using var doc = JsonDocument.Parse(latestMembershipPlan.JsonData);
+				var root = doc.RootElement;
+
+				// Try to get coach name from the JSON
+				if (root.TryGetProperty("coachName", out var coachNameElement))
+				{
+					return coachNameElement.GetString();
+				}
+
+				// Alternative: If coach is nested in a different structure
+				if (root.TryGetProperty("coach", out var coachElement))
+				{
+					if (coachElement.TryGetProperty("name", out var nameElement))
+					{
+						return nameElement.GetString();
+					}
+				}
+
+				return null;
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error fetching latest coach name for PatientId {PatientId}", patientId);
+				return null;
+			}
+		}
+
+		// Optional: Get all unique coach names for dropdown filters
+		public async Task<List<string>> GetAllCoachNamesAsync(int clinicId)
+		{
+			try
+			{
+				var membershipPlans = await _context.ClinicPatientRecords
+					.AsNoTracking()
+					.Where(r => r.ClinicId == clinicId
+							 && r.Type == RecordType.MembershipPlan
+							 && !string.IsNullOrWhiteSpace(r.JsonData))
+					.ToListAsync();
+
+				var coachNames = new HashSet<string>();
+
+				foreach (var plan in membershipPlans)
+				{
+					try
+					{
+						using var doc = JsonDocument.Parse(plan.JsonData);
+						var root = doc.RootElement;
+
+						if (root.TryGetProperty("coachName", out var coachNameElement))
+						{
+							var coachName = coachNameElement.GetString();
+							if (!string.IsNullOrWhiteSpace(coachName))
+								coachNames.Add(coachName);
+						}
+						else if (root.TryGetProperty("coach", out var coachElement))
+						{
+							if (coachElement.TryGetProperty("name", out var nameElement))
+							{
+								var coachName = nameElement.GetString();
+								if (!string.IsNullOrWhiteSpace(coachName))
+									coachNames.Add(coachName);
+							}
+						}
+					}
+					catch (JsonException ex)
+					{
+						_logger.LogWarning(ex, "Failed to parse membership plan JSON for record ID {RecordId}", plan.Id);
+					}
+				}
+
+				return coachNames.OrderBy(c => c).ToList();
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error fetching all coach names for ClinicId {ClinicId}", clinicId);
+				return new List<string>();
+			}
+		}
+
+		// Optional: Get all unique package names for dropdown filters
+		public async Task<List<string>> GetAllPackageNamesAsync(int clinicId)
+		{
+			try
+			{
+				var membershipPlans = await _context.ClinicPatientRecords
+					.AsNoTracking()
+					.Where(r => r.ClinicId == clinicId
+							 && r.Type == RecordType.MembershipPlan
+							 && !string.IsNullOrWhiteSpace(r.JsonData))
+					.ToListAsync();
+
+				var packageNames = new HashSet<string>();
+
+				foreach (var plan in membershipPlans)
+				{
+					try
+					{
+						using var doc = JsonDocument.Parse(plan.JsonData);
+						var root = doc.RootElement;
+
+						if (root.TryGetProperty("treatments", out var treatments) &&
+							treatments.ValueKind == JsonValueKind.Array)
+						{
+							foreach (var treatment in treatments.EnumerateArray())
+							{
+								if (treatment.TryGetProperty("name", out var nameElement))
+								{
+									var name = nameElement.GetString();
+									if (!string.IsNullOrWhiteSpace(name))
+										packageNames.Add(name);
+								}
+							}
+						}
+					}
+					catch (JsonException ex)
+					{
+						_logger.LogWarning(ex, "Failed to parse membership plan JSON for record ID {RecordId}", plan.Id);
+					}
+				}
+
+				return packageNames.OrderBy(p => p).ToList();
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error fetching all package names for ClinicId {ClinicId}", clinicId);
+				return new List<string>();
+			}
+		}
+
+
+
+	}
+
+
+
 }

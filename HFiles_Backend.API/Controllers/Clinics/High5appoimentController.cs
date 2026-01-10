@@ -159,6 +159,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			public long? EpochTime { get; set; }
 			public string PatientName { get; set; }
 			public string Source { get; set; }
+			public string? EventType { get; set; } // "Trial" | "FollowUp"
+
 			public string? HFID { get; set; }
 			public PaymentStatus? PaymentStatus { get; set; }
 		}
@@ -276,6 +278,8 @@ int clinicId,
 								EpochTime = null,
 								PatientName = $"{e.Firstname} {e.Lastname}",
 								Source = "Enquiry",
+								EventType = "Trial",
+
 								PaymentStatus = e.Payment
 							});
 						}
@@ -309,6 +313,8 @@ int clinicId,
 								EpochTime = null,
 								PatientName = $"{e.Firstname} {e.Lastname}",
 								Source = "Enquiry",
+								EventType = "FollowUp",
+
 								PaymentStatus = e.Payment
 							});
 						}

@@ -1,4 +1,6 @@
-﻿using HFiles_Backend.Domain.Enums;
+﻿using System.Text.Json.Serialization;
+using HFiles_Backend.Domain.Enums;
+using System.Text.Json.Serialization;
 
 public class CreateClinicEnquiryDto
 {
@@ -28,18 +30,31 @@ public class CreateClinicEnquiryDto
 	public bool? FirstCall { get; set; }
 	public bool? SecondCall { get; set; }
 }
+
+
 public class UpdateClinicEnquiryDto
 {
+	[JsonPropertyName("status")]
 	public EnquiryStatus? Status { get; set; }
+
+	[JsonPropertyName("payment")]
 	public PaymentStatus? Payment { get; set; }
 
+	[JsonPropertyName("appointmentDate")]
 	public DateTime? AppointmentDate { get; set; }
+
+	[JsonPropertyName("appointmentTime")]
 	public TimeSpan? AppointmentTime { get; set; }
 
+	[JsonPropertyName("remark")]
 	public string? Remark { get; set; }
+
+	[JsonPropertyName("followUpDate")]
 	public DateTime? FollowUpDate { get; set; }
 
-
+	[JsonPropertyName("firstCall")]
 	public bool? FirstCall { get; set; }
+
+	[JsonPropertyName("secondCall")]
 	public bool? SecondCall { get; set; }
 }

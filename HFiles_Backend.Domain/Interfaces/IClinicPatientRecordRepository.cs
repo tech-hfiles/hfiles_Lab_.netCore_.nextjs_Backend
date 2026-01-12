@@ -43,6 +43,12 @@ namespace HFiles_Backend.Domain.Interfaces
 
     
         Task<bool> DeleteDocumentsAsync(int recordId);
+		Task<List<ClinicPatientRecord>> GetAllByPatientAndVisitAsync(
+			int patientId,
+			int clinicVisitId);
 
-    }
+		Task UpdateRangeAsync(List<ClinicPatientRecord> records);
+
+
+	}
 }

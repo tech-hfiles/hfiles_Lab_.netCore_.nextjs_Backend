@@ -168,6 +168,68 @@ namespace HFiles_Backend.API.Controllers.Clinics
         }
 
 
+        [HttpGet("clinics/{clinicId}/users/{userId}/high5-forms/{formName}")]
+public async Task<IActionResult> GetFormsByUserAndFormName(
+    [FromRoute] int clinicId,
+    [FromRoute] int userId,
+    [FromRoute] string formName)
+{
+    HttpContext.Items["Log-Category"] = "High5 Form Get All";
+
+    try
+    {
+        var decodedFormName = Uri.UnescapeDataString(formName).Trim();
+
+        _logger.LogInformation(
+            "🔍 Fetching all forms - ClinicId: {ClinicId}, UserId: {UserId}, FormName: '{FormName}'",
+            clinicId, userId, decodedFormName
+        );
+
+        var forms = await _formRepository
+            .GetAllByClinicUserAndFormNameAsync(
+                clinicId,
+                userId,
+                decodedFormName
+            );
+
+        // ✅ If no forms found → return empty list (NOT error)
+        if (forms == null || !forms.Any())
+        {
+            _logger.LogInformation("📝 No forms found for given filters");
+
+            return Ok(ApiResponseFactory.Success(
+                new List<High5ChocheFormResponse>(),
+                "No forms found."
+            ));
+        }
+
+        var response = forms.Select(form => new High5ChocheFormResponse
+        {
+            Id = form.Id,
+            ClinicId = form.ClinicId,
+            UserId = form.UserId,
+            FormName = form.FormName,
+            JsonData = form.JsonData,
+            IsSend = form.IsSend,
+            ConsentId = form.ConsentId,
+            EpochTime = form.EpochTime
+        }).ToList();
+
+        _logger.LogInformation("✅ Forms retrieved successfully. Count: {Count}", response.Count);
+
+        return Ok(ApiResponseFactory.Success(
+            response,
+            "Forms retrieved successfully."
+        ));
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "❌ Error retrieving forms");
+        return StatusCode(500, ApiResponseFactory.Fail("Internal server error"));
+    }
+}
+
+
 
         /// <summary>
         /// Get a specific form by ID

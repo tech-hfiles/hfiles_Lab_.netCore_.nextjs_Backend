@@ -1,9 +1,12 @@
-﻿using HFiles_Backend.API.DTOs.Clinics;
+﻿using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
+using HFiles_Backend.API.DTOs.Clinics;
 using HFiles_Backend.API.Interfaces;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Clinics.Member;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
 using HFiles_Backend.Infrastructure.Repositories;
@@ -12,8 +15,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
-using System.ComponentModel.DataAnnotations;
-using System.Security.Claims;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -914,5 +915,74 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
             }
         }
-    }
+
+
+
+
+
+		[HttpGet("clinics/{clinicId}/pending-goal-settings")]
+		public async Task<IActionResult> GetPendingGoalSettings([FromRoute] int clinicId)
+		{
+			try
+			{
+				var currentEpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+				const int secondsInDay = 86400;
+				var thresholdEpoch = currentEpochTime - (7 * secondsInDay);
+
+				var baseData = await (from cv in _context.ClinicVisits
+									  where cv.ClinicId == clinicId
+									  join cp in _context.ClinicPatients on cv.ClinicPatientId equals cp.Id
+									  join u in _context.Users on cp.HFID equals u.HfId
+									  where u.DeletedBy == 0
+									  join r in _context.ClinicPatientRecords on cv.Id equals r.ClinicVisitId
+									  where r.Type == RecordType.Invoice
+											&& r.IsGoalSettingRequired == true
+											&& r.EpochTime <= thresholdEpoch
+									  select new { User = u, ClinicPatient = cp, Receipt = r, VisitId = cv.Id })
+									  .ToListAsync();
+
+				var latestPerPatient = baseData
+					.GroupBy(x => x.ClinicPatient.Id) // Group by ClinicPatientId
+					.Select(g => g.OrderByDescending(x => x.Receipt.EpochTime).First())
+					.ToList();
+
+				// FIX: Match against ClinicPatient.Id
+				var clinicPatientIds = latestPerPatient.Select(x => x.ClinicPatient.Id).ToList();
+
+				var existingForms = await _context.high5ChocheForms
+					.Where(f => f.ClinicId == clinicId
+							 && clinicPatientIds.Contains(f.UserId) // DB column UserId holds ClinicPatientId
+							 && f.FormName == "High5 Goal Setting")
+					.Select(f => new { f.UserId, f.EpochTime })
+					.ToListAsync();
+
+				var finalResult = latestPerPatient
+					.Where(p => !existingForms.Any(f => f.UserId == p.ClinicPatient.Id && f.EpochTime > p.Receipt.EpochTime))
+					.Select(p => new
+					{
+						PatientId = p.User.Id,
+						ClinicVisitId = p.VisitId,
+						ClinicPatientId = p.ClinicPatient.Id,
+						HFID = p.ClinicPatient.HFID,
+						UserName = $"{p.User.FirstName} {p.User.LastName}".Trim(),
+						DaysPending = (int)((currentEpochTime - p.Receipt.EpochTime) / secondsInDay),
+						LatestReceipt = new
+						{
+							uniqueRecordId = p.Receipt.UniqueRecordId,
+							date = DateTimeOffset.FromUnixTimeSeconds(p.Receipt.EpochTime).DateTime
+						}
+					}).ToList();
+
+				return Ok(ApiResponseFactory.Success(new { PendingGoalSettings = finalResult }, $"Found {finalResult.Count} pending."));
+			}
+			catch (Exception ex)
+			{
+				return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
+			}
+		}
+
+
+
+
+	}
 }

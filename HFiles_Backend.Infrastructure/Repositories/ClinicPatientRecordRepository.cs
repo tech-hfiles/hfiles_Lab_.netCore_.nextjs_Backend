@@ -946,6 +946,37 @@ namespace HFiles_Backend.Infrastructure.Repositories
 		}
 
 
+		public async Task<ClinicPatientRecord?> GetByPatientAndVisitAsync(
+	int patientId,
+	int clinicVisitId)
+		{
+			return await _context.ClinicPatientRecords
+				.FirstOrDefaultAsync(x =>
+					x.PatientId == patientId &&
+					x.ClinicVisitId == clinicVisitId &&
+					!x.Is_Cansel
+				);
+		}
+
+		public async Task<List<ClinicPatientRecord>> GetAllByPatientAndVisitAsync(
+	int patientId,
+	int clinicVisitId)
+		{
+			return await _context.ClinicPatientRecords
+				.Where(r =>
+					r.PatientId == patientId &&
+					r.ClinicVisitId == clinicVisitId &&
+					!r.Is_Cansel)
+				.ToListAsync();
+		}
+
+		public async Task UpdateRangeAsync(List<ClinicPatientRecord> records)
+		{
+			_context.ClinicPatientRecords.UpdateRange(records);
+			await _context.SaveChangesAsync();
+		}
+
+
 
 	}
 

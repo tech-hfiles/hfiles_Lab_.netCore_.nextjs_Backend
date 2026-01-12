@@ -23,5 +23,13 @@ namespace HFiles_Backend.Domain.Interfaces
     string formName,
     int consentId
 );
-    }
+
+		Task<List<High5ChocheForm>> GetAllByClinicUserAndFormNameAsync(
+	int clinicId,
+	int userId,
+	string formName
+);
+
+	}
+
 }

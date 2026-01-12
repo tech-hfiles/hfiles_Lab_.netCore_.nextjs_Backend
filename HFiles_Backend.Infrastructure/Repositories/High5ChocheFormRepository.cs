@@ -99,5 +99,21 @@ namespace HFiles_Backend.Infrastructure.Repositories
         );
         }
 
-    }
+		public async Task<List<High5ChocheForm>> GetAllByClinicUserAndFormNameAsync(
+	int clinicId,
+	int userId,
+	string formName)
+		{
+			return await _context.high5ChocheForms
+				.Where(x =>
+					x.ClinicId == clinicId &&
+					x.UserId == userId &&
+					x.FormName == formName
+				)
+				.OrderByDescending(x => x.EpochTime) // latest first (optional)
+				.ToListAsync();
+		}
+
+
+	}
 }

@@ -931,6 +931,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     Id = f.Id,
                     Title = f.Title,
                     ClinicId = f.ClinicId
+
                 }).ToList();
 
                 _logger.LogInformation("Retrieved {Count} consent forms for Clinic ID {ClinicId}", forms.Count(), clinicId);

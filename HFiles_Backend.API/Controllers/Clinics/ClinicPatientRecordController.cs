@@ -9944,5 +9944,79 @@ namespace HFiles_Backend.API.Controllers.Clinics
         }
 
 
-    }
+
+
+		[HttpPatch("clinic/patient/records/patient/{patientId}/visit/{clinicVisitId}/goal-setting")]
+		[Authorize]
+		public async Task<IActionResult> UpdateGoalSettingRequired(
+	[FromRoute] int patientId,
+	[FromRoute] int clinicVisitId,
+	[FromBody] bool isGoalSettingRequired)
+		{
+			HttpContext.Items["Log-Category"] = "Clinic Patient Record Goal Setting Update";
+
+			try
+			{
+				var records = await _clinicPatientRecordRepository
+					.GetAllByPatientAndVisitAsync(patientId, clinicVisitId);
+
+				if (!records.Any())
+				{
+					return NotFound(ApiResponseFactory.Fail(
+						"No clinic patient records found for given patient and visit."
+					));
+				}
+
+				// 🔐 Authorization (check once)
+				bool isAuthorized = await _clinicAuthorizationService
+					.IsClinicAuthorized(records.First().ClinicId, User);
+
+				if (!isAuthorized)
+				{
+					return Unauthorized(ApiResponseFactory.Fail(
+						"You are not authorized to update this clinic record."
+					));
+				}
+
+				var epoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+				foreach (var record in records)
+				{
+					record.IsGoalSettingRequired = isGoalSettingRequired;
+					record.EpochTime = epoch;
+				}
+
+				await _clinicPatientRecordRepository.UpdateRangeAsync(records);
+
+				_logger.LogInformation(
+					"IsGoalSettingRequired updated to {Value} for PatientId {PatientId}, VisitId {VisitId} (Records: {Count})",
+					isGoalSettingRequired, patientId, clinicVisitId, records.Count
+				);
+
+				return Ok(ApiResponseFactory.Success(new
+				{
+					PatientId = patientId,
+					ClinicVisitId = clinicVisitId,
+					UpdatedRecords = records.Count,
+					IsGoalSettingRequired = isGoalSettingRequired
+				}, "Goal setting requirement updated for all visit records."));
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex,
+					"Error updating IsGoalSettingRequired for PatientId {PatientId}, VisitId {VisitId}",
+					patientId, clinicVisitId);
+
+				return StatusCode(500,
+					ApiResponseFactory.Fail("An error occurred while updating goal setting requirement."));
+			}
+		}
+
+
+
+
+
+
+
+	}
 }

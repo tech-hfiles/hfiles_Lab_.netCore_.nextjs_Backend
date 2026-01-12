@@ -901,6 +901,268 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
+        [HttpPost("clinics/{clinicId}/patients/{patientId}/Assessment-forms/High5-send")]
+        [Authorize]
+        public async Task<IActionResult> SendAssessmentFormsToMember(
+        [FromRoute] int clinicId,
+        [FromRoute] int patientId,
+        [FromBody] SendConsentFormsRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Consent Form";
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+
+                _logger.LogWarning("Validation failed for sending consent forms. Errors: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            if (request.ConsentForms == null || !request.ConsentForms.Any())
+            {
+                _logger.LogWarning("No consent forms provided in request");
+                return BadRequest(ApiResponseFactory.Fail("At least one consent form must be provided."));
+            }
+
+            // Check clinic authorization
+            bool isAuthorized = await _clinicRepository.IsClinicAuthorizedAsync(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized consent form send attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("Only authorized clinics can send consent forms."));
+            }
+
+            var transaction = await _clinicRepository.BeginTransactionAsync();
+
+            try
+            {
+                // Validate clinic exists
+                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
+                if (clinic == null)
+                {
+                    _logger.LogWarning("Clinic ID {ClinicId} not found", clinicId);
+                    return NotFound(ApiResponseFactory.Fail("Clinic not found."));
+                }
+
+                // Get patient by ID and extract HFID
+                var patient = await _clinicRepository.GetPatientByHFIDAsync("");
+                var allPatients = await _clinicVisitRepository.GetVisitsByClinicIdAsync(clinicId);
+                var targetPatient = allPatients.Select(v => v.Patient).FirstOrDefault(p => p.Id == patientId);
+
+                if (targetPatient == null)
+                {
+                    _logger.LogWarning("Patient ID {PatientId} not found in Clinic ID {ClinicId}", patientId, clinicId);
+                    return NotFound(ApiResponseFactory.Fail("Patient not found in this clinic."));
+                }
+
+                // Get user details by HFID
+                var user = await _userRepository.GetUserByHFIDAsync(targetPatient.HFID);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found for HFID {HFID}", targetPatient.HFID);
+                    return NotFound(ApiResponseFactory.Fail("User not found for this patient."));
+                }
+
+                if (string.IsNullOrWhiteSpace(user.FirstName))
+                {
+                    _logger.LogWarning("FirstName not found for HFID {HFID}", targetPatient.HFID);
+                    return NotFound(ApiResponseFactory.Fail("FirstName not found for this patient."));
+                }
+
+                HttpContext.Items["Sent-To-UserId"] = user.Id;
+
+                // Validate visit exists for this patient and clinic
+                var visit = await _clinicRepository.GetVisitAsync(clinicId, patientId, DateTime.Today);
+                if (visit == null)
+                {
+                    // If no visit today, get the most recent visit
+                    var visits = await _clinicVisitRepository.GetVisitsByClinicIdAsync(clinicId);
+                    visit = visits.Where(v => v.Patient.Id == patientId)
+                                  .OrderByDescending(v => v.AppointmentDate)
+                                  .FirstOrDefault();
+
+                    if (visit == null)
+                    {
+                        _logger.LogWarning("No visit found for Patient ID {PatientId} in Clinic ID {ClinicId}", patientId, clinicId);
+                        return NotFound(ApiResponseFactory.Fail("No visit found for this patient."));
+                    }
+                }
+
+                // Create consent form entries for all forms
+                var consentFormEntries = new List<ClinicVisitConsentForm>();
+                var consentFormLinks = new List<ConsentFormLinkInfo>();
+
+                foreach (var consentForm in request.ConsentForms)
+                {
+                    var visitConsentForm = new ClinicVisitConsentForm
+                    {
+                        ClinicVisitId = visit.Id,
+                        ConsentFormId = consentForm.ConsentFormId,
+                        IsVerified = false
+                    };
+
+                    visit.ConsentFormsSent.Add(visitConsentForm);
+                    consentFormEntries.Add(visitConsentForm);
+                }
+
+                // Save all consent form entries
+                await _clinicRepository.SaveChangesAsync();
+
+                // Generate consent form links for all forms
+                var baseUrl = GetBaseUrl();
+                for (int i = 0; i < consentFormEntries.Count; i++)
+                {
+                    var entry = consentFormEntries[i];
+                    var formRequest = request.ConsentForms[i];
+                    var encodedConsentName = UrlEncodeForConsentForm(formRequest.ConsentFormName);
+
+                    // Determine the correct form URL based on consent form name
+                    string formUrl;
+                    var consentFormName = formRequest.ConsentFormName.ToLower();
+
+                    if (consentFormName.Contains("dtr"))
+                    {
+                        formUrl = "PublicDTRConsentForm";
+                    }
+                    else if (consentFormName.Contains("tmd") || consentFormName.Contains("tmjp"))
+                    {
+                        formUrl = "PublicTMDConsentForm";
+                    }
+                    else if (consentFormName.Contains("photo"))
+                    {
+                        formUrl = "publicPhotographyReleaseForm";
+                    }
+                    else if (consentFormName.Contains("arthrose") && consentFormName.Contains("functional") && consentFormName.Contains("screening"))
+                    {
+                        formUrl = "publicFunctionalScreeningForm";
+                    }
+                    else if (consentFormName.Contains("registration"))
+                    {
+                        formUrl = "high5RegistrationForm";
+                    }
+                    else if (consentFormName.Contains("waiver"))
+                    {
+                        formUrl = "high5WavierForm";
+                    }
+                    else if (consentFormName.Contains("terms") || consentFormName.Contains("conditions"))
+                    {
+                        formUrl = "high5TermsConditionsForm";
+                    }
+                    else if (consentFormName.Contains("athlete monitoring sheet"))
+                    {
+                        formUrl = "PublicAthleteMonitoringSheet";
+                    }
+                    else if (consentFormName.Contains("postnatal"))
+                    {
+                        formUrl = "high5PostNatalAssessmentForm";
+                    }
+                    else if (consentFormName.Contains("fitness assessment"))
+                    {
+                        formUrl = "PublicHigh5FitnessAssessment";
+                    }
+                    else if (consentFormName.Contains("goal setting"))
+                    {
+                        formUrl = "PublicHigh5GoalSettingForm";
+                    }
+                    else
+                    {
+                        // Default fallback
+                        formUrl = "formNotFound";
+                    }
+
+                    var consentFormLink = $"{baseUrl}/{formUrl}?ConsentId={entry.Id}&ConsentName={encodedConsentName}&hfid={targetPatient.HFID}";
+
+                    consentFormLinks.Add(new ConsentFormLinkInfo
+                    {
+                        ConsentFormId = entry.Id,
+                        ConsentFormName = formRequest.ConsentFormName,
+                        ConsentFormLink = consentFormLink
+                    });
+                }
+
+                // Commit transaction
+                await transaction.CommitAsync();
+
+                // Prepare consent form names string
+                var consentFormNames = string.Join(", ", request.ConsentForms.Select(f => f.ConsentFormName));
+
+                // Build notification messages
+                var consentFormLinksFormatted = string.Join("\n", consentFormLinks.Select((link, index) =>
+                    $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"));
+
+                var userNotificationMessage = $"{clinic.ClinicName} has sent you {consentFormEntries.Count} consent form(s) to complete. Please check the links below:\n\n{consentFormLinksFormatted}";
+
+                // Response with notification
+                var response = new
+                {
+                    TotalConsentFormsSent = consentFormEntries.Count,
+                    ConsentForms = consentFormLinks.Select(link => new
+                    {
+                        ConsentFormId = link.ConsentFormId,
+                        ConsentFormName = link.ConsentFormName,
+                        ConsentFormLink = link.ConsentFormLink
+                    }).ToList(),
+                    PatientName = targetPatient.PatientName,
+                    PatientHFID = targetPatient.HFID,
+                    ClinicName = clinic.ClinicName,
+
+                    // Notification context
+                    NotificationContext = new
+                    {
+                        PatientName = targetPatient.PatientName,
+                        PatientHFID = targetPatient.HFID,
+                        ClinicId = clinicId,
+                        ClinicName = clinic.ClinicName,
+                        ConsentFormsCount = consentFormEntries.Count,
+                        ConsentFormNames = consentFormNames,
+                        Status = "Sent"
+                    },
+                    NotificationMessage = $"{consentFormEntries.Count} consent form(s) have been sent to {targetPatient.PatientName} on their HF Account (HFID: {targetPatient.HFID}). Forms: {consentFormNames}",
+                    UserNotificationMessage = userNotificationMessage
+                };
+
+                _logger.LogInformation(
+                    "{Count} consent form(s) sent to Patient {PatientName} (HFID: {HFID}) for Clinic {ClinicId}. Forms: {Forms}",
+                    consentFormEntries.Count, targetPatient.PatientName, targetPatient.HFID, clinicId, consentFormNames);
+
+                return Ok(ApiResponseFactory.Success(response, "Assessment forms Fetch successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while sending consent forms to Patient ID {PatientId} in Clinic ID {ClinicId}", patientId, clinicId);
+
+                // Safely rollback transaction
+                try
+                {
+                    await transaction.RollbackAsync();
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError(rollbackEx, "Error during transaction rollback");
+                }
+
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while sending the consent forms."));
+            }
+            finally
+            {
+                // Safely dispose transaction
+                try
+                {
+                    await transaction.DisposeAsync();
+                }
+                catch (Exception disposeEx)
+                {
+                    _logger.LogError(disposeEx, "Error disposing transaction");
+                }
+            }
+        }
+
+
+
+
         // GET: api/clinic/{clinicId}/consent-forms
         [HttpGet("clinic/{clinicId}/consent-forms")]
         [Authorize]

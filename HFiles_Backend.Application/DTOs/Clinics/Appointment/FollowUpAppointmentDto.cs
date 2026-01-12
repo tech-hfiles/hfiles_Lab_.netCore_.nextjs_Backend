@@ -43,6 +43,8 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Appointment
         [Required(ErrorMessage = "Appointment time is required.")]
         [RegularExpression(@"^\d{2}:\d{2}$", ErrorMessage = "Time must be in HH:mm format.")]
         public string AppointmentTime { get; set; } = null!;
+        public string? Gender { get; set; }
+        public string? Relation { get; set; }
 
         /// <summary>
         /// Validates that either HFID is provided OR all new patient fields are provided

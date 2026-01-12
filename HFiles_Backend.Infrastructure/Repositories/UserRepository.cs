@@ -686,5 +686,44 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 throw;
             }
         }
+
+
+        /// <summary>
+        /// Gets an independent user (UserReference = 0) by matching email AND phone number
+        /// Used for linking dependent users to their primary account holder
+        /// </summary>
+        public async Task<User?> GetIndependentUserByEmailAndPhoneAsync(
+            string email,
+            string phoneNumber,
+            string countryCode)
+        {
+            if (string.IsNullOrWhiteSpace(email) ||
+                string.IsNullOrWhiteSpace(phoneNumber) ||
+                string.IsNullOrWhiteSpace(countryCode))
+            {
+                _logger.LogWarning("GetIndependentUserByEmailAndPhoneAsync called with null/empty parameters");
+                return null;
+            }
+
+            try
+            {
+                return await _context.Users
+                    .Where(u =>
+                        u.Email == email &&
+                        u.PhoneNumber == phoneNumber &&
+                        u.CountryCallingCode == countryCode &&
+                        u.UserReference == 0 && // Must be independent (not linked to anyone)
+                        u.DeletedBy == 0) // Not deleted
+                    .FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error finding independent user with Email: {Email}, Phone: {CountryCode} {Phone}",
+                    email, countryCode, phoneNumber);
+                return null;
+            }
+        }
+
     }
 }

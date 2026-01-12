@@ -1440,11 +1440,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     // Calculate and validate age
                     var age = DateTime.Today.Year - parsedDob.Year;
                     if (parsedDob > DateTime.Today.AddYears(-age)) age--;
-                    if (age < 0 || age > 150)
+
+                    if (age < 18 || age > 150)
                     {
-                        _logger.LogWarning("Unrealistic age calculated from DOB: {Age} years", age);
-                        return BadRequest(ApiResponseFactory.Fail("Invalid date of birth. Age must be between 0 and 150."));
+                        _logger.LogWarning("Invalid age calculated from DOB: {Age}", age);
+                        return BadRequest(
+                            ApiResponseFactory.Fail("Invalid date of birth. Age must be between 18 and 150.")
+                        );
                     }
+
 
                     // Check if phone number already exists - we validated these are not null earlier
                     bool phoneExists = await _userRepository.IsPhoneNumberExistsAsync(dto.PhoneNumber!, dto.CountryCode!);
@@ -1795,6 +1799,348 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 {
                     await transaction.RollbackAsync();
                     _logger.LogWarning("Transaction rolled back for ClinicId {ClinicId}", clinicId);
+                }
+            }
+        }
+
+
+
+
+        /// Dependent  appoimnet entruy
+        /// only -18 entry allow and dependent create
+
+        [HttpPost("clinics/{clinicId}/follow-up-dependent")]
+        [Authorize]
+        public async Task<IActionResult> CreateFollowUpAppointmentForDependent(
+        [FromBody] FollowUpAppointmentDto dto,
+        [FromRoute] int clinicId)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Appointment - Dependent";
+
+            // Basic model validation
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            // For dependent flow - new patient details must be provided
+            var validationErrors = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(dto.FirstName))
+                validationErrors.Add("First name is required.");
+
+            if (string.IsNullOrWhiteSpace(dto.LastName))
+                validationErrors.Add("Last name is required.");
+
+            if (string.IsNullOrWhiteSpace(dto.DOB))
+                validationErrors.Add("Date of birth is required.");
+
+            if (string.IsNullOrWhiteSpace(dto.PhoneNumber))
+                validationErrors.Add("Phone number is required.");
+
+            if (string.IsNullOrWhiteSpace(dto.CountryCode))
+                validationErrors.Add("Country code is required.");
+
+            if (string.IsNullOrWhiteSpace(dto.Email))
+                validationErrors.Add("Email is required to find independent user.");
+
+            if (string.IsNullOrWhiteSpace(dto.Relation))
+                validationErrors.Add("Relation is required for dependent users.");
+
+            if (validationErrors.Any())
+            {
+                _logger.LogWarning("Dependent user validation failed: {@Errors}", validationErrors);
+                return BadRequest(ApiResponseFactory.Fail(validationErrors));
+            }
+
+            // Validate appointment date format
+            if (!DateTime.TryParseExact(dto.AppointmentDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var appointmentDate))
+            {
+                _logger.LogWarning("Invalid appointment date format: {Date}", dto.AppointmentDate);
+                return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentDate format. Expected dd-MM-yyyy."));
+            }
+
+            // Validate appointment time format
+            if (!TimeSpan.TryParse(dto.AppointmentTime, out var appointmentTime))
+            {
+                _logger.LogWarning("Invalid appointment time format: {Time}", dto.AppointmentTime);
+                return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentTime format. Expected HH:mm."));
+            }
+
+            await using var transaction = await _userRepository.BeginTransactionAsync();
+            var committed = false;
+
+            try
+            {
+                // Check clinic authorization
+                bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+                if (!isAuthorized)
+                {
+                    _logger.LogWarning("Unauthorized appointment creation attempt for Clinic ID {ClinicId}", clinicId);
+                    return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can create appointments."));
+                }
+
+                // Verify clinic exists
+                var clinicExists = await _userRepository.ExistsAsync(clinicId);
+                if (!clinicExists)
+                {
+                    _logger.LogWarning("Clinic ID {ClinicId} does not exist", clinicId);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid Clinic ID."));
+                }
+
+                // ==================== FIND INDEPENDENT USER ====================
+                // Search for independent user with matching email AND phone number
+                var independentUser = await _userRepository.GetIndependentUserByEmailAndPhoneAsync(
+                    dto.Email!,
+                    dto.PhoneNumber!,
+                    dto.CountryCode!);
+
+                if (independentUser == null)
+                {
+                    _logger.LogWarning(
+                        "No independent user found with Email: {Email} and Phone: {CountryCode} {Phone}",
+                        dto.Email, dto.CountryCode, dto.PhoneNumber);
+                    return BadRequest(ApiResponseFactory.Fail(
+                        "No independent user found with the provided email and phone number. Please create an independent account first."));
+                }
+
+                _logger.LogInformation(
+                    "Found independent user ID {UserId} for dependent patient {FirstName} {LastName}",
+                    independentUser.Id, dto.FirstName, dto.LastName);
+
+                // ==================== CREATE DEPENDENT PATIENT ====================
+
+                // Validate and parse DOB
+                if (!DateTime.TryParseExact(dto.DOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsedDob))
+                {
+                    _logger.LogWarning("Invalid DOB format: {DOB}", dto.DOB);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid DOB format. Please use dd-MM-yyyy."));
+                }
+
+                // Calculate and validate age
+                var age = DateTime.Today.Year - parsedDob.Year;
+                if (parsedDob > DateTime.Today.AddYears(-age)) age--;
+
+                if (age < 0 || age > 18)
+                {
+                    _logger.LogWarning("Invalid age: {Age}. Allowed range is 0 to 18.", age);
+                    return BadRequest(
+                        ApiResponseFactory.Fail("Invalid date of birth. Age must be between 0 and 18.")
+                    );
+                }
+
+
+
+                // Generate HFID for dependent
+                var hfid = _hfidService.GenerateHfid(dto.FirstName!, dto.LastName!, parsedDob);
+                var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+                // Create dependent user entity
+                var dependentUser = new User
+                {
+                    FirstName = dto.FirstName!,
+                    LastName = dto.LastName!,
+                    Gender = dto.Gender,
+                    DOB = dto.DOB!,
+                    CountryCallingCode = dto.CountryCode!,
+                    PhoneNumber = dto.PhoneNumber!,
+                    Email = dto.Email!,
+                    HfId = hfid,
+                    UserReference = independentUser.Id, // ← Link to independent user
+                    Relation = dto.Relation!, // ← Relation (sister, son, etc.)
+                    IsEmailVerified = true, // Inherit from independent user
+                    IsPhoneVerified = true,
+                    DeletedBy = 0,
+                    CreatedEpoch = epochTime,
+                    Password = null // Dependent users don't need separate passwords
+                };
+
+                // Save dependent user
+                await _userRepository.AddUserAsync(dependentUser);
+                await _userRepository.CommitAsync();
+
+                // Assign default "Basic" subscription
+                var subscription = new UserSubscription
+                {
+                    UserId = dependentUser.Id,
+                    SubscriptionPlan = "Basic",
+                    StartEpoch = epochTime,
+                    EndEpoch = SUBSCRIPTION_UNLIMITED
+                };
+
+                await _userRepository.AddSubscriptionAsync(subscription);
+                await _userRepository.CommitAsync();
+
+                _logger.LogInformation(
+                    "Dependent patient created successfully. UserId: {UserId}, HFID: {HFID}, LinkedTo: {IndependentUserId}",
+                    dependentUser.Id, dependentUser.HfId, independentUser.Id);
+
+                // ==================== CREATE APPOINTMENT AND VISIT ====================
+
+                HttpContext.Items["Sent-To-UserId"] = dependentUser.Id;
+
+                var fullName = $"{dependentUser.FirstName} {dependentUser.LastName}";
+                var phone = dependentUser.PhoneNumber ?? "N/A";
+
+                // Get or create patient record
+                var patient = await _clinicVisitRepository.GetOrCreatePatientAsync(dependentUser.HfId!, fullName);
+
+                // Validate consent forms (if provided)
+                var consentForms = new List<ClinicConsentForm>();
+                if (dto.ConsentFormTitles != null && dto.ConsentFormTitles.Any())
+                {
+                    consentForms = await _clinicVisitRepository.GetConsentFormsByTitlesAsync(dto.ConsentFormTitles);
+                    if (consentForms.Count != dto.ConsentFormTitles.Count)
+                    {
+                        var missing = dto.ConsentFormTitles.Except(consentForms.Select(f => f.Title)).ToList();
+                        _logger.LogWarning("Invalid consent form titles: {Missing}", string.Join(", ", missing));
+                        return BadRequest(ApiResponseFactory.Fail($"Invalid consent form titles: {string.Join(", ", missing)}"));
+                    }
+                }
+
+                // Create clinic visit
+                var visit = new ClinicVisit
+                {
+                    ClinicPatientId = patient.Id,
+                    ClinicId = clinicId,
+                    AppointmentDate = appointmentDate.Date,
+                    AppointmentTime = appointmentTime,
+                    ConsentFormsSent = consentForms.Any()
+                        ? consentForms.Select(f => new ClinicVisitConsentForm { ConsentFormId = f.Id }).ToList()
+                        : new List<ClinicVisitConsentForm>()
+                };
+                await _clinicVisitRepository.SaveVisitAsync(visit);
+
+                // Create appointment
+                var appointment = new ClinicAppointment
+                {
+                    VisitorUsername = fullName,
+                    VisitorPhoneNumber = phone,
+                    AppointmentDate = appointmentDate.Date,
+                    AppointmentTime = appointmentTime,
+                    ClinicId = clinicId,
+                    Status = "Scheduled"
+                };
+                await _appointmentRepository.SaveAppointmentAsync(appointment);
+
+                // Create Google Calendar Event
+                var clinic = await _userRepository.GetClinicByIdAsync(clinicId);
+                var googleEventId = await _googleCalendarService.CreateAppointmentAsync(
+                    clinicId,
+                    fullName,
+                    clinic?.ClinicName ?? "Clinic",
+                    appointmentDate.Date,
+                    appointmentTime,
+                    phone
+                );
+
+                if (!string.IsNullOrEmpty(googleEventId))
+                {
+                    appointment.GoogleCalendarEventId = googleEventId;
+                    await _userRepository.SaveChangesAsync();
+                }
+
+                // Commit transaction
+                await transaction.CommitAsync();
+                committed = true;
+
+                // ==================== GENERATE CONSENT FORM LINKS ====================
+
+                var consentFormLinks = new List<ConsentFormLinkInfo>();
+
+                if (dto.ConsentFormTitles != null && dto.ConsentFormTitles.Any() && visit.ConsentFormsSent.Any())
+                {
+                    var baseUrl = GetBaseUrl();
+
+                    for (int i = 0; i < visit.ConsentFormsSent.Count; i++)
+                    {
+                        var consentFormEntry = visit.ConsentFormsSent.ElementAt(i);
+                        var consentFormTitle = dto.ConsentFormTitles[i];
+                        var encodedConsentName = Uri.EscapeDataString(consentFormTitle);
+
+                        string formUrl = DetermineConsentFormUrl(consentFormTitle);
+                        var consentFormLink = $"{baseUrl}/{formUrl}?ConsentId={consentFormEntry.Id}&ConsentName={encodedConsentName}&hfid={patient.HFID}";
+
+                        consentFormLinks.Add(new ConsentFormLinkInfo
+                        {
+                            ConsentFormId = consentFormEntry.Id,
+                            ConsentFormName = consentFormTitle,
+                            ConsentFormLink = consentFormLink
+                        });
+                    }
+
+                    // Send email (to independent user's email, about dependent)
+                    if (clinicId != 36 && consentFormLinks.Any())
+                    {
+                        try
+                        {
+                            var emailTemplate = _emailTemplateService.GenerateAppointmentConfirmationWithConsentFormsEmailTemplate(
+                                dependentUser.FirstName!,
+                                consentFormLinks,
+                                clinic?.ClinicName ?? "Clinic",
+                                appointmentDate.ToString("dd-MM-yyyy"),
+                                appointmentTime.ToString(@"hh\:mm")
+                            );
+
+                            await _emailService.SendEmailAsync(
+                                independentUser.Email, // Send to independent user's email
+                                $"Appointment Confirmation & Consent Forms - {clinic?.ClinicName}",
+                                emailTemplate
+                            );
+
+                            _logger.LogInformation(
+                                "Appointment confirmation email sent to independent user {Email} for dependent {DependentName}",
+                                independentUser.Email, fullName);
+                        }
+                        catch (Exception emailEx)
+                        {
+                            _logger.LogError(emailEx, "Failed to send email for dependent appointment");
+                        }
+                    }
+                }
+
+                // Invalidate cache
+                _cacheService.InvalidateClinicStatistics(clinicId);
+
+                // ==================== BUILD RESPONSE ====================
+
+                var response = new
+                {
+                    // Dependent Patient Information
+                    PatientName = fullName,
+                    HFID = dependentUser.HfId,
+                    IsDependent = true,
+                    LinkedToUserId = independentUser.Id,
+                    LinkedToUserName = $"{independentUser.FirstName} {independentUser.LastName}",
+                    Relation = dependentUser.Relation,
+                    Email = dependentUser.Email,
+                    PhoneNumber = dependentUser.PhoneNumber,
+
+                    // Appointment Details
+                    AppointmentDate = appointmentDate.ToString("dd-MM-yyyy"),
+                    AppointmentTime = appointmentTime.ToString(@"hh\:mm"),
+                    AppointmentStatus = appointment.Status,
+                    ClinicName = clinic?.ClinicName,
+
+                    // Consent Forms
+                    ConsentFormLinks = consentFormLinks,
+                    EmailSent = clinicId != 36 && consentFormLinks.Any()
+                };
+
+                return Ok(ApiResponseFactory.Success(response, "Dependent patient registered and appointment created successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating dependent appointment for ClinicId {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                {
+                    await transaction.RollbackAsync();
                 }
             }
         }

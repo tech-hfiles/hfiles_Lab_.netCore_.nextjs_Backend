@@ -13,5 +13,7 @@
         public string? City { get; set; }
         public string? State { get; set; }
         public decimal AmountDue { get; set; } = 0;
+        public string? Email { get; set; }
+        public string? CountryCallingCode { get; set; }
     }
 }

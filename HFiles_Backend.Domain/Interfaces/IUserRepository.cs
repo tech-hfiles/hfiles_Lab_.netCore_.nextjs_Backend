@@ -77,5 +77,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<User?> GetUserByHFIDExcludingUserIdAsync(string hfid, int excludeUserId);
         Task<User?> GetUserByEmailExcludingUserIdAsync(string email, int excludeUserId);
         Task UpdateUserAsync(User user);
+        Task<User?> GetIndependentUserByEmailAndPhoneAsync(string email, string phoneNumber, string countryCode);
     }
 }

@@ -338,6 +338,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			public string packageTime { get; set; }
 			public int coachId { get; set; }
 			public string status { get; set; }
+			public int PatientId { get; set; }
+
+			public string UniqueRecordId { get; set; }
+			public int ClinicVisitId { get; set; }
 		}
 
 		private async Task CreateAppointment(AppointmentRequest request)
@@ -382,7 +386,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 		}
 
 
-		private async Task CreateAppointmentsFromMepData(string jsonData, string packageId, int clinicId)
+		private async Task CreateAppointmentsFromMepData(string jsonData, string packageId, int clinicId , int PatientId,int ClinicVisitId, string UniqueRecordId)
 		{
 
 			try
@@ -409,19 +413,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				// Loop through each treatment and create appointments
 				foreach (var treatment in mepData.treatments)
 				{
-					if (treatment.sessionDates == null || treatment.sessionTimes == null)
-					{
-						_logger.LogWarning("Treatment {TreatmentName} has null sessionDates or sessionTimes",
-							treatment.name);
-						continue;
-					}
-
-					if (treatment.sessionDates.Count != treatment.sessionTimes.Count)
-					{
-						_logger.LogWarning("Treatment {TreatmentName} has mismatched dates ({DateCount}) and times ({TimeCount})",
-							treatment.name, treatment.sessionDates.Count, treatment.sessionTimes.Count);
-						continue;
-					}
+					
 
 					for (int i = 0; i < treatment.sessionDates.Count; i++)
 					{
@@ -436,7 +428,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
 								packageDate = DateTime.Parse(treatment.sessionDates[i]),
 								packageTime = treatment.sessionTimes[i],
 								coachId = treatment.coachId,
-								status = "Scheduled"
+								status = "Scheduled",
+								ClinicVisitId = ClinicVisitId,
+								PatientId = PatientId,
+								UniqueRecordId = UniqueRecordId
 							};
 
 
@@ -470,6 +465,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				_logger.LogError(ex, "Error in CreateAppointmentsFromMepData for packageId {PackageId}", packageId);
 			}
 		}
+
+
+
+
+
+
+
 
 		private async Task<int?> GetUserIdByHfId(string hfid)
 		{
@@ -1084,11 +1086,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
                                 int clinicId = 36; // or get from receiptRecord if it has a ClinicId property
 
 								// Create appointments
-								Task.Run(async () => await CreateAppointmentsFromMepData(
+								await CreateAppointmentsFromMepData(
 									packageJsonData,
 									packageId,
-									clinicId
-								));
+									clinicId,
+									packageRecord.PatientId,
+									packageRecord.ClinicVisitId,
+									packageRecord.UniqueRecordId
+								);
                                 if (clinicId != 36)
                                 {
                                     try

@@ -18,6 +18,14 @@ namespace HFiles_Backend.Domain.DTOs.Clinics
 		[Required(ErrorMessage = "User ID is required.")]
 		public int UserId { get; set; }
 
+		// ================= Patient =================
+		[Required(ErrorMessage = "Patient ID is required.")]
+		public int PatientId { get; set; }
+
+		// ================= Clinic Visit =================
+		[Required(ErrorMessage = "Clinic Visit ID is required.")]
+		public int ClinicVisitId { get; set; }
+
 		// ================= Package =================
 		[Required(ErrorMessage = "Package ID is required.")]
 		public int PackageId { get; set; }
@@ -38,8 +46,9 @@ namespace HFiles_Backend.Domain.DTOs.Clinics
 		// ================= Status =================
 		public High5AppointmentStatus Status { get; set; }
 
-
+		public string UniqueRecordId { get; set; }
 	}
+
 	public class High5AppointmentUpdateDto
 	{
 		public int? PackageId { get; set; }

@@ -47,30 +47,89 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
         }
 
-        // ================= Create =================
-        [HttpPost]
+		// ================= Create =================
+		[HttpPost]
 		public async Task<IActionResult> Create([FromBody] High5AppointmentDto dto)
 		{
-			//if (!ModelState.IsValid)
-			//	return BadRequest(ModelState);
+			if (!ModelState.IsValid)
+				return BadRequest(ModelState);
 
 			var appointment = new High5Appointment
 			{
 				ClinicId = dto.ClinicId,
 				UserId = dto.UserId,
+				PatientId = dto.PatientId,
+				ClinicVisitId = dto.ClinicVisitId,
+				UniqueRecordId = dto.UniqueRecordId,
 				PackageId = dto.PackageId,
 				PackageName = dto.PackageName,
 				PackageDate = dto.PackageDate,
 				PackageTime = dto.PackageTime,
+
 				CoachId = dto.CoachId,
 				Status = dto.Status,
 				EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-
 			};
 
 			var result = await _appointmentService.CreateAppointmentAsync(appointment);
 
 			return Ok(ApiResponseFactory.Success(result));
+		}
+
+
+
+
+
+
+		public class PackageAppointmentDetailDto
+		{
+			public int AppointmentId { get; set; }
+			public string PackageName { get; set; }
+			public DateTime PackageDate { get; set; }
+			public TimeSpan PackageTime { get; set; }
+			public int Status { get; set; }
+			public string UniqueRecordId { get; set; }
+			public string PatientName { get; set; }
+			// Add any other fields from the JSON if needed
+		}
+
+		[HttpGet("patient-mep-history/{patientId}")]
+		public async Task<IActionResult> GetPatientMEPHistory(int patientId)
+		{
+			try
+			{
+				var data = await _appointmentService.GetMEPPackagesByPatientAsync(patientId);
+
+				if (data == null || !data.Any())
+					return NotFound(ApiResponseFactory.Fail("No MEP packages found for this patient."));
+
+				return Ok(ApiResponseFactory.Success(data, "Patient MEP history retrieved successfully."));
+			}
+			catch (Exception ex)
+			{
+				return StatusCode(500,
+					ApiResponseFactory.Fail("Error parsing package data: " + ex.Message));
+			}
+		}
+
+
+		[HttpGet("package-details/{uniqueRecordId}")]
+		public async Task<IActionResult> GetPackageAppointments(string uniqueRecordId)
+		{
+			try
+			{
+				// Simply await the service call
+				var data = await _appointmentService.GetAppointmentsByRecordIdAsync(uniqueRecordId);
+
+				if (data == null || !data.Any())
+					return NotFound(ApiResponseFactory.Fail("No appointments found for this package record."));
+
+				return Ok(ApiResponseFactory.Success(data, "Package details retrieved successfully."));
+			}
+			catch (Exception ex)
+			{
+				return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
+			}
 		}
 
 		// ================= Read =================
@@ -108,28 +167,40 @@ namespace HFiles_Backend.API.Controllers.Clinics
 		[HttpPut("{id:int}")]
 		public async Task<IActionResult> Update(int id, [FromBody] High5AppointmentUpdateDto dto)
 		{
+			// 1. Fetch the existing record
 			var existing = await _appointmentService.GetAppointmentByIdAsync(id);
 			if (existing == null)
 				return NotFound(ApiResponseFactory.Fail("High5 appointment not found."));
 
-			if (dto.PackageId.HasValue)
-				existing.PackageId = dto.PackageId.Value;
+			// 2. Determine the values to check
+			int checkPackageId = dto.PackageId ?? existing.PackageId;
+			DateTime checkDate = dto.PackageDate ?? existing.PackageDate;
+			int checkUserId = existing.UserId;
 
-			if (!string.IsNullOrWhiteSpace(dto.PackageName))
-				existing.PackageName = dto.PackageName;
+			// 3. FIXED VALIDATION: Call the service method directly
+			var isDuplicate = await _appointmentService.IsDuplicateAppointmentAsync(
+				id,
+				checkUserId,
+				checkPackageId,
+				checkDate
+			);
 
-			if (dto.PackageDate.HasValue && dto.PackageDate.Value != DateTime.MinValue)
-				existing.PackageDate = dto.PackageDate.Value;
+			if (isDuplicate)
+			{
+				return BadRequest(ApiResponseFactory.Fail(
+					$"Appointment already exists for this package on {checkDate:yyyy-MM-dd}."
+				));
+			}
 
-			if (dto.PackageTime.HasValue)
-				existing.PackageTime = dto.PackageTime.Value;
+			// 4. Update the fields
+			if (dto.PackageId.HasValue) existing.PackageId = dto.PackageId.Value;
+			if (!string.IsNullOrWhiteSpace(dto.PackageName)) existing.PackageName = dto.PackageName;
+			if (dto.PackageDate.HasValue && dto.PackageDate.Value != DateTime.MinValue) existing.PackageDate = dto.PackageDate.Value;
+			if (dto.PackageTime.HasValue) existing.PackageTime = dto.PackageTime.Value;
+			if (dto.CoachId.HasValue) existing.CoachId = dto.CoachId.Value;
+			if (dto.Status.HasValue) existing.Status = dto.Status.Value;
 
-			if (dto.CoachId.HasValue)
-				existing.CoachId = dto.CoachId.Value;
-
-			if (dto.Status.HasValue)
-				existing.Status = dto.Status.Value;
-
+			// 5. Save changes
 			var updated = await _appointmentService.UpdateAppointmentAsync(existing);
 
 			if (!updated)
@@ -137,7 +208,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 			return Ok(ApiResponseFactory.Success("High5 appointment updated successfully."));
 		}
-
 
 		public class AppointmentMergedDto
 		{

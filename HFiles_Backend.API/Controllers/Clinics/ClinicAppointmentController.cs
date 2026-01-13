@@ -2129,7 +2129,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     EmailSent = clinicId != 36 && consentFormLinks.Any()
                 };
 
-                return Ok(ApiResponseFactory.Success(response, "Dependent patient registered and appointment created successfully."));
+                return Ok(ApiResponseFactory.Success(response, "Dependent member registered and appointment created successfully."));
             }
             catch (Exception ex)
             {

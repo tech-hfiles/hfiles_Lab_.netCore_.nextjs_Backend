@@ -211,7 +211,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
 		}
 
 
-		public async Task<bool> IsDuplicateAppointmentAsync(int excludeId, int userId, int packageId, DateTime date)
+		public async Task<bool> IsDuplicateAppointmentAsync(int excludeId, int userId, int? packageId, DateTime date)
 		{
 			// The query lives inside the service because the service has access to '_context'
 			return await _context.High5Appointments.AnyAsync(a =>

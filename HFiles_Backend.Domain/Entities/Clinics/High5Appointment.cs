@@ -28,17 +28,14 @@ namespace HFiles_Backend.Domain.Entities.Clinics
 		public User User { get; set; } = null!;
 
 		// ================= Patient (Clinic Patient) =================
-		[Required(ErrorMessage = "Patient ID is required.")]
 		[Range(1, int.MaxValue, ErrorMessage = "Patient ID must be greater than zero.")]
 		public int PatientId { get; set; }
 
 		// ================= Clinic Visit =================
-		[Required(ErrorMessage = "Clinic Visit ID is required.")]
 		[Range(1, int.MaxValue, ErrorMessage = "Clinic Visit ID must be greater than zero.")]
 		public int ClinicVisitId { get; set; }
 
 		// ================= Package =================
-		[Required]
 		[Range(1, int.MaxValue)]
 		public int PackageId { get; set; }
 

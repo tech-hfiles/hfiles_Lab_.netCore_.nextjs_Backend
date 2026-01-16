@@ -55,7 +55,7 @@ namespace HFiles_Backend.Domain.Interfaces.Clinics
 		Task<bool> UpdateAppointmentAsync(High5Appointment appointment);
 
 		Task<List<High5Appointment>> GetAppointmentsByClinicIdWithUserAsync(int clinicId);
-		Task<bool> IsDuplicateAppointmentAsync(int excludeId, int userId, int packageId, DateTime date);
+		Task<bool> IsDuplicateAppointmentAsync(int excludeId, int userId, int? packageId, DateTime date);
 
 		Task<List<PackageAppointmentDetailDto>> GetAppointmentsByRecordIdAsync(string uniqueRecordId);
 

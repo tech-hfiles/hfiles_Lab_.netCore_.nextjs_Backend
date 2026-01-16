@@ -14,7 +14,7 @@ namespace HFiles_Backend.Infrastructure.Repositories.Clinics
             _context = context;
         }
 
-        public async Task<bool> HasReminderBeenSentAsync(int userId, int packageId, string reminderType, DateTime lastSessionDate)
+        public async Task<bool> HasReminderBeenSentAsync(int userId, int? packageId, string reminderType, DateTime lastSessionDate)
         {
             return await _context.SessionReminderLogs
                 .AnyAsync(log =>

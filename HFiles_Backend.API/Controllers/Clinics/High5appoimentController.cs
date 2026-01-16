@@ -173,7 +173,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				return NotFound(ApiResponseFactory.Fail("High5 appointment not found."));
 
 			// 2. Determine the values to check
-			int checkPackageId = dto.PackageId ?? existing.PackageId;
+			int? checkPackageId = dto.PackageId ?? existing.PackageId;
 			DateTime checkDate = dto.PackageDate ?? existing.PackageDate;
 			int checkUserId = existing.UserId;
 
@@ -343,7 +343,11 @@ int clinicId,
 										.Where(ac => ac.ClinicMember != null && ac.ClinicMember.User != null)
 										.Select(ac => $"{ac.ClinicMember.User.FirstName} {ac.ClinicMember.User.LastName}"))
 									: "N/A",
-								CoachColor = "rgba(0, 0, 0, 1)",
+								CoachColor = e.AssignedCoaches != null && e.AssignedCoaches.Any()
+									? string.Join(",", e.AssignedCoaches
+										.Where(ac => ac.ClinicMember != null && ac.ClinicMember.User != null)
+										.Select(ac => $"{ac.ClinicMember.Color}"))
+									: "rgba(0, 0, 0, 1)",
 								Status = e.Status.ToString(),
 								EpochTime = null,
 								PatientName = $"{e.Firstname} {e.Lastname}",

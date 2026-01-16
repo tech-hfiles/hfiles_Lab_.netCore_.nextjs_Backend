@@ -16,7 +16,7 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         public int UserId { get; set; }
 
         [Required]
-        public int PackageId { get; set; }
+        public int? PackageId { get; set; }
 
         [Required]
         [MaxLength(20)]

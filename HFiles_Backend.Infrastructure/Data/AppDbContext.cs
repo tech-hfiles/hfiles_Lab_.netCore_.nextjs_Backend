@@ -458,7 +458,7 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<SessionReminderLog> SessionReminderLogs { get; set; }
         public DbSet<High5FormImages> High5FormImages { get; set; }
 
-
+        public DbSet<ClinicDocument_Storage> ClinicDocument_Storage { get; set; }
 
     }
 }

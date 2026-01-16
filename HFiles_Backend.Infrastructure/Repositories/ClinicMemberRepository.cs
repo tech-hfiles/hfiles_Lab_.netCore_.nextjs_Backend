@@ -35,41 +35,124 @@ namespace HFiles_Backend.Infrastructure.Repositories
             await _context.ClinicMembers.AddAsync(member);
         }
 
+        //public async Task<List<Application.DTOs.Labs.User>> GetMemberDtosByClinicIdAsync(int clinicId)
+        //{
+        //    var members = await _context.ClinicMembers
+        //        .Include(m => m.User)
+        //        .Include(m => m.CreatedByUser)
+        //        .Include(m => m.PromotedByUser)
+        //        .Where(m => m.ClinicId == clinicId && m.DeletedBy == 0)
+        //        .ToListAsync();
+
+        //    var memberDtos = new List<Application.DTOs.Labs.User>();
+
+        //    foreach (var m in members)
+        //    {
+        //        string createdByName = m.CreatedByUser != null
+        //            ? $"{m.CreatedByUser.FirstName} {m.CreatedByUser.LastName}".Trim()
+        //            : "Itself";
+
+        //        string promotedByName = m.PromotedByUser != null
+        //            ? $"{m.PromotedByUser.FirstName} {m.PromotedByUser.LastName}".Trim()
+        //            : "Not Promoted Yet";
+
+        //        memberDtos.Add(new Application.DTOs.Labs.User
+        //        {
+        //            MemberId = m.Id,
+        //            HFID = m.User?.HfId ?? string.Empty,
+        //            Name = $"{m.User?.FirstName} {m.User?.LastName}".Trim(),
+        //            Email = m.User?.Email ?? string.Empty,
+        //            Role = m.Role,
+        //            Coach = m.Coach,
+        //            CreatedByName = createdByName,
+        //            PromotedByName = promotedByName,
+        //            ProfilePhoto = string.IsNullOrEmpty(m.User?.ProfilePhoto)
+        //                ? "No image preview available"
+        //                : m.User.ProfilePhoto,
+        //            Color = m.Color
+        //        });
+        //    }
+
+        //    return memberDtos;
+        //}
+
         public async Task<List<Application.DTOs.Labs.User>> GetMemberDtosByClinicIdAsync(int clinicId)
         {
-            var members = await _context.ClinicMembers
-                .Include(m => m.User)
-                .Include(m => m.CreatedByUser)
-                .Include(m => m.PromotedByUser)
-                .Where(m => m.ClinicId == clinicId && m.DeletedBy == 0)
-                .ToListAsync();
+            var members = await (
+                from cm in _context.ClinicMembers
+                where cm.ClinicId == clinicId && cm.DeletedBy == 0
+                join user in _context.Users on cm.UserId equals user.Id
+
+                // Left join for CreatedBy through ClinicSuperAdmin
+                join createdBySA in _context.ClinicSuperAdmins on cm.CreatedBy equals createdBySA.Id into createdByJoin
+                from createdBySA in createdByJoin.DefaultIfEmpty()
+                join createdByUserViaSA in _context.Users on createdBySA.UserId equals createdByUserViaSA.Id into createdByUserViaSAJoin
+                from createdByUserViaSA in createdByUserViaSAJoin.DefaultIfEmpty()
+
+                    // FALLBACK: Left join CreatedBy directly to Users table (in case it's stored as UserId)
+                join createdByUserDirect in _context.Users on cm.CreatedBy equals createdByUserDirect.Id into createdByDirectJoin
+                from createdByUserDirect in createdByDirectJoin.DefaultIfEmpty()
+
+                    // Left join for PromotedBy through ClinicSuperAdmin
+                join promotedBySA in _context.ClinicSuperAdmins on cm.PromotedBy equals promotedBySA.Id into promotedByJoin
+                from promotedBySA in promotedByJoin.DefaultIfEmpty()
+                join promotedByUser in _context.Users on promotedBySA.UserId equals promotedByUser.Id into promotedByUserJoin
+                from promotedByUser in promotedByUserJoin.DefaultIfEmpty()
+
+                select new
+                {
+                    Member = cm,
+                    User = user,
+                    CreatedByUserViaSA = createdByUserViaSA,
+                    CreatedByUserDirect = createdByUserDirect,
+                    PromotedByUser = promotedByUser
+                }
+            ).ToListAsync();
 
             var memberDtos = new List<Application.DTOs.Labs.User>();
 
             foreach (var m in members)
             {
-                string createdByName = m.CreatedByUser != null
-                    ? $"{m.CreatedByUser.FirstName} {m.CreatedByUser.LastName}".Trim()
-                    : "Itself";
+                // Handle CreatedBy: try via ClinicSuperAdmin first, then direct User lookup, then fallback
+                string createdByName;
+                if (m.CreatedByUserViaSA != null)
+                {
+                    // Found via ClinicSuperAdmin table (correct way)
+                    createdByName = $"{m.CreatedByUserViaSA.FirstName} {m.CreatedByUserViaSA.LastName}".Trim();
+                }
+                else if (m.CreatedByUserDirect != null)
+                {
+                    // Found via direct User lookup (fallback for legacy/incorrect data)
+                    createdByName = $"{m.CreatedByUserDirect.FirstName} {m.CreatedByUserDirect.LastName}".Trim();
+                }
+                else if (m.Member.CreatedBy == null || m.Member.CreatedBy == 0)
+                {
+                    createdByName = "Self Created";
+                }
+                else
+                {
+                    createdByName = "Unknown";
+                }
 
+                // Handle PromotedBy
                 string promotedByName = m.PromotedByUser != null
                     ? $"{m.PromotedByUser.FirstName} {m.PromotedByUser.LastName}".Trim()
                     : "Not Promoted Yet";
 
                 memberDtos.Add(new Application.DTOs.Labs.User
                 {
-                    MemberId = m.Id,
+                    MemberId = m.Member.Id,
                     HFID = m.User?.HfId ?? string.Empty,
                     Name = $"{m.User?.FirstName} {m.User?.LastName}".Trim(),
                     Email = m.User?.Email ?? string.Empty,
-                    Role = m.Role,
-                    Coach = m.Coach,
+                    Role = m.Member.Role,
+                    Coach = m.Member.Coach,
                     CreatedByName = createdByName,
                     PromotedByName = promotedByName,
                     ProfilePhoto = string.IsNullOrEmpty(m.User?.ProfilePhoto)
                         ? "No image preview available"
                         : m.User.ProfilePhoto,
-                    Color = m.Color
+                    Color = m.Member.Color
                 });
             }
 

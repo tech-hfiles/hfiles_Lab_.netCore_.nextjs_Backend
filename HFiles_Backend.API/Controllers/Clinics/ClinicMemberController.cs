@@ -568,7 +568,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
         public async Task<IActionResult> RevertDeletedClinicUser([FromBody] RevertClinicUser dto, [FromServices] ClinicRepository clinicRepository)
         {
             HttpContext.Items["Log-Category"] = "User Management";
-
             _logger.LogInformation("Reverting clinic user. User ID: {UserId}, Clinic ID: {ClinicId}, New Role: {Role}", dto.Id, dto.ClinicId, dto.Role);
 
             var clinicIdClaim = User.FindFirst("UserId")?.Value;
@@ -582,7 +581,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main clinic or its branches."));
 
             var transaction = await _clinicRepository.BeginTransactionAsync();
-
             try
             {
                 var loggedInClinic = await _clinicRepository.GetClinicByIdAsync(requestClinicId);
@@ -597,19 +595,29 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (user == null)
                     return NotFound(ApiResponseFactory.Fail("User not found or not marked as deleted."));
 
+                // Get the clinic super admin who is reverting
                 var clinicSuperAdmin = await _clinicRepository.GetSuperAdminByIdAsync(revertedById);
-                var revertedByUser = await _clinicRepository.GetUserByIdAsync(clinicSuperAdmin?.UserId ?? 0);
+                if (clinicSuperAdmin == null)
+                    return Unauthorized(ApiResponseFactory.Fail("Super admin not found."));
+
+                // Get the user details of the super admin
+                var revertedByUser = await _clinicRepository.GetUserByIdAsync(clinicSuperAdmin.UserId);
+                if (revertedByUser == null)
+                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve reverter identity."));
+
+                // Get the reinstated user details
                 var reinstatedUser = await _clinicRepository.GetUserByIdAsync(user.UserId);
+                if (reinstatedUser == null)
+                    return NotFound(ApiResponseFactory.Fail("Reinstated user not found."));
 
-                string? revertedByName = await clinicRepository.ResolveUsernameFromClaimsAsync(HttpContext);
-                if (string.IsNullOrWhiteSpace(revertedByName))
-                    return Unauthorized(ApiResponseFactory.Fail("Unable to resolve creator identity."));
+                // Build the names
+                string revertedByName = $"{revertedByUser.FirstName} {revertedByUser.LastName}".Trim();
+                string reinstatedUserName = $"{reinstatedUser.FirstName} {reinstatedUser.LastName}".Trim();
 
-                string reinstatedUserName = $"{reinstatedUser?.FirstName} {reinstatedUser?.LastName}".Trim();
-
+                // Update the user record
                 user.DeletedBy = 0;
                 user.Role = dto.Role ?? "Member";
-                user.PromotedBy = clinicSuperAdmin?.Id;
+                user.PromotedBy = clinicSuperAdmin.Id; // Set to ClinicSuperAdmin ID
 
                 _clinicRepository.UpdateClinicMember(user);
                 await _clinicRepository.SaveChangesAsync();
@@ -636,6 +644,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 _logger.LogInformation("Reverted clinic user ID {UserId} with new role {NewRole} by {RevertedBy}", user.Id, user.Role, revertedByName);
                 return Ok(ApiResponseFactory.Success(response, $"{reinstatedUserName} reverted successfully."));
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error reverting clinic user ID {UserId}", dto.Id);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while reverting the user."));
             }
             finally
             {

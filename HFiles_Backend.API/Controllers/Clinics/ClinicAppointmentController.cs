@@ -1,7 +1,4 @@
-﻿using System.Globalization;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using Google.Apis.Auth.OAuth2;
+﻿using Google.Apis.Auth.OAuth2;
 using Google.Apis.Calendar.v3;
 using Google.Apis.Services;
 using HFiles_Backend.API.DTOs.Clinics;
@@ -21,9 +18,10 @@ using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Logging;
 using Microsoft.VisualBasic.FileIO;
 using Newtonsoft.Json;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace HFiles_Backend.API.Controllers.Clinics
 {
@@ -1440,15 +1438,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     // Calculate and validate age
                     var age = DateTime.Today.Year - parsedDob.Year;
                     if (parsedDob > DateTime.Today.AddYears(-age)) age--;
-
-                    if (age < 18 || age > 150)
+                    if (age < 0 || age > 150)
                     {
-                        _logger.LogWarning("Invalid age calculated from DOB: {Age}", age);
-                        return BadRequest(
-                            ApiResponseFactory.Fail("Invalid date of birth. Age must be between 18 and 150.")
-                        );
+                        _logger.LogWarning("Unrealistic age calculated from DOB: {Age} years", age);
+                        return BadRequest(ApiResponseFactory.Fail("Invalid date of birth. Age must be between 0 and 150."));
                     }
-
 
                     // Check if phone number already exists - we validated these are not null earlier
                     bool phoneExists = await _userRepository.IsPhoneNumberExistsAsync(dto.PhoneNumber!, dto.CountryCode!);
@@ -1806,348 +1800,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-        /// Dependent  appoimnet entruy
-        /// only -18 entry allow and dependent create
-
-        [HttpPost("clinics/{clinicId}/follow-up-dependent")]
-        [Authorize]
-        public async Task<IActionResult> CreateFollowUpAppointmentForDependent(
-        [FromBody] FollowUpAppointmentDto dto,
-        [FromRoute] int clinicId)
-        {
-            HttpContext.Items["Log-Category"] = "Clinic Appointment - Dependent";
-
-            // Basic model validation
-            if (!ModelState.IsValid)
-            {
-                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
-                _logger.LogWarning("Validation failed: {@Errors}", errors);
-                return BadRequest(ApiResponseFactory.Fail(errors));
-            }
-
-            // For dependent flow - new patient details must be provided
-            var validationErrors = new List<string>();
-
-            if (string.IsNullOrWhiteSpace(dto.FirstName))
-                validationErrors.Add("First name is required.");
-
-            if (string.IsNullOrWhiteSpace(dto.LastName))
-                validationErrors.Add("Last name is required.");
-
-            if (string.IsNullOrWhiteSpace(dto.DOB))
-                validationErrors.Add("Date of birth is required.");
-
-            if (string.IsNullOrWhiteSpace(dto.PhoneNumber))
-                validationErrors.Add("Phone number is required.");
-
-            if (string.IsNullOrWhiteSpace(dto.CountryCode))
-                validationErrors.Add("Country code is required.");
-
-            if (string.IsNullOrWhiteSpace(dto.Email))
-                validationErrors.Add("Email is required to find independent user.");
-
-            if (string.IsNullOrWhiteSpace(dto.Relation))
-                validationErrors.Add("Relation is required for dependent users.");
-
-            if (validationErrors.Any())
-            {
-                _logger.LogWarning("Dependent user validation failed: {@Errors}", validationErrors);
-                return BadRequest(ApiResponseFactory.Fail(validationErrors));
-            }
-
-            // Validate appointment date format
-            if (!DateTime.TryParseExact(dto.AppointmentDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var appointmentDate))
-            {
-                _logger.LogWarning("Invalid appointment date format: {Date}", dto.AppointmentDate);
-                return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentDate format. Expected dd-MM-yyyy."));
-            }
-
-            // Validate appointment time format
-            if (!TimeSpan.TryParse(dto.AppointmentTime, out var appointmentTime))
-            {
-                _logger.LogWarning("Invalid appointment time format: {Time}", dto.AppointmentTime);
-                return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentTime format. Expected HH:mm."));
-            }
-
-            await using var transaction = await _userRepository.BeginTransactionAsync();
-            var committed = false;
-
-            try
-            {
-                // Check clinic authorization
-                bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
-                if (!isAuthorized)
-                {
-                    _logger.LogWarning("Unauthorized appointment creation attempt for Clinic ID {ClinicId}", clinicId);
-                    return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can create appointments."));
-                }
-
-                // Verify clinic exists
-                var clinicExists = await _userRepository.ExistsAsync(clinicId);
-                if (!clinicExists)
-                {
-                    _logger.LogWarning("Clinic ID {ClinicId} does not exist", clinicId);
-                    return BadRequest(ApiResponseFactory.Fail("Invalid Clinic ID."));
-                }
-
-                // ==================== FIND INDEPENDENT USER ====================
-                // Search for independent user with matching email AND phone number
-                var independentUser = await _userRepository.GetIndependentUserByEmailAndPhoneAsync(
-                    dto.Email!,
-                    dto.PhoneNumber!,
-                    dto.CountryCode!);
-
-                if (independentUser == null)
-                {
-                    _logger.LogWarning(
-                        "No independent user found with Email: {Email} and Phone: {CountryCode} {Phone}",
-                        dto.Email, dto.CountryCode, dto.PhoneNumber);
-                    return BadRequest(ApiResponseFactory.Fail(
-                        "No independent user found with the provided email and phone number. Please create an independent account first."));
-                }
-
-                _logger.LogInformation(
-                    "Found independent user ID {UserId} for dependent patient {FirstName} {LastName}",
-                    independentUser.Id, dto.FirstName, dto.LastName);
-
-                // ==================== CREATE DEPENDENT PATIENT ====================
-
-                // Validate and parse DOB
-                if (!DateTime.TryParseExact(dto.DOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsedDob))
-                {
-                    _logger.LogWarning("Invalid DOB format: {DOB}", dto.DOB);
-                    return BadRequest(ApiResponseFactory.Fail("Invalid DOB format. Please use dd-MM-yyyy."));
-                }
-
-                // Calculate and validate age
-                var age = DateTime.Today.Year - parsedDob.Year;
-                if (parsedDob > DateTime.Today.AddYears(-age)) age--;
-
-                if (age < 0 || age > 18)
-                {
-                    _logger.LogWarning("Invalid age: {Age}. Allowed range is 0 to 18.", age);
-                    return BadRequest(
-                        ApiResponseFactory.Fail("Invalid date of birth. Age must be between 0 and 18.")
-                    );
-                }
-
-
-
-                // Generate HFID for dependent
-                var hfid = _hfidService.GenerateHfid(dto.FirstName!, dto.LastName!, parsedDob);
-                var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-
-                // Create dependent user entity
-                var dependentUser = new User
-                {
-                    FirstName = dto.FirstName!,
-                    LastName = dto.LastName!,
-                    Gender = dto.Gender,
-                    DOB = dto.DOB!,
-                    CountryCallingCode = dto.CountryCode!,
-                    PhoneNumber = dto.PhoneNumber!,
-                    Email = dto.Email!,
-                    HfId = hfid,
-                    UserReference = independentUser.Id, // ← Link to independent user
-                    Relation = dto.Relation!, // ← Relation (sister, son, etc.)
-                    IsEmailVerified = true, // Inherit from independent user
-                    IsPhoneVerified = true,
-                    DeletedBy = 0,
-                    CreatedEpoch = epochTime,
-                    Password = null // Dependent users don't need separate passwords
-                };
-
-                // Save dependent user
-                await _userRepository.AddUserAsync(dependentUser);
-                await _userRepository.CommitAsync();
-
-                // Assign default "Basic" subscription
-                var subscription = new UserSubscription
-                {
-                    UserId = dependentUser.Id,
-                    SubscriptionPlan = "Basic",
-                    StartEpoch = epochTime,
-                    EndEpoch = SUBSCRIPTION_UNLIMITED
-                };
-
-                await _userRepository.AddSubscriptionAsync(subscription);
-                await _userRepository.CommitAsync();
-
-                _logger.LogInformation(
-                    "Dependent patient created successfully. UserId: {UserId}, HFID: {HFID}, LinkedTo: {IndependentUserId}",
-                    dependentUser.Id, dependentUser.HfId, independentUser.Id);
-
-                // ==================== CREATE APPOINTMENT AND VISIT ====================
-
-                HttpContext.Items["Sent-To-UserId"] = dependentUser.Id;
-
-                var fullName = $"{dependentUser.FirstName} {dependentUser.LastName}";
-                var phone = dependentUser.PhoneNumber ?? "N/A";
-
-                // Get or create patient record
-                var patient = await _clinicVisitRepository.GetOrCreatePatientAsync(dependentUser.HfId!, fullName);
-
-                // Validate consent forms (if provided)
-                var consentForms = new List<ClinicConsentForm>();
-                if (dto.ConsentFormTitles != null && dto.ConsentFormTitles.Any())
-                {
-                    consentForms = await _clinicVisitRepository.GetConsentFormsByTitlesAsync(dto.ConsentFormTitles);
-                    if (consentForms.Count != dto.ConsentFormTitles.Count)
-                    {
-                        var missing = dto.ConsentFormTitles.Except(consentForms.Select(f => f.Title)).ToList();
-                        _logger.LogWarning("Invalid consent form titles: {Missing}", string.Join(", ", missing));
-                        return BadRequest(ApiResponseFactory.Fail($"Invalid consent form titles: {string.Join(", ", missing)}"));
-                    }
-                }
-
-                // Create clinic visit
-                var visit = new ClinicVisit
-                {
-                    ClinicPatientId = patient.Id,
-                    ClinicId = clinicId,
-                    AppointmentDate = appointmentDate.Date,
-                    AppointmentTime = appointmentTime,
-                    ConsentFormsSent = consentForms.Any()
-                        ? consentForms.Select(f => new ClinicVisitConsentForm { ConsentFormId = f.Id }).ToList()
-                        : new List<ClinicVisitConsentForm>()
-                };
-                await _clinicVisitRepository.SaveVisitAsync(visit);
-
-                // Create appointment
-                var appointment = new ClinicAppointment
-                {
-                    VisitorUsername = fullName,
-                    VisitorPhoneNumber = phone,
-                    AppointmentDate = appointmentDate.Date,
-                    AppointmentTime = appointmentTime,
-                    ClinicId = clinicId,
-                    Status = "Scheduled"
-                };
-                await _appointmentRepository.SaveAppointmentAsync(appointment);
-
-                // Create Google Calendar Event
-                var clinic = await _userRepository.GetClinicByIdAsync(clinicId);
-                var googleEventId = await _googleCalendarService.CreateAppointmentAsync(
-                    clinicId,
-                    fullName,
-                    clinic?.ClinicName ?? "Clinic",
-                    appointmentDate.Date,
-                    appointmentTime,
-                    phone
-                );
-
-                if (!string.IsNullOrEmpty(googleEventId))
-                {
-                    appointment.GoogleCalendarEventId = googleEventId;
-                    await _userRepository.SaveChangesAsync();
-                }
-
-                // Commit transaction
-                await transaction.CommitAsync();
-                committed = true;
-
-                // ==================== GENERATE CONSENT FORM LINKS ====================
-
-                var consentFormLinks = new List<ConsentFormLinkInfo>();
-
-                if (dto.ConsentFormTitles != null && dto.ConsentFormTitles.Any() && visit.ConsentFormsSent.Any())
-                {
-                    var baseUrl = GetBaseUrl();
-
-                    for (int i = 0; i < visit.ConsentFormsSent.Count; i++)
-                    {
-                        var consentFormEntry = visit.ConsentFormsSent.ElementAt(i);
-                        var consentFormTitle = dto.ConsentFormTitles[i];
-                        var encodedConsentName = Uri.EscapeDataString(consentFormTitle);
-
-                        string formUrl = DetermineConsentFormUrl(consentFormTitle);
-                        var consentFormLink = $"{baseUrl}/{formUrl}?ConsentId={consentFormEntry.Id}&ConsentName={encodedConsentName}&hfid={patient.HFID}";
-
-                        consentFormLinks.Add(new ConsentFormLinkInfo
-                        {
-                            ConsentFormId = consentFormEntry.Id,
-                            ConsentFormName = consentFormTitle,
-                            ConsentFormLink = consentFormLink
-                        });
-                    }
-
-                    // Send email (to independent user's email, about dependent)
-                    if (clinicId != 36 && consentFormLinks.Any())
-                    {
-                        try
-                        {
-                            var emailTemplate = _emailTemplateService.GenerateAppointmentConfirmationWithConsentFormsEmailTemplate(
-                                dependentUser.FirstName!,
-                                consentFormLinks,
-                                clinic?.ClinicName ?? "Clinic",
-                                appointmentDate.ToString("dd-MM-yyyy"),
-                                appointmentTime.ToString(@"hh\:mm")
-                            );
-
-                            await _emailService.SendEmailAsync(
-                                independentUser.Email, // Send to independent user's email
-                                $"Appointment Confirmation & Consent Forms - {clinic?.ClinicName}",
-                                emailTemplate
-                            );
-
-                            _logger.LogInformation(
-                                "Appointment confirmation email sent to independent user {Email} for dependent {DependentName}",
-                                independentUser.Email, fullName);
-                        }
-                        catch (Exception emailEx)
-                        {
-                            _logger.LogError(emailEx, "Failed to send email for dependent appointment");
-                        }
-                    }
-                }
-
-                // Invalidate cache
-                _cacheService.InvalidateClinicStatistics(clinicId);
-
-                // ==================== BUILD RESPONSE ====================
-
-                var response = new
-                {
-                    // Dependent Patient Information
-                    PatientName = fullName,
-                    HFID = dependentUser.HfId,
-                    IsDependent = true,
-                    LinkedToUserId = independentUser.Id,
-                    LinkedToUserName = $"{independentUser.FirstName} {independentUser.LastName}",
-                    Relation = dependentUser.Relation,
-                    Email = dependentUser.Email,
-                    PhoneNumber = dependentUser.PhoneNumber,
-
-                    // Appointment Details
-                    AppointmentDate = appointmentDate.ToString("dd-MM-yyyy"),
-                    AppointmentTime = appointmentTime.ToString(@"hh\:mm"),
-                    AppointmentStatus = appointment.Status,
-                    ClinicName = clinic?.ClinicName,
-
-                    // Consent Forms
-                    ConsentFormLinks = consentFormLinks,
-                    EmailSent = clinicId != 36 && consentFormLinks.Any()
-                };
-
-                return Ok(ApiResponseFactory.Success(response, "Dependent member registered and appointment created successfully."));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error creating dependent appointment for ClinicId {ClinicId}", clinicId);
-                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred."));
-            }
-            finally
-            {
-                if (!committed && transaction.GetDbTransaction().Connection != null)
-                {
-                    await transaction.RollbackAsync();
-                }
-            }
-        }
-
-
-
-
         // Check existing patient and book follow up appointment
         [HttpPost("clinics/{clinicId}/appointments/follow-up")]
         [Authorize]
@@ -2388,25 +2040,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-<<<<<<< Updated upstream
-		[HttpGet("clinics/{clinicId}/patients")]
-		[Authorize]
-		public async Task<IActionResult> GetClinicPatients(
-	 [FromRoute] int clinicId,
-	 [FromServices] ClinicRepository clinicRepository,
-	 [FromServices] ClinicPatientRecordRepository recordRepository,
-	 [FromServices] IUserRepository userRepository,
-	 [FromQuery] string? startDate,
-	 [FromQuery] string? endDate,
-	 [FromQuery] string? paymentStatus,
-	 [FromQuery] string? packageName,      // ✅ NEW FILTER
-	 [FromQuery] string? coachName,        // ✅ NEW FILTER
-	 [FromQuery] string? paymentMethod,    // ✅ NEW FILTER
-	 [FromQuery] int page = 1,
-	 [FromQuery] int pageSize = 6)
-		{
-			HttpContext.Items["Log-Category"] = "Clinic Patient Overview";
-=======
         // Fetch CLinic Patients
         [HttpGet("clinics/{clinicId}/patients")]
         [Authorize]
@@ -2564,266 +2197,24 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     var profilePhoto = !string.IsNullOrEmpty(patient.HFID) && userMap.TryGetValue(patient.HFID, out var photo)
                         ? photo
                         : "Not a registered user";
->>>>>>> Stashed changes
 
-			if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))
-			{
-				_logger.LogWarning("Unauthorized patient view attempt for Clinic ID {ClinicId}", clinicId);
-				return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can view patients."));
-			}
+                    var phoneNumber = patient.VisitorPhoneNumber;
+                    if (string.IsNullOrEmpty(phoneNumber) && !string.IsNullOrEmpty(patient.HFID))
+                    {
+                        var user = await userRepository.GetUserByHFIDAsync(patient.HFID);
+                        phoneNumber = user?.PhoneNumber;
+                    }
 
-			// Validate pagination parameters
-			if (page < 1)
-				return BadRequest(ApiResponseFactory.Fail("Page must be greater than 0."));
-			if (pageSize < 1 || pageSize > 50)
-				return BadRequest(ApiResponseFactory.Fail("PageSize must be between 1 and 50."));
+                    // ✅ NEW: Get amount due for this patient
+                    decimal amountDue = 0;
+                    if (!string.IsNullOrWhiteSpace(patient.HFID))
+                    {
+                        amountDue = await _clinicPatientRecordRepository.GetTotalAmountDueByHfIdAsync(patient.HFID);
+                    }
 
-			try
-			{
-				DateTime? start = null;
-				DateTime? end = null;
-				PaymentStatusFilter? paymentFilter = null;
+                    // ✅ NEW: Get latest package name
+                    var packageName = await recordRepository.GetLatestPackageNameByPatientIdAsync(patient.Id);
 
-<<<<<<< Updated upstream
-				// Parse date filters
-				if (!string.IsNullOrEmpty(startDate))
-				{
-					if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
-						return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
-					start = parsed;
-				}
-
-				if (!string.IsNullOrEmpty(endDate))
-				{
-					if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
-						return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
-					end = parsed;
-				}
-
-				// Parse payment status filter
-				if (!string.IsNullOrEmpty(paymentStatus))
-				{
-					paymentFilter = paymentStatus.ToLowerInvariant() switch
-					{
-						"paid" => PaymentStatusFilter.Paid,
-						"unpaid" => PaymentStatusFilter.Unpaid,
-						"all" => PaymentStatusFilter.All,
-						_ => (PaymentStatusFilter?)null
-					};
-					if (!paymentFilter.HasValue)
-						return BadRequest(ApiResponseFactory.Fail("Invalid paymentStatus. Expected 'paid', 'unpaid', or 'all'."));
-				}
-
-				var patients = await clinicRepository.GetClinicPatientsWithVisitsAsync(clinicId);
-
-				// ✅ Pre-filter patients with all filters
-				var allMatchingPatients = new List<ClinicPatient>();
-
-				foreach (var patient in patients)
-				{
-					var lastVisit = patient.Visits.OrderByDescending(v => v.AppointmentDate).FirstOrDefault();
-					if (lastVisit == null) continue;
-
-					// Date filter
-					if ((start.HasValue && lastVisit.AppointmentDate.Date < start.Value.Date) ||
-						(end.HasValue && lastVisit.AppointmentDate.Date > end.Value.Date))
-						continue;
-
-					// Payment status filter
-					decimal amountDue = 0;
-
-					if (!string.IsNullOrWhiteSpace(patient.HFID))
-					{
-						amountDue = await _clinicPatientRecordRepository
-							.GetTotalAmountDueByHfIdAsync(patient.HFID);
-					}
-
-					bool paymentMatch = true;
-
-					if (paymentFilter.HasValue)
-					{
-						paymentMatch = paymentFilter.Value switch
-						{
-							PaymentStatusFilter.Paid => amountDue < 1,
-							PaymentStatusFilter.Unpaid => amountDue >= 1,
-							PaymentStatusFilter.All => true,
-							_ => true
-						};
-					}
-
-					if (!paymentMatch) continue;
-
-
-					// ✅ Payment Method filter (Cash, UPI, CreditCard)
-					if (!string.IsNullOrEmpty(paymentMethod))
-					{
-						var lastVisitPaymentMethod = lastVisit.PaymentMethod?.ToString()?.ToLowerInvariant();
-						if (lastVisitPaymentMethod != paymentMethod.ToLowerInvariant())
-							continue;
-					}
-
-					// ✅ Package Name filter
-					if (!string.IsNullOrEmpty(packageName))
-					{
-						var patientPackage = await recordRepository.GetLatestPackageNameByPatientIdAsync(patient.Id);
-						if (string.IsNullOrEmpty(patientPackage) ||
-							!patientPackage.Contains(packageName, StringComparison.OrdinalIgnoreCase))
-							continue;
-					}
-
-					// ✅ Coach Name filter
-					if (!string.IsNullOrEmpty(coachName))
-					{
-						var patientCoach = await recordRepository.GetCouchnameLatestPackageNameByPatientIdAsync(patient.Id);
-						if (string.IsNullOrEmpty(patientCoach) ||
-							!patientCoach.Contains(coachName, StringComparison.OrdinalIgnoreCase))
-							continue;
-					}
-
-					allMatchingPatients.Add(patient);
-				}
-
-				// Apply pagination
-				int totalCount = allMatchingPatients.Count;
-				var orderedPatients = allMatchingPatients
-					.OrderByDescending(p => p.Visits.Max(v => v.AppointmentDate))
-					.ToList();
-
-				var pagedPatients = orderedPatients
-					.Skip((page - 1) * pageSize)
-					.Take(pageSize)
-					.ToList();
-
-				int totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
-
-				if (!pagedPatients.Any())
-				{
-					var emptyResponse = new
-					{
-						TotalPatients = totalCount,
-						Page = page,
-						PageSize = pageSize,
-						TotalPages = totalPages,
-						Patients = new List<PatientDto>()
-					};
-					return Ok(ApiResponseFactory.Success(emptyResponse, "No patients found matching the criteria."));
-				}
-
-				// Build HFID → ProfilePhoto map
-				var uniqueHfids = pagedPatients
-					.Where(p => !string.IsNullOrWhiteSpace(p.HFID))
-					.Select(p => p.HFID)
-					.Distinct()
-					.ToList();
-
-				var userMap = new Dictionary<string, string>();
-				foreach (var hfid in uniqueHfids)
-				{
-					var user = await userRepository.GetUserByHFIDAsync(hfid);
-					userMap[hfid] = user?.ProfilePhoto ?? "Not a registered user";
-				}
-
-				var filteredPatients = new List<PatientDto>();
-
-				foreach (var patient in pagedPatients)
-				{
-					var lastVisit = patient.Visits.OrderByDescending(v => v.AppointmentDate).FirstOrDefault();
-
-					var treatmentRecords = await recordRepository.GetTreatmentRecordsAsync(clinicId, patient.Id, lastVisit!.Id);
-					
-
-
-					var treatmentNames = treatmentRecords
-						.SelectMany(r =>
-						{
-							try
-							{
-								var payload = JsonConvert.DeserializeObject<TreatmentRecordPayload>(r.JsonData);
-								return payload?.Treatments.Select(t => t.Name) ?? Enumerable.Empty<string>();
-							}
-							catch
-							{
-								_logger.LogWarning("Failed to parse treatment JSON for PatientId={PatientId}, VisitId={VisitId}", patient.Id, lastVisit.Id);
-								return Enumerable.Empty<string>();
-							}
-						})
-						.Distinct()
-						.ToList();
-			
-
-					var profilePhoto = !string.IsNullOrEmpty(patient.HFID) && userMap.TryGetValue(patient.HFID, out var photo)
-						? photo
-						: "Not a registered user";
-
-					var phoneNumber = patient.VisitorPhoneNumber;
-					if (string.IsNullOrEmpty(phoneNumber) && !string.IsNullOrEmpty(patient.HFID))
-					{
-						var user = await userRepository.GetUserByHFIDAsync(patient.HFID);
-						phoneNumber = user?.PhoneNumber;
-					}
-
-					// Get amount due
-					decimal amountDue = 0;
-					if (!string.IsNullOrWhiteSpace(patient.HFID))
-					{
-						amountDue = await _clinicPatientRecordRepository.GetTotalAmountDueByHfIdAsync(patient.HFID);
-					}
-
-					// Get package and coach
-					var packageNameValue = await recordRepository.GetLatestPackageNameByPatientIdAsync(patient.Id);
-                    var coachNameValue = await recordRepository.GetCouchnameLatestPackageNameByPatientIdAsync(patient.Id);
-					//var coachNameValue = await recordRepository.GetLatestCoachNameByPatientIdAsync(patient.Id);
-		
-					var dto = new PatientDto
-					{
-						PatientId = patient.Id,
-						PatientName = patient.PatientName,
-						HFID = patient.HFID,
-						ProfilePhoto = profilePhoto,
-						VisitorPhoneNumber = phoneNumber,
-						LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
-						PaymentMethod = lastVisit?.PaymentMethod,
-						PaymentStatus = lastVisit?.PaymentMethod?.ToString() ?? "Pending",
-						TreatmentNames = treatmentNames.Any()
-										? string.Join(", ", treatmentNames)
-										: "-",
-						
-						AmountDue = amountDue,
-						PackageName = packageNameValue ?? "-",
-						CoachName = coachNameValue,  // ✅ NEW
-						Visits = patient.Visits
-							.Select(v => new VisitDto
-							{
-								VisitId = v.Id,
-								AppointmentDate = v.AppointmentDate.ToString("dd-MM-yyyy"),
-								AppointmentTime = v.AppointmentTime.ToString(@"hh\:mm"),
-								ConsentFormsSent = v.ConsentFormsSent.Select(cf => cf.ConsentForm.Title).ToList()
-							})
-							.OrderByDescending(v => v.AppointmentDate)
-							.ToList()
-					};
-
-					filteredPatients.Add(dto);
-				}
-
-				var response = new
-				{
-					TotalPatients = totalCount,
-					Page = page,
-					PageSize = pageSize,
-					TotalPages = totalPages,
-					Patients = filteredPatients
-				};
-
-				return Ok(ApiResponseFactory.Success(response, "Paginated clinic patient data retrieved successfully."));
-			}
-			catch (Exception ex)
-			{
-				_logger.LogError(ex, "Error while fetching patient data for Clinic ID {ClinicId}", clinicId);
-				return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while retrieving patient data."));
-			}
-		}
-=======
                     var dto = new PatientDto
                     {
                         PatientId = patient.Id,
@@ -2869,14 +2260,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while retrieving patient data."));
             }
         }
->>>>>>> Stashed changes
 
 
 
 
 
-		// Calendar View
-		[HttpGet("clinic/{clinicId}/calendar-url")]
+        // Calendar View
+        [HttpGet("clinic/{clinicId}/calendar-url")]
         [Authorize]
         public async Task<IActionResult> GetClinicCalendarUrl([FromRoute] int clinicId)
         {

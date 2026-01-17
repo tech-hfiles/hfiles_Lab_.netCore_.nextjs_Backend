@@ -41,22 +41,17 @@ namespace HFiles_Backend.Domain.Interfaces
         // Get all receipt documents for a visit
         Task<List<ClinicPatientRecord>> GetReceiptDocumentsByVisitAsync(int clinicId, int patientId, int visitId);
 
-    
+
         Task<bool> DeleteDocumentsAsync(int recordId);
-		Task<List<ClinicPatientRecord>> GetAllByPatientAndVisitAsync(
-			int patientId,
-			int clinicVisitId);
-
-<<<<<<< Updated upstream
-		Task UpdateRangeAsync(List<ClinicPatientRecord> records);
+        Task<List<ClinicPatientRecord>> GetAllByPatientAndVisitAsync(
+            int patientId,
+            int clinicVisitId);
 
 
-	}
-=======
+        Task UpdateRangeAsync(List<ClinicPatientRecord> records);
+
+
         Task<string?> GetLatestPaymentModeFromReceiptAsync(int patientId);
+	}
 
-
-
-    }
->>>>>>> Stashed changes
 }

@@ -800,7 +800,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
         }
 
 
-<<<<<<< Updated upstream
+
 
 		public async Task<string?> GetLatestCoachNameByPatientIdAsync(int patientId)
 		{
@@ -883,7 +883,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
 							}
 						}
 					}
-					catch (JsonException ex)
+					catch (Exception ex)
 					{
 						_logger.LogWarning(ex, "Failed to parse membership plan JSON for record ID {RecordId}", plan.Id);
 					}
@@ -933,7 +933,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
 							}
 						}
 					}
-					catch (JsonException ex)
+					catch (Exception ex)
 					{
 						_logger.LogWarning(ex, "Failed to parse membership plan JSON for record ID {RecordId}", plan.Id);
 					}
@@ -981,11 +981,8 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
 
 
-	}
+	
 
-
-
-=======
         public async Task<string?> GetLatestPaymentModeFromReceiptAsync(int patientId)
         {
             var receiptJson = await _context.ClinicPatientRecords
@@ -1013,5 +1010,4 @@ namespace HFiles_Backend.Infrastructure.Repositories
             }
         }
     }
->>>>>>> Stashed changes
 }

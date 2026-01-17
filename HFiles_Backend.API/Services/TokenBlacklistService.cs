@@ -60,7 +60,7 @@ namespace HFiles_Backend.API.Services
                     ClinicId = clinicId,
                     Reason = reason,
                     BlacklistedAt = DateTime.UtcNow,
-                    ExpiresAt = DateTime.UtcNow.AddMinutes(30) // Much shorter expiry - user can login again after 30 minutes if needed
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(240) // Much shorter expiry - user can login again after 30 minutes if needed
                 };
 
                 _context.Set<BlacklistedToken>().Add(blacklistedToken);

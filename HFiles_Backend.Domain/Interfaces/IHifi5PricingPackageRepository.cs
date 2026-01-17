@@ -16,7 +16,7 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<List<string>> GetProgramNamesAsync();
 
         Task<Hifi5PricingPackage> AddAsync(Hifi5PricingPackage package);
-        Task<Hifi5PricingPackage?> UpdateAsync(Hifi5PricingPackage package);
+        Task<Hifi5PricingPackage> UpdateAsync(Hifi5PricingPackage package);
         Task<bool> DeleteAsync(int id);
         Task<bool> ExistsAsync(int id);
     }

@@ -216,10 +216,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
         /// <summary>
         /// Update an existing pricing package
-        /// </summary>
         [HttpPut("{id}")]
         [Authorize(Policy = "SuperAdminOrAdminPolicy")]
-        public async Task<ActionResult<Hifi5PricingPackageResponseDto>> Update(int id, [FromBody] Hifi5PricingPackageRequestDto requestDto)
+        public async Task<ActionResult<Hifi5PricingPackageResponseDto>> Update(
+      int id,
+      [FromBody] Hifi5PricingPackageRequestDto requestDto)
         {
             HttpContext.Items["Log-Category"] = "Pricing Package Management";
             _logger.LogInformation("Updating pricing package with ID: {Id}", id);
@@ -234,27 +235,43 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return BadRequest(ApiResponseFactory.Fail(errors));
             }
 
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             try
             {
                 var package = MapToEntity(requestDto);
                 package.Id = id;
 
+                // Direct update without ExistsAsync check - saves 1 DB round-trip
                 var updatedPackage = await _repository.UpdateAsync(package);
 
-                if (updatedPackage == null)
-                {
-                    _logger.LogWarning("Pricing package with ID {Id} not found for update", id);
-                    return NotFound(ApiResponseFactory.Fail($"Pricing package with ID {id} not found."));
-                }
-
                 var responseData = MapToResponseDto(updatedPackage);
-                _logger.LogInformation("Successfully updated pricing package with ID: {Id}", id);
+
+                stopwatch.Stop();
+                _logger.LogInformation(
+                    "Successfully updated pricing package with ID: {Id} in {ElapsedMs}ms",
+                    id,
+                    stopwatch.ElapsedMilliseconds);
 
                 return Ok(ApiResponseFactory.Success(responseData, "Pricing package updated successfully."));
             }
+            catch (DbUpdateConcurrencyException)
+            {
+                stopwatch.Stop();
+                _logger.LogWarning(
+                    "Pricing package with ID {Id} not found for update (took {ElapsedMs}ms)",
+                    id,
+                    stopwatch.ElapsedMilliseconds);
+                return NotFound(ApiResponseFactory.Fail($"Pricing package with ID {id} not found."));
+            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while updating pricing package with ID: {Id}", id);
+                stopwatch.Stop();
+                _logger.LogError(
+                    ex,
+                    "Error occurred while updating pricing package with ID: {Id} (took {ElapsedMs}ms)",
+                    id,
+                    stopwatch.ElapsedMilliseconds);
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while updating the pricing package."));
             }
         }

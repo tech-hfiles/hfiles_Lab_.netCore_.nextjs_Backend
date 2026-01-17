@@ -76,24 +76,27 @@ namespace HFiles_Backend.Infrastructure.Repositories
             return package;
         }
 
-        public async Task<Hifi5PricingPackage?> UpdateAsync(Hifi5PricingPackage package)
+        public async Task<Hifi5PricingPackage> UpdateAsync(Hifi5PricingPackage package)
         {
             package.EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-            // Attach and mark as modified - single DB operation
-            _context.hifi5PricingPackages.Attach(package);
-            _context.Entry(package).State = EntityState.Modified;
+            // Attach the entity and mark as modified to avoid unnecessary SELECT query
+            var entry = _context.Entry(package);
+            if (entry.State == EntityState.Detached)
+            {
+                _context.hifi5PricingPackages.Attach(package);
+                entry.State = EntityState.Modified;
+            }
 
-            try
+            var affectedRows = await _context.SaveChangesAsync();
+
+            // Throw exception if entity wasn't found (0 rows affected)
+            if (affectedRows == 0)
             {
-                await _context.SaveChangesAsync();
-                return package;
+                throw new DbUpdateConcurrencyException("Entity not found or no changes were made.");
             }
-            catch (DbUpdateConcurrencyException)
-            {
-                // Entity doesn't exist
-                return null;
-            }
+
+            return package;
         }
 
         public async Task<bool> DeleteAsync(int id)
@@ -109,7 +112,9 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
         public async Task<bool> ExistsAsync(int id)
         {
-            return await _context.hifi5PricingPackages.AnyAsync(p => p.Id == id);
+            return await _context.hifi5PricingPackages
+                .AsNoTracking()
+                .AnyAsync(p => p.Id == id);
         }
     }
 }

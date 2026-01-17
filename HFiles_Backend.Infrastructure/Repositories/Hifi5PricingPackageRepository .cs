@@ -76,12 +76,24 @@ namespace HFiles_Backend.Infrastructure.Repositories
             return package;
         }
 
-        public async Task<Hifi5PricingPackage> UpdateAsync(Hifi5PricingPackage package)
+        public async Task<Hifi5PricingPackage?> UpdateAsync(Hifi5PricingPackage package)
         {
             package.EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            _context.hifi5PricingPackages.Update(package);
-            await _context.SaveChangesAsync();
-            return package;
+
+            // Attach and mark as modified - single DB operation
+            _context.hifi5PricingPackages.Attach(package);
+            _context.Entry(package).State = EntityState.Modified;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+                return package;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Entity doesn't exist
+                return null;
+            }
         }
 
         public async Task<bool> DeleteAsync(int id)

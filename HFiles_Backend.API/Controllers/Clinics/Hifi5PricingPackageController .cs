@@ -4,6 +4,7 @@ using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -225,27 +226,30 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
                 _logger.LogWarning("Validation failed while updating pricing package ID {Id}: {@Errors}", id, errors);
                 return BadRequest(ApiResponseFactory.Fail(errors));
             }
 
             try
             {
-                var exists = await _repository.ExistsAsync(id);
-                if (!exists)
+                var package = MapToEntity(requestDto);
+                package.Id = id;
+
+                var updatedPackage = await _repository.UpdateAsync(package);
+
+                if (updatedPackage == null)
                 {
                     _logger.LogWarning("Pricing package with ID {Id} not found for update", id);
                     return NotFound(ApiResponseFactory.Fail($"Pricing package with ID {id} not found."));
                 }
 
-                var package = MapToEntity(requestDto);
-                package.Id = id;
-
-                var updatedPackage = await _repository.UpdateAsync(package);
                 var responseData = MapToResponseDto(updatedPackage);
-
                 _logger.LogInformation("Successfully updated pricing package with ID: {Id}", id);
+
                 return Ok(ApiResponseFactory.Success(responseData, "Pricing package updated successfully."));
             }
             catch (Exception ex)
@@ -254,6 +258,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while updating the pricing package."));
             }
         }
+
 
         /// <summary>
         /// Delete a pricing package

@@ -239,8 +239,10 @@ try
     builder.Services.AddScoped<IHifi5PricingPackageRepository, Hifi5PricingPackageRepository>();
     builder.Services.AddScoped<IClinicMemberRecordRepository, ClinicMemberRecordRepository>();
     builder.Services.AddScoped<IClinicMemberRecordService, ClinicMemberRecordService>();
+    builder.Services.AddScoped<IClinicDocumentRepository, ClinicDocumentRepository>();
+
     // for calling the APis
-	builder.Services.AddHttpContextAccessor(); // ← ADD THIS LINE
+    builder.Services.AddHttpContextAccessor(); // ← ADD THIS LINE
     // Add this line in your service registration
     builder.Services.AddScoped<IHigh5ChocheFormRepository, High5ChocheFormRepository>();
 

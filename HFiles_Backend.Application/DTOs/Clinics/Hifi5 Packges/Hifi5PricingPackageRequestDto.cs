@@ -30,7 +30,7 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Hifi5_Packges
         public string Frequency { get; set; } = null!;
 
         [Required(ErrorMessage = "Total Sessions is required.")]
-        [Range(1, int.MaxValue, ErrorMessage = "Total Sessions must be greater than zero.")]
+        [Range(0, int.MaxValue, ErrorMessage = "Total Sessions must be greater than zero.")]
         public int TotalSessions { get; set; }
 
         [Required(ErrorMessage = "Price in INR is required.")]

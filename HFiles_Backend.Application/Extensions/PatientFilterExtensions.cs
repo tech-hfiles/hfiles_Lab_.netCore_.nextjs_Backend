@@ -11,20 +11,20 @@ namespace HFiles_Backend.Application.Extensions
 {
     public static class PatientFilterExtensions
     {
-        public static IEnumerable<PatientDto> ApplyPaymentStatusFilter(
-            this IEnumerable<PatientDto> patients,
-            PaymentStatusFilter? paymentStatus)
-        {
-            if (!paymentStatus.HasValue || paymentStatus.Value == PaymentStatusFilter.All)
-                return patients;
+        //public static IEnumerable<PatientDto> ApplyPaymentStatusFilter(
+        //    this IEnumerable<PatientDto> patients,
+        //    PaymentStatusFilter? paymentStatus)
+        //{
+        //    if (!paymentStatus.HasValue || paymentStatus.Value == PaymentStatusFilter.All)
+        //        return patients;
 
-            return paymentStatus.Value switch
-            {
-                PaymentStatusFilter.Paid => patients.Where(p => IsPaymentPaid(p.PaymentMethod)),
-                PaymentStatusFilter.Unpaid => patients.Where(p => IsPaymentUnpaid(p.PaymentMethod)),
-                _ => patients
-            };
-        }
+        //    //return paymentStatus.Value switch
+        //    //{
+        //    //    PaymentStatusFilter.Paid => patients.Where(p => IsPaymentPaid(p.PaymentMethod)),
+        //    //    PaymentStatusFilter.Unpaid => patients.Where(p => IsPaymentUnpaid(p.PaymentMethod)),
+        //    //    _ => patients
+        //    //};
+        //}
 
         private static bool IsPaymentPaid(PaymentMethod? paymentMethod)
         {

@@ -41,7 +41,7 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         public string Frequency { get; set; } = null!;
 
         [Required(ErrorMessage = "Total Sessions is required.")]
-        [Range(1, int.MaxValue, ErrorMessage = "Total Sessions must be greater than zero.")]
+        [Range(0, int.MaxValue, ErrorMessage = "Total Sessions must be zero or greater.")]
         [Column("Total_Sessions")]
         public int? TotalSessions { get; set; }
 

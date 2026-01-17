@@ -47,8 +47,16 @@ namespace HFiles_Backend.Domain.Interfaces
 			int patientId,
 			int clinicVisitId);
 
+<<<<<<< Updated upstream
 		Task UpdateRangeAsync(List<ClinicPatientRecord> records);
 
 
 	}
+=======
+        Task<string?> GetLatestPaymentModeFromReceiptAsync(int patientId);
+
+
+
+    }
+>>>>>>> Stashed changes
 }

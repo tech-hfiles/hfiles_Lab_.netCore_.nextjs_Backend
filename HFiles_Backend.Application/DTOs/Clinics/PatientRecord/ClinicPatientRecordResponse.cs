@@ -11,5 +11,8 @@ namespace HFiles_Backend.Application.DTOs.Clinics.PatientRecord
         public long EpochTime { get; set; }
 
 		public bool? PaymentVerify { get; set; }
-	}
+        //for pdf resend fixing 
+        public bool SendToPatient { get; set; }
+        public int? ReferenceId { get; set; }
+    }
 }

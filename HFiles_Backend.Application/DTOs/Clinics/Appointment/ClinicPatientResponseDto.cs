@@ -16,7 +16,7 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Appointment
         public string? ProfilePhoto { get; set; }
         public string? VisitorPhoneNumber { get; set; }
         public string? LastVisitDate { get; set; }
-        public PaymentMethod? PaymentMethod { get; set; }
+        public string? PaymentMethod { get; set; }
         public string? TreatmentNames { get; set; }
         public string? PaymentStatus { get; set; }
         public decimal AmountDue { get; set; }  // ✅ NEW: Total amount due

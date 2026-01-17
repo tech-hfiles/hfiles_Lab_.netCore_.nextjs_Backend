@@ -564,8 +564,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						JsonData = r.JsonData,
 						UniqueRecordId = r.UniqueRecordId,
 						EpochTime = r.EpochTime,
-						PaymentVerify = r.payment_verify
-					};
+						PaymentVerify = r.payment_verify,
+
+                        SendToPatient = r.SendToPatient,
+                        ReferenceId = r.Reference_Id
+                    };
 				}).ToList();
 
 

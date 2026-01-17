@@ -5,6 +5,8 @@ using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System.Buffers.Text;
 using System.Text.Json;
 using static System.Net.Mime.MediaTypeNames;
@@ -127,7 +129,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
                             });
                         }
                     }
-                    catch (JsonException ex)
+                    catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Malformed JSON in ClinicPatientRecord ID {RecordId}", r.Id);
                         recordItems.Add(new PatientRecordItem
@@ -327,7 +329,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
                             // This eliminates records that exist but have no valid URL
                         }
                     }
-                    catch (JsonException ex)
+                    catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Malformed JSON in ClinicPatientRecord ID {RecordId}", r.Id);
                         // Don't include records with malformed JSON and no valid URL
@@ -798,6 +800,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
         }
 
 
+<<<<<<< Updated upstream
 
 		public async Task<string?> GetLatestCoachNameByPatientIdAsync(int patientId)
 		{
@@ -982,4 +985,33 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
 
 
+=======
+        public async Task<string?> GetLatestPaymentModeFromReceiptAsync(int patientId)
+        {
+            var receiptJson = await _context.ClinicPatientRecords
+                .AsNoTracking()
+                .Where(r =>
+                    r.PatientId == patientId &&
+                    r.Type == RecordType.Receipt)
+                .OrderByDescending(r => r.EpochTime)
+                .Select(r => r.JsonData)
+                .FirstOrDefaultAsync();
+
+            if (string.IsNullOrWhiteSpace(receiptJson))
+                return null;
+
+            try
+            {
+                var json = JObject.Parse(receiptJson);
+                return json["services"]?
+                    .FirstOrDefault()?["ModeOfPayment"]?
+                    .ToString();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+>>>>>>> Stashed changes
 }

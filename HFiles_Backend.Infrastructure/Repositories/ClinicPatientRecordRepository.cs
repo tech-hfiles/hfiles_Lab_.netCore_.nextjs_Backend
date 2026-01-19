@@ -202,11 +202,11 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
 
         public async Task<PatientHistoryResponse?> GetPatientHistoryWithFiltersAsync(
-             int clinicId,
-             int patientId,
-             DateTime? startDate,
-             DateTime? endDate,
-             List<string> categoryFilters)
+    int clinicId,
+    int patientId,
+    DateTime? startDate,
+    DateTime? endDate,
+    List<string> categoryFilters)
         {
             IQueryable<ClinicVisit> visitQuery = _context.ClinicVisits
                 .Where(v => v.ClinicId == clinicId && v.ClinicPatientId == patientId);
@@ -249,13 +249,17 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 var recordItems = new List<PatientRecordItem>();
                 var consentForms = new List<ConsentFormInfo>();
 
-                // Process consent forms
+                // ✅ FIX: Process consent forms - check for "consent_form" category
                 foreach (var consentFormSent in visit.ConsentFormsSent)
                 {
                     var consentFormName = consentFormSent.ConsentForm.Title.ToLowerInvariant();
 
-                    // Check if consent form matches category filter
-                    if (categoryFilters.Any() && !categoryFilters.Contains(consentFormName))
+                    // ✅ FIX: Check if filtering for consent_form category OR specific consent form name
+                    bool shouldInclude = !categoryFilters.Any() ||
+                                         categoryFilters.Contains("consent_form") ||
+                                         categoryFilters.Contains(consentFormName);
+
+                    if (!shouldInclude)
                         continue;
 
                     // Only include consent forms with actual URLs (not empty or null)
@@ -323,16 +327,10 @@ namespace HFiles_Backend.Infrastructure.Repositories
                                 }
                             }
                         }
-                        else
-                        {
-                            // Don't include fallback records with empty URLs
-                            // This eliminates records that exist but have no valid URL
-                        }
                     }
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Malformed JSON in ClinicPatientRecord ID {RecordId}", r.Id);
-                        // Don't include records with malformed JSON and no valid URL
                     }
                 }
 
@@ -343,7 +341,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     {
                         AppointmentDate = visit.AppointmentDate,
                         IsVerified = visit.ConsentFormsSent.Any(f => f.IsVerified),
-                        ConsentForms = consentForms.Select(cf => cf.Url).ToList(), // Keep for backward compatibility
+                        ConsentForms = consentForms.Select(cf => cf.Url).ToList(),
                         ConsentFormsWithNames = consentForms.Select(cf => new ConsentFormSimple
                         {
                             Name = cf.Name,

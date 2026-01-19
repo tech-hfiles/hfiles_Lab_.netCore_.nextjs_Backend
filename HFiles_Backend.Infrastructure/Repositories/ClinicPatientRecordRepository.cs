@@ -327,10 +327,16 @@ namespace HFiles_Backend.Infrastructure.Repositories
                                 }
                             }
                         }
+                        else
+                        {
+                            // Don't include fallback records with empty URLs
+                            // This eliminates records that exist but have no valid URL
+                        }
                     }
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Malformed JSON in ClinicPatientRecord ID {RecordId}", r.Id);
+                        // Don't include records with malformed JSON and no valid URL
                     }
                 }
 
@@ -341,7 +347,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     {
                         AppointmentDate = visit.AppointmentDate,
                         IsVerified = visit.ConsentFormsSent.Any(f => f.IsVerified),
-                        ConsentForms = consentForms.Select(cf => cf.Url).ToList(),
+                        ConsentForms = consentForms.Select(cf => cf.Url).ToList(), // Keep for backward compatibility
                         ConsentFormsWithNames = consentForms.Select(cf => new ConsentFormSimple
                         {
                             Name = cf.Name,
@@ -760,10 +766,8 @@ namespace HFiles_Backend.Infrastructure.Repositories
             }
         }
 
-		
-
-		//receipt upload doc 
-		public async Task<ClinicPatientRecord?> GetReceiptDocumentByReceiptNumberAsync(int clinicId, string receiptNumber)
+        //receipt upload doc 
+        public async Task<ClinicPatientRecord?> GetReceiptDocumentByReceiptNumberAsync(int clinicId, string receiptNumber)
         {
             return await _context.ClinicPatientRecords
                 .FirstOrDefaultAsync(r =>

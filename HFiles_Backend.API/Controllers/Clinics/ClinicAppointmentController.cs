@@ -2043,18 +2043,18 @@ namespace HFiles_Backend.API.Controllers.Clinics
 		[HttpGet("clinics/{clinicId}/patients")]
 		[Authorize]
 		public async Task<IActionResult> GetClinicPatients(
-	 [FromRoute] int clinicId,
-	 [FromServices] ClinicRepository clinicRepository,
-	 [FromServices] ClinicPatientRecordRepository recordRepository,
-	 [FromServices] IUserRepository userRepository,
-	 [FromQuery] string? startDate,
-	 [FromQuery] string? endDate,
-	 [FromQuery] string? paymentStatus,
-	 [FromQuery] string? packageName,      
-	 [FromQuery] string? coachName,        
-	 [FromQuery] string? paymentMethod,   
-	 [FromQuery] int page = 1,
-	 [FromQuery] int pageSize = 6)
+[FromRoute] int clinicId,
+[FromServices] ClinicRepository clinicRepository,
+[FromServices] ClinicPatientRecordRepository recordRepository,
+[FromServices] IUserRepository userRepository,
+[FromQuery] string? startDate,
+[FromQuery] string? endDate,
+[FromQuery] string? paymentStatus,
+[FromQuery(Name = "packageName[]")] List<string>? packageName,
+[FromQuery(Name = "coachName[]")] List<string>? coachName,
+[FromQuery(Name = "paymentMethod[]")] List<string>? paymentMethod,      // ✅ Changed to List<string>
+[FromQuery] int page = 1,
+[FromQuery] int pageSize = 6)
 		{
 			HttpContext.Items["Log-Category"] = "Clinic Patient Overview";
 
@@ -2144,30 +2144,49 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 					if (!paymentMatch) continue;
 
-
-					// ✅ Payment Method filter (Cash, UPI, CreditCard)
-					if (!string.IsNullOrEmpty(paymentMethod))
+					// ✅ Payment Method filter - UPDATED TO HANDLE ARRAYS
+					if (paymentMethod != null && paymentMethod.Any())
 					{
-						var lastVisitPaymentMethod = lastVisit.PaymentMethod?.ToString()?.ToLowerInvariant();
-						if (lastVisitPaymentMethod != paymentMethod.ToLowerInvariant())
+						var paymentMode = await recordRepository
+	.GetLatestPaymentModeFromReceiptAsync(patient.Id);
+
+						bool methodMatch = paymentMethod.Any(method =>
+							!string.IsNullOrEmpty(paymentMode) &&
+							paymentMode.Equals(method, StringComparison.OrdinalIgnoreCase)
+						);
+
+						if (!methodMatch)
 							continue;
+
 					}
 
 					// ✅ Package Name filter
-					if (!string.IsNullOrEmpty(packageName))
+					if (packageName != null && packageName.Any())
 					{
 						var patientPackage = await recordRepository.GetLatestPackageNameByPatientIdAsync(patient.Id);
-						if (string.IsNullOrEmpty(patientPackage) ||
-							!patientPackage.Contains(packageName, StringComparison.OrdinalIgnoreCase))
+
+						// Check if patient's package matches ANY of the selected packages
+						bool packageMatch = packageName.Any(pkg =>
+							!string.IsNullOrEmpty(patientPackage) &&
+							patientPackage.Contains(pkg, StringComparison.OrdinalIgnoreCase)
+						);
+
+						if (!packageMatch)
 							continue;
 					}
 
 					// ✅ Coach Name filter
-					if (!string.IsNullOrEmpty(coachName))
+					if (coachName != null && coachName.Any())
 					{
 						var patientCoach = await recordRepository.GetCouchnameLatestPackageNameByPatientIdAsync(patient.Id);
-						if (string.IsNullOrEmpty(patientCoach) ||
-							!patientCoach.Contains(coachName, StringComparison.OrdinalIgnoreCase))
+
+						// Check if patient's coach matches ANY of the selected coaches
+						bool coachMatch = coachName.Any(coach =>
+							!string.IsNullOrEmpty(patientCoach) &&
+							patientCoach.Contains(coach, StringComparison.OrdinalIgnoreCase)
+						);
+
+						if (!coachMatch)
 							continue;
 					}
 
@@ -2222,8 +2241,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 					var treatmentRecords = await recordRepository.GetTreatmentRecordsAsync(clinicId, patient.Id, lastVisit!.Id);
 
-
-
 					var treatmentNames = treatmentRecords
 						.SelectMany(r =>
 						{
@@ -2241,7 +2258,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						.Distinct()
 						.ToList();
 
-
 					var profilePhoto = !string.IsNullOrEmpty(patient.HFID) && userMap.TryGetValue(patient.HFID, out var photo)
 						? photo
 						: "Not a registered user";
@@ -2255,20 +2271,16 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 					// Get amount due
 					decimal amountDue = 0;
-					amountDue = await _clinicPatientRecordRepository.GetTotalAmountDueByHfIdAsync(patient.HFID);
-					
+					if (!string.IsNullOrWhiteSpace(patient.HFID))
+					{
+						amountDue = await _clinicPatientRecordRepository.GetTotalAmountDueByHfIdAsync(patient.HFID);
+					}
 
 					// Get package and coach
 					var packageNameValue = await recordRepository.GetLatestPackageNameByPatientIdAsync(patient.Id);
 					var coachNameValue = await recordRepository.GetCouchnameLatestPackageNameByPatientIdAsync(patient.Id);
-					//var coachNameValue = await recordRepository.GetLatestCoachNameByPatientIdAsync(patient.Id);
 					var paymentMode = await recordRepository.GetLatestPaymentModeFromReceiptAsync(patient.Id);
 
-
-
-					var paymentDisplayStatus = string.IsNullOrEmpty(paymentMode)
-						? "Pending"
-						: paymentMode;
 					var dto = new PatientDto
 					{
 						PatientId = patient.Id,
@@ -2277,15 +2289,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						ProfilePhoto = profilePhoto,
 						VisitorPhoneNumber = phoneNumber,
 						LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
-						PaymentMethod = paymentMode,  // ✅ This should work now
+						PaymentMethod = paymentMode,
 						PaymentStatus = string.IsNullOrEmpty(paymentMode) ? "Pending" : "Paid",
 						TreatmentNames = treatmentNames.Any()
 										? string.Join(", ", treatmentNames)
 										: "-",
-
 						AmountDue = amountDue,
 						PackageName = packageNameValue ?? "-",
-						CoachName = coachNameValue,  // ✅ NEW
+						CoachName = coachNameValue,
 						Visits = patient.Visits
 							.Select(v => new VisitDto
 							{

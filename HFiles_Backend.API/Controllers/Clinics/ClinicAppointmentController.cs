@@ -2255,16 +2255,20 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 					// Get amount due
 					decimal amountDue = 0;
-					if (!string.IsNullOrWhiteSpace(patient.HFID))
-					{
-						amountDue = await _clinicPatientRecordRepository.GetTotalAmountDueByHfIdAsync(patient.HFID);
-					}
+					amountDue = await _clinicPatientRecordRepository.GetTotalAmountDueByHfIdAsync(patient.HFID);
+					
 
 					// Get package and coach
 					var packageNameValue = await recordRepository.GetLatestPackageNameByPatientIdAsync(patient.Id);
 					var coachNameValue = await recordRepository.GetCouchnameLatestPackageNameByPatientIdAsync(patient.Id);
 					//var coachNameValue = await recordRepository.GetLatestCoachNameByPatientIdAsync(patient.Id);
+					var paymentMode = await recordRepository.GetLatestPaymentModeFromReceiptAsync(patient.Id);
 
+
+
+					var paymentDisplayStatus = string.IsNullOrEmpty(paymentMode)
+						? "Pending"
+						: paymentMode;
 					var dto = new PatientDto
 					{
 						PatientId = patient.Id,
@@ -2273,8 +2277,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						ProfilePhoto = profilePhoto,
 						VisitorPhoneNumber = phoneNumber,
 						LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
-						PaymentMethod = lastVisit?.PaymentMethod.ToString(),
-						PaymentStatus = lastVisit?.PaymentMethod?.ToString() ?? "Pending",
+						PaymentMethod = paymentMode,  // ✅ This should work now
+						PaymentStatus = string.IsNullOrEmpty(paymentMode) ? "Pending" : "Paid",
 						TreatmentNames = treatmentNames.Any()
 										? string.Join(", ", treatmentNames)
 										: "-",

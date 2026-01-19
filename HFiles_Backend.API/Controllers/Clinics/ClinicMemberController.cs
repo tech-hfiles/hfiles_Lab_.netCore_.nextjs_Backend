@@ -215,7 +215,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (exists)
                 {
                     string fullName = $"{userDetails.FirstName} {userDetails.LastName}";
-                    return BadRequest(ApiResponseFactory.Fail($"{fullName}'s HFID {dto.HFID} already exists as Member in Branch {dto.BranchId}."));
+                    return BadRequest(ApiResponseFactory.Fail($"{fullName}'s HFID {dto.HFID} already exists as Member."));
                 }
 
                 // Check if the new user is already a Super Admin

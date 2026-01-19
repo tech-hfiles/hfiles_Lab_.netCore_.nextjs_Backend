@@ -1211,142 +1211,155 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-		// Patient History
-		[HttpGet("clinic/{clinicId}/patient/{patientId}/history")]
-		[Authorize]
-		public async Task<IActionResult> GetPatientHistory(
-			   int clinicId,
-			   int patientId,
-			   [FromQuery] string? startDate,
-			   [FromQuery] string? endDate,
-			   [FromQuery] string? categories,
-			   [FromServices] ClinicPatientRecordRepository clinicPatientRecordRepository)
-		{
-			HttpContext.Items["Log-Category"] = "Patient History Fetch";
+        // Patient History
+        [HttpGet("clinic/{clinicId}/patient/{patientId}/history")]
+        [Authorize]
+        public async Task<IActionResult> GetPatientHistory(
+       int clinicId,
+       int patientId,
+       [FromQuery] string? startDate,
+       [FromQuery] string? endDate,
+       [FromQuery] string? categories,
+       [FromServices] ClinicPatientRecordRepository clinicPatientRecordRepository)
+        {
+            HttpContext.Items["Log-Category"] = "Patient History Fetch";
 
-			if (clinicId <= 0 || patientId <= 0)
-			{
-				_logger.LogWarning("Invalid Clinic ID or Patient ID. ClinicId: {ClinicId}, PatientId: {PatientId}", clinicId, patientId);
-				return BadRequest(ApiResponseFactory.Fail("Clinic ID and Patient ID must be valid."));
-			}
+            if (clinicId <= 0 || patientId <= 0)
+            {
+                _logger.LogWarning("Invalid Clinic ID or Patient ID. ClinicId: {ClinicId}, PatientId: {PatientId}", clinicId, patientId);
+                return BadRequest(ApiResponseFactory.Fail("Clinic ID and Patient ID must be valid."));
+            }
 
-			bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
-			if (!isAuthorized)
-			{
-				_logger.LogWarning("Unauthorized history fetch attempt for Clinic ID {ClinicId}", clinicId);
-				return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view this patient's history."));
-			}
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized history fetch attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view this patient's history."));
+            }
 
-			// Parse date filters
-			DateTime? start = null;
-			DateTime? end = null;
+            // Parse date filters
+            DateTime? start = null;
+            DateTime? end = null;
 
-			if (!string.IsNullOrEmpty(startDate))
-			{
-				if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedStart))
-				{
-					_logger.LogWarning("Invalid startDate format: {StartDate}", startDate);
-					return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
-				}
-				start = parsedStart;
-			}
+            if (!string.IsNullOrEmpty(startDate))
+            {
+                if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedStart))
+                {
+                    _logger.LogWarning("Invalid startDate format: {StartDate}", startDate);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
+                }
+                start = parsedStart;
+            }
 
-			if (!string.IsNullOrEmpty(endDate))
-			{
-				if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedEnd))
-				{
-					_logger.LogWarning("Invalid endDate format: {EndDate}", endDate);
-					return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
-				}
-				end = parsedEnd;
-			}
+            if (!string.IsNullOrEmpty(endDate))
+            {
+                if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedEnd))
+                {
+                    _logger.LogWarning("Invalid endDate format: {EndDate}", endDate);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
+                }
+                end = parsedEnd;
+            }
 
-			// Parse category filters
-			var categoryFilters = new List<string>();
-			if (!string.IsNullOrEmpty(categories))
-			{
-				categoryFilters = categories.Split(',', StringSplitOptions.RemoveEmptyEntries)
-					.Select(c => c.Trim().ToLowerInvariant())
-					.ToList();
+            // Parse category filters
+            var categoryFilters = new List<string>();
+            if (!string.IsNullOrEmpty(categories))
+            {
+                categoryFilters = categories.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(c => c.Trim().ToLowerInvariant())
+                    .ToList();
 
-				// Validate categories
-				var validCategories = new List<string>
-				{
-					"dtr consent", "tmd/tmjp consent", "photo consent",
-					"arthrose functional screening consent", "prescription",
-					"treatment", "invoice", "receipt"
-				};
+                // Validate categories - UPDATED: Added "images" category
+                var validCategories = new List<string>
+        {
+            "dtr consent",
+            "tmd/tmjp consent",
+            "photo consent",
+            "arthrose functional screening consent",
+            "prescription",
+            "treatment",
+            "invoice",
+            "receipt",
+            "consent_form",
+            "images"  // ✅ ADDED THIS
+        };
 
-				var invalidCategories = categoryFilters.Except(validCategories).ToList();
-				if (invalidCategories.Any())
-				{
-					_logger.LogWarning("Invalid categories provided: {InvalidCategories}", string.Join(", ", invalidCategories));
-					return BadRequest(ApiResponseFactory.Fail($"Invalid categories: {string.Join(", ", invalidCategories)}. Valid categories are: {string.Join(", ", validCategories)}"));
-				}
-			}
+                var invalidCategories = categoryFilters.Except(validCategories).ToList();
+                if (invalidCategories.Any())
+                {
+                    _logger.LogWarning("Invalid categories provided: {InvalidCategories}", string.Join(", ", invalidCategories));
+                    return BadRequest(ApiResponseFactory.Fail($"Invalid categories: {string.Join(", ", invalidCategories)}. Valid categories are: {string.Join(", ", validCategories)}"));
+                }
+            }
 
-			await using var transaction = await _clinicRepository.BeginTransactionAsync();
-			bool committed = false;
+            // ✅ ADDED: Log the filters being applied
+            _logger.LogInformation("Applying filters - Categories: {Categories}, StartDate: {StartDate}, EndDate: {EndDate}",
+                categoryFilters.Any() ? string.Join(", ", categoryFilters) : "none",
+                start?.ToString("dd-MM-yyyy") ?? "none",
+                end?.ToString("dd-MM-yyyy") ?? "none");
 
-			try
-			{
-				var history = await clinicPatientRecordRepository.GetPatientHistoryWithFiltersAsync(
-					clinicId, patientId, start, end, categoryFilters);
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
 
-				if (history == null)
-				{
-					_logger.LogInformation("No history found for Clinic ID {ClinicId}, Patient ID {PatientId}", clinicId, patientId);
-					return NotFound(ApiResponseFactory.Fail("No history found for this patient."));
-				}
+            try
+            {
+                var history = await clinicPatientRecordRepository.GetPatientHistoryWithFiltersAsync(
+                    clinicId, patientId, start, end, categoryFilters);
 
-				await transaction.CommitAsync();
-				committed = true;
+                if (history == null)
+                {
+                    _logger.LogInformation("No history found for Clinic ID {ClinicId}, Patient ID {PatientId}", clinicId, patientId);
+                    return NotFound(ApiResponseFactory.Fail("No history found for this patient."));
+                }
 
-				var userProfile = await _userRepository.GetUserByHFIDAsync(history.HfId);
+                await transaction.CommitAsync();
+                committed = true;
 
-				var response = new
-				{
-					history.PatientName,
-					history.HfId,
-					userProfile?.ProfilePhoto,
-					history.Email,
+                var userProfile = await _userRepository.GetUserByHFIDAsync(history.HfId);
 
-					TotalVisits = history.Visits.Count,
-					DateRange = new
-					{
-						StartDate = start?.ToString("dd-MM-yyyy"),
-						EndDate = end?.ToString("dd-MM-yyyy")
-					},
-					AppliedFilters = new
-					{
-						Categories = categoryFilters.Any() ? categoryFilters : new List<string> { "all" }
-					},
-					history.Visits
-				};
+                var response = new
+                {
+                    history.PatientName,
+                    history.HfId,
+                    userProfile?.ProfilePhoto,
+                    history.Email,
 
-				_logger.LogInformation("Fetched filtered history for Clinic ID {ClinicId}, Patient ID {PatientId}. Visits: {VisitCount}, Filters: {Filters}",
-					clinicId, patientId, history.Visits.Count, string.Join(",", categoryFilters));
+                    TotalVisits = history.Visits.Count,
+                    DateRange = new
+                    {
+                        StartDate = start?.ToString("dd-MM-yyyy"),
+                        EndDate = end?.ToString("dd-MM-yyyy")
+                    },
+                    AppliedFilters = new
+                    {
+                        Categories = categoryFilters.Any() ? categoryFilters : new List<string> { "all" }
+                    },
+                    history.Visits
+                };
 
-				return Ok(ApiResponseFactory.Success(response, "Patient history fetched successfully."));
-			}
-			catch (Exception ex)
-			{
-				_logger.LogError(ex, "Error fetching patient history for Clinic ID {ClinicId}", clinicId);
-				return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching patient history."));
-			}
-			finally
-			{
-				if (!committed && transaction.GetDbTransaction().Connection != null)
-					await transaction.RollbackAsync();
-			}
-		}
+                _logger.LogInformation("Fetched filtered history for Clinic ID {ClinicId}, Patient ID {PatientId}. Visits: {VisitCount}, Filters: {Filters}",
+                    clinicId, patientId, history.Visits.Count, string.Join(",", categoryFilters));
+
+                return Ok(ApiResponseFactory.Success(response, "Patient history fetched successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching patient history for Clinic ID {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching patient history."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
 
 
 
 
 
-		// GET: Preview next available unique IDs for all record types
-		[HttpGet("clinic/{clinicId}/patient/{patientId}/visit/{clinicVisitId}/next-ids")]
+        // GET: Preview next available unique IDs for all record types
+        [HttpGet("clinic/{clinicId}/patient/{patientId}/visit/{clinicVisitId}/next-ids")]
 		[Authorize]
 		public async Task<IActionResult> GetNextAvailableIds(
 			[FromRoute] int clinicId,

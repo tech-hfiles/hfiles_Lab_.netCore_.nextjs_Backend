@@ -554,7 +554,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 				var response = recordsList.Select(r =>
-				{
+				{	
 
 
 					return new ClinicPatientRecordResponse

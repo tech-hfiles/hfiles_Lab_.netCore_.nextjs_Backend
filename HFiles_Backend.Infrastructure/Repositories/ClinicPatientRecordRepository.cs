@@ -762,8 +762,10 @@ namespace HFiles_Backend.Infrastructure.Repositories
             }
         }
 
-        //receipt upload doc 
-        public async Task<ClinicPatientRecord?> GetReceiptDocumentByReceiptNumberAsync(int clinicId, string receiptNumber)
+		
+
+		//receipt upload doc 
+		public async Task<ClinicPatientRecord?> GetReceiptDocumentByReceiptNumberAsync(int clinicId, string receiptNumber)
         {
             return await _context.ClinicPatientRecords
                 .FirstOrDefaultAsync(r =>

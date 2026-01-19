@@ -979,6 +979,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						ClinicPatientId = p.ClinicPatient.Id,
 						HFID = p.ClinicPatient.HFID,
 						UserName = $"{p.User.FirstName} {p.User.LastName}".Trim(),
+                        Email = p.User.Email,
+						phoneNumber = p.User.PhoneNumber,
 						DaysPending = (int)((currentEpochTime - p.Receipt.EpochTime) / secondsInDay),
 						LatestReceipt = new
 						{

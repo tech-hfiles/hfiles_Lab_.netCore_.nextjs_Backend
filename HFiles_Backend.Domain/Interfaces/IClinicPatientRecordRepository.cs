@@ -52,6 +52,11 @@ namespace HFiles_Backend.Domain.Interfaces
 
 
         Task<string?> GetLatestPaymentModeFromReceiptAsync(int patientId);
-	}
+        Task<List<ClinicPatientRecord>> GetAllReportImageRecordsAsync(
+    int clinicId,
+    int patientId,
+    int clinicVisitId
+);
+    }
 
 }

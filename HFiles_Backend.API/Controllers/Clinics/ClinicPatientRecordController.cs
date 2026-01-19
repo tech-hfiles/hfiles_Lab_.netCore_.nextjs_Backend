@@ -1026,7 +1026,212 @@ namespace HFiles_Backend.API.Controllers.Clinics
 		}
 
 
-		[HttpPut("clinic/patient/documents/verify-payment/{receiptRecordId}")]
+        [HttpPost("clinic/patient/images/send_Img")]
+        [Authorize]
+        public async Task<IActionResult> SendImagesToPatient([FromBody] ClinicPatientImagesSendRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Patient Images Send";
+
+            if (!ModelState.IsValid)
+                return BadRequest(ApiResponseFactory.Fail("Invalid request"));
+
+            if (request.Images == null || !request.Images.Any())
+                return BadRequest(ApiResponseFactory.Fail("At least one image entry is required."));
+
+            // Authorization check
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+            if (!isAuthorized)
+                return Unauthorized(ApiResponseFactory.Fail("Not authorized for this clinic."));
+
+            // Verify visit exists and belongs to clinic
+            var visit = await _clinicVisitRepository.GetByIdAsync(request.ClinicVisitId);
+            if (visit == null || visit.ClinicId != request.ClinicId)
+                return NotFound(ApiResponseFactory.Fail("Clinic visit not found or mismatch."));
+
+            // Verify patient record exists
+            var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(request.PatientId);
+            if (clinicPatient == null)
+                return NotFound(ApiResponseFactory.Fail("Clinic patient record not found."));
+
+            // Get linked user (HF user)
+            var user = await _userRepository.GetUserByHFIDAsync(clinicPatient.HFID);
+            if (user == null)
+                return NotFound(ApiResponseFactory.Fail("No user found for this HFID."));
+
+            HttpContext.Items["Sent-To-UserId"] = user.Id;
+
+            var clinic = await _clinicRepository.GetByIdAsync(request.ClinicId);
+            if (clinic == null)
+                return NotFound(ApiResponseFactory.Fail("Clinic not found."));
+
+            string clinicName = clinic.ClinicName ?? "Clinic";
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var processedImages = new List<string>();
+                var patientDocumentInfoList = new List<PatientDocumentInfo>();
+
+                // ✅ FIX: Get ALL records for this visit first
+                var allRecords = await _clinicPatientRecordRepository
+                    .GetAllReportImageRecordsAsync(request.ClinicId, request.PatientId, request.ClinicVisitId);
+
+                foreach (var img in request.Images)
+                {
+                    // ✅ FIX: Find the SPECIFIC record that contains this image URL
+                    var existingRecord = allRecords?.FirstOrDefault(record =>
+                    {
+                        try
+                        {
+                            // Parse JsonData to check if it contains this image URL
+                            var jsonData = JsonConvert.DeserializeObject<List<string>>(record.JsonData);
+                            return jsonData != null && jsonData.Contains(img.ImageUrl);
+                        }
+                        catch
+                        {
+                            return false;
+                        }
+                    });
+
+                    if (existingRecord == null)
+                    {
+                        _logger.LogWarning("No record found for image URL: {ImageUrl}", img.ImageUrl);
+                        continue; // Skip this image if no matching record found
+                    }
+
+                    // ✅ FIX: Update SendToPatient flag on the SPECIFIC clinic record
+                    if (existingRecord.SendToPatient != img.SendToPatient)
+                    {
+                        existingRecord.SendToPatient = img.SendToPatient;
+                        await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
+
+                        _logger.LogInformation(
+                            "Updated SendToPatient={SendToPatient} for Record ID={RecordId}, ImageUrl={ImageUrl}",
+                            img.SendToPatient,
+                            existingRecord.Id,
+                            img.ImageUrl
+                        );
+                    }
+
+                    // Only create/link UserReport if SendToPatient = true
+                    if (img.SendToPatient)
+                    {
+                        var report = new UserReport
+                        {
+                            UserId = user.Id,
+                            ReportName = "Image",
+                            ReportCategory = (int)ReportType.LabReport,
+                            ReportUrl = img.ImageUrl,
+                            EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                            FileSize = 0,
+                            UploadedBy = "Clinic",
+                            UserType = user.UserReference == 0 ? "Independent" : "Dependent",
+                            DeletedBy = 0
+                        };
+
+                        await _userRepository.SaveAsync(report);
+
+                        processedImages.Add($"Image → {img.ImageUrl}");
+
+                        patientDocumentInfoList.Add(new PatientDocumentInfo
+                        {
+                            DocumentType = "Image",
+                            Category = "Lab Reports",
+                            DocumentUrl = img.ImageUrl
+                        });
+                    }
+                }
+
+                if (!processedImages.Any())
+                {
+                    return Ok(ApiResponseFactory.Success(new { Message = "No images were sent (SendToPatient = false for all)" }));
+                }
+
+                await transaction.CommitAsync();
+                committed = true;
+
+                // Invalidate cache if needed
+                _cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+                // Prepare notification
+                string patientName = clinicPatient.PatientName ?? $"{user.FirstName} {user.LastName}" ?? "Patient";
+                string appointmentDate = visit.AppointmentDate.ToString("dd-MM-yyyy") ?? "N/A";
+                string appointmentTime = visit.AppointmentTime.ToString(@"hh\:mm") ?? "N/A";
+
+                var documentsFormatted = string.Join("\n", processedImages.Select((d, i) => $"{i + 1}. {d}"));
+
+                var userNotificationMessage = $"{clinicName} has shared {processedImages.Count} image(s) with you.\n\n{documentsFormatted}\n\nView in All Reports → Lab Reports.";
+
+                bool emailSent = false;
+                string? emailSentTo = null;
+
+                if (!string.IsNullOrWhiteSpace(user.Email))
+                {
+                    try
+                    {
+                        var emailTemplate = _emailTemplateService.GeneratePatientDocumentsUploadedEmailTemplate(
+                            user.FirstName ?? "Patient",
+                            patientDocumentInfoList,
+                            clinicName,
+                            appointmentDate,
+                            appointmentTime
+                        );
+
+                        await _emailService.SendEmailAsync(
+                            user.Email,
+                            $"New Lab Images Shared - {clinicName}",
+                            emailTemplate
+                        );
+
+                        emailSent = true;
+                        emailSentTo = user.Email;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send images email to {Email}", user.Email);
+                    }
+                }
+
+                var response = new
+                {
+                    PatientName = patientName,
+                    PatientHFID = clinicPatient.HFID,
+                    ClinicName = clinicName,
+                    AppointmentDate = appointmentDate,
+                    AppointmentTime = appointmentTime,
+                    ProcessedImages = processedImages.Count,
+                    EmailSent = emailSent,
+                    SentToEmail = emailSentTo,
+                    UserNotificationMessage = userNotificationMessage,
+                    NotificationContext = new
+                    {
+                        ClinicId = request.ClinicId,
+                        PatientId = request.PatientId,
+                        ClinicVisitId = request.ClinicVisitId,
+                        HFID = clinicPatient.HFID,
+                        ImagesProcessed = processedImages.Count,
+                        EmailStatus = emailSent ? "Sent" : "Not sent"
+                    }
+                };
+
+                return Ok(ApiResponseFactory.Success(response, $"{processedImages.Count} image(s) processed successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing image send for Clinic {ClinicId}", request.ClinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("Server error while processing images."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction()?.Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
+
+
+        [HttpPut("clinic/patient/documents/verify-payment/{receiptRecordId}")]
 		[Authorize]
 		public async Task<IActionResult> VerifyPayment(int receiptRecordId)
 		{

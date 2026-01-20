@@ -1485,8 +1485,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
             "treatment",
             "invoice",
             "receipt",
-            "consent_form",
-            "images"  // ✅ ADDED THIS
+            "consent form",
+            "images",  // ✅ ADDED THIS
+            "membership plan",     
+			"physiotherapy form"
         };
 
                 var invalidCategories = categoryFilters.Except(validCategories).ToList();

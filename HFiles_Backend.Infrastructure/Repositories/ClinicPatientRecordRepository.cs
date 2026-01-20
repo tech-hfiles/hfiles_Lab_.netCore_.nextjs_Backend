@@ -259,7 +259,8 @@ namespace HFiles_Backend.Infrastructure.Repositories
                                          categoryFilters.Contains("consent_form") ||
                                          categoryFilters.Contains(consentFormName);
 
-                    if (!shouldInclude)
+                    // ✅ FIXED: Check if "consent_form" is in the filter
+                    if (hasFilters && !categoryFilters.Contains("consent form"))
                         continue;
 
                     // Only include consent forms with actual URLs (not empty or null)
@@ -377,6 +378,8 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 //RecordType.Invoice => "invoice",
                 RecordType.Receipt => "receipt",
                 RecordType.Images => "images",
+                RecordType.MembershipPlan => "membership plan",       
+                RecordType.PhysiotherapyForm => "physiotherapy form",
                 RecordType.SymptomDiary => "symptom diary",
                 _ => "other"
             };

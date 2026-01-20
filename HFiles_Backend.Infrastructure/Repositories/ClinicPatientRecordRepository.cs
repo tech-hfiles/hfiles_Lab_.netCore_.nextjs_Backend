@@ -259,8 +259,8 @@ namespace HFiles_Backend.Infrastructure.Repositories
                                          categoryFilters.Contains("consent_form") ||
                                          categoryFilters.Contains(consentFormName);
 
-                    // ✅ FIXED: Check if "consent_form" is in the filter
-                    if (hasFilters && !categoryFilters.Contains("consent form"))
+                    // ✅ FIXED: Check if "consent_form" is in the filter // removed hasfilter
+                    if (categoryFilters.Any() && !categoryFilters.Contains("consent form"))
                         continue;
 
                     // Only include consent forms with actual URLs (not empty or null)

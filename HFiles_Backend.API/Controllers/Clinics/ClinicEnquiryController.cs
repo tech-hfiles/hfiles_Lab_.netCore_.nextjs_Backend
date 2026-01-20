@@ -50,7 +50,9 @@ public class ClinicEnquiryController : ControllerBase
 		[FromQuery] int pageSize = 10,
 		[FromQuery] EnquiryStatus? status = null,
 		[FromQuery] PaymentStatus? paymentStatus = null,
-		[FromQuery] int? coachId = null
+		[FromQuery] int? coachId = null,
+		[FromQuery] string? search = null
+
 	)
 	{
 		HttpContext.Items["Log-Category"] = "Clinic Enquiry";
@@ -92,6 +94,35 @@ public class ClinicEnquiryController : ControllerBase
 				filteredEnquiries = filteredEnquiries
 					.Where(e => e.AssignedCoaches.Any(ac => ac.CoachId == coachId.Value));
 			}
+			// Search by name (FirstName + LastName)
+			if (!string.IsNullOrWhiteSpace(search))
+			{
+				var keyword = search.Trim().ToLower();
+
+				filteredEnquiries = filteredEnquiries.Where(e =>
+					// First name starts with
+					(!string.IsNullOrWhiteSpace(e.Firstname) &&
+					 e.Firstname.Trim().ToLower().StartsWith(keyword))
+
+					||
+
+					// Last name starts with
+					(!string.IsNullOrWhiteSpace(e.Lastname) &&
+					 e.Lastname.Trim().ToLower().StartsWith(keyword))
+
+					||
+
+					// Full name starts with (e.g. "mona pa")
+					(!string.IsNullOrWhiteSpace(e.Firstname) &&
+					 !string.IsNullOrWhiteSpace(e.Lastname) &&
+					 ($"{e.Firstname} {e.Lastname}")
+						.Trim()
+						.ToLower()
+						.StartsWith(keyword))
+				);
+			}
+
+
 
 			// Count after filter
 			int totalRecords = filteredEnquiries.Count();

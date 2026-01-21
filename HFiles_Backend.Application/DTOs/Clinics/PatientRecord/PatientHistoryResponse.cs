@@ -26,5 +26,7 @@ namespace HFiles_Backend.Application.DTOs.Clinics.PatientRecord
         public string Url { get; set; } = string.Empty;
         public bool SendToPatient { get; set; }
         public string Category { get; set; } = string.Empty;
+
+        public long epochtime { get; set; }
     }
 }

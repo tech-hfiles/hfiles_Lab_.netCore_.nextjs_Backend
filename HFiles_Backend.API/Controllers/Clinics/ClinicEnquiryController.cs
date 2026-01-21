@@ -45,15 +45,16 @@ public class ClinicEnquiryController : ControllerBase
 	// =====================================================
 	[HttpGet("{clinicId}")]
 	public async Task<IActionResult> GetAll(
-		int clinicId,
-		[FromQuery] int page = 1,
-		[FromQuery] int pageSize = 10,
-		[FromQuery] EnquiryStatus? status = null,
-		[FromQuery] PaymentStatus? paymentStatus = null,
-		[FromQuery] int? coachId = null,
-		[FromQuery] string? search = null
-
-	)
+	int clinicId,
+	[FromQuery] int page = 1,
+	[FromQuery] int pageSize = 10,
+	[FromQuery] EnquiryStatus? status = null,
+	[FromQuery] PaymentStatus? paymentStatus = null,
+	[FromQuery] int? coachId = null,
+	[FromQuery] string? search = null,
+	[FromQuery] DateTime? startDate = null,  // ✅ Added
+	[FromQuery] DateTime? endDate = null      // ✅ Added
+)
 	{
 		HttpContext.Items["Log-Category"] = "Clinic Enquiry";
 		try
@@ -65,7 +66,6 @@ public class ClinicEnquiryController : ControllerBase
 				_logger.LogWarning("Unauthorized enquiry list access for ClinicId {ClinicId}", clinicId);
 				return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view enquiries."));
 			}
-
 			if (page < 1) page = 1;
 			if (pageSize < 1) pageSize = 10;
 
@@ -94,24 +94,35 @@ public class ClinicEnquiryController : ControllerBase
 				filteredEnquiries = filteredEnquiries
 					.Where(e => e.AssignedCoaches.Any(ac => ac.CoachId == coachId.Value));
 			}
+
+			// ✅ Date range filtering
+			if (startDate.HasValue)
+			{
+				filteredEnquiries = filteredEnquiries
+					.Where(e => e.EpochTime > 0 &&
+						DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).DateTime.Date >= startDate.Value.Date);
+			}
+
+			if (endDate.HasValue)
+			{
+				filteredEnquiries = filteredEnquiries
+					.Where(e => e.EpochTime > 0 &&
+						DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).DateTime.Date <= endDate.Value.Date);
+			}
+
 			// Search by name (FirstName + LastName)
 			if (!string.IsNullOrWhiteSpace(search))
 			{
 				var keyword = search.Trim().ToLower();
-
 				filteredEnquiries = filteredEnquiries.Where(e =>
 					// First name starts with
 					(!string.IsNullOrWhiteSpace(e.Firstname) &&
 					 e.Firstname.Trim().ToLower().StartsWith(keyword))
-
 					||
-
 					// Last name starts with
 					(!string.IsNullOrWhiteSpace(e.Lastname) &&
 					 e.Lastname.Trim().ToLower().StartsWith(keyword))
-
 					||
-
 					// Full name starts with (e.g. "mona pa")
 					(!string.IsNullOrWhiteSpace(e.Firstname) &&
 					 !string.IsNullOrWhiteSpace(e.Lastname) &&
@@ -121,8 +132,6 @@ public class ClinicEnquiryController : ControllerBase
 						.StartsWith(keyword))
 				);
 			}
-
-
 
 			// Count after filter
 			int totalRecords = filteredEnquiries.Count();
@@ -154,15 +163,15 @@ public class ClinicEnquiryController : ControllerBase
 					e.Remark,
 					e.EpochTime,
 					PricingPackage = e.PricingPackageId == null
-		? null
-		: new
-		{
-			e.PricingPackage.Id,
-			e.PricingPackage.ProgramCategory,
-			e.PricingPackage.ProgramName,
-			e.PricingPackage.DurationMonths,
-			e.PricingPackage.PriceInr
-		},
+						? null
+						: new
+						{
+							e.PricingPackage.Id,
+							e.PricingPackage.ProgramCategory,
+							e.PricingPackage.ProgramName,
+							e.PricingPackage.DurationMonths,
+							e.PricingPackage.PriceInr
+						},
 					// Map assigned coaches - following the correct navigation path
 					AssignedCoaches = e.AssignedCoaches.Select(ac => new
 					{

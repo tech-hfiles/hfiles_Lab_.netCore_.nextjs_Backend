@@ -8,6 +8,9 @@
         BankTransfer,
         Check,
         Wallet,
-        Pending
-    }
+        Pending,
+		Net_Banking,
+        UPI,
+		Cheque
+	}
 }

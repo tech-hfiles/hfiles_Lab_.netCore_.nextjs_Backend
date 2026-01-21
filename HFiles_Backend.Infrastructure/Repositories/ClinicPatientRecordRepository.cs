@@ -201,166 +201,376 @@ namespace HFiles_Backend.Infrastructure.Repositories
         }
 
 
-        public async Task<PatientHistoryResponse?> GetPatientHistoryWithFiltersAsync(
-int clinicId,
-int patientId,
-DateTime? startDate,
-DateTime? endDate,
-List<string> categoryFilters)
-        {
-            IQueryable<ClinicVisit> visitQuery = _context.ClinicVisits
-                .Where(v => v.ClinicId == clinicId && v.ClinicPatientId == patientId);
+		//        public async Task<PatientHistoryResponse?> GetPatientHistoryWithFiltersAsync(
+		//int clinicId,
+		//int patientId,
+		//DateTime? startDate,
+		//DateTime? endDate,
+		//List<string> categoryFilters)
+		//        {
+		//            IQueryable<ClinicVisit> visitQuery = _context.ClinicVisits
+		//                .Where(v => v.ClinicId == clinicId && v.ClinicPatientId == patientId);
 
-            // Apply date filtering
-            if (startDate.HasValue)
-                visitQuery = visitQuery.Where(v => v.AppointmentDate.Date >= startDate.Value.Date);
+		//            // Apply date filtering
+		//            if (startDate.HasValue)
+		//                visitQuery = visitQuery.Where(v => v.AppointmentDate.Date >= startDate.Value.Date);
 
-            if (endDate.HasValue)
-                visitQuery = visitQuery.Where(v => v.AppointmentDate.Date <= endDate.Value.Date);
+		//            if (endDate.HasValue)
+		//                visitQuery = visitQuery.Where(v => v.AppointmentDate.Date <= endDate.Value.Date);
 
-            // Apply includes after filtering
-            var visitGroups = await visitQuery
-                .Include(v => v.ConsentFormsSent)
-                    .ThenInclude(cf => cf.ConsentForm)
-                .Include(v => v.Patient)
-                .ToListAsync();
+		//            // Apply includes after filtering
+		//            var visitGroups = await visitQuery
+		//                .Include(v => v.ConsentFormsSent)
+		//                    .ThenInclude(cf => cf.ConsentForm)
+		//                .Include(v => v.Patient)
+		//                .ToListAsync();
 
-            if (!visitGroups.Any())
-                return null;
+		//            if (!visitGroups.Any())
+		//                return null;
 
-            var firstVisit = visitGroups.First();
-            var hfId = firstVisit.Patient.HFID;
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.HfId == hfId);
+		//            var firstVisit = visitGroups.First();
+		//            var hfId = firstVisit.Patient.HFID;
+		//            var user = await _context.Users.FirstOrDefaultAsync(u => u.HfId == hfId);
 
-            var response = new PatientHistoryResponse
-            {
-                PatientName = firstVisit.Patient.PatientName?.Trim() ?? string.Empty,
-                HfId = hfId ?? string.Empty,
-                Email = user?.Email ?? string.Empty,
-                Visits = new List<VisitRecordGroup>()
-            };
+		//            var response = new PatientHistoryResponse
+		//            {
+		//                PatientName = firstVisit.Patient.PatientName?.Trim() ?? string.Empty,
+		//                HfId = hfId ?? string.Empty,
+		//                Email = user?.Email ?? string.Empty,
+		//                Visits = new List<VisitRecordGroup>()
+		//            };
 
-            // ✅ Check if filters are applied
-            bool hasFilters = categoryFilters != null && categoryFilters.Any();
+		//            // ✅ Check if filters are applied
+		//            bool hasFilters = categoryFilters != null && categoryFilters.Any();
 
-            foreach (var visit in visitGroups)
-            {
-                var records = await _context.ClinicPatientRecords
-                    .Where(r => r.ClinicVisitId == visit.Id)
-                    .ToListAsync();
+		//            foreach (var visit in visitGroups)
+		//            {
+		//                var records = await _context.ClinicPatientRecords
+		//                    .Where(r => r.ClinicVisitId == visit.Id)
+		//                    .ToListAsync();
 
-                var recordItems = new List<PatientRecordItem>();
-                var consentForms = new List<ConsentFormInfo>();
+		//                var recordItems = new List<PatientRecordItem>();
+		//                var consentForms = new List<ConsentFormInfo>();
 
-                // Process consent forms
-                foreach (var consentFormSent in visit.ConsentFormsSent)
-                {
-                    // Only include consent forms with actual URLs (not empty or null)
-                    if (string.IsNullOrWhiteSpace(consentFormSent.ConsentFormUrl))
-                        continue;
+		//                // Process consent forms
+		//                foreach (var consentFormSent in visit.ConsentFormsSent)
+		//                {
+		//                    // Only include consent forms with actual URLs (not empty or null)
+		//                    if (string.IsNullOrWhiteSpace(consentFormSent.ConsentFormUrl))
+		//                        continue;
 
-                    // ✅ FIXED: Check if "consent_form" is in the filter // removed hasfilter
-                    if (categoryFilters.Any() && !categoryFilters.Contains("consent form"))
-                        continue;
+		//                    // ✅ FIXED: Check if "consent_form" is in the filter // removed hasfilter
+		//                    if (categoryFilters.Any() && !categoryFilters.Contains("consent form"))
+		//                        continue;
 
-                    consentForms.Add(new ConsentFormInfo
-                    {
-                        Name = consentFormSent.ConsentForm.Title,
-                        Url = consentFormSent.ConsentFormUrl,
-                        IsVerified = consentFormSent.IsVerified,
-                        Category = "consent_form"
-                    });
-                }
+		//                    consentForms.Add(new ConsentFormInfo
+		//                    {
+		//                        Name = consentFormSent.ConsentForm.Title,
+		//                        Url = consentFormSent.ConsentFormUrl,
+		//                        IsVerified = consentFormSent.IsVerified,
+		//                        Category = "consent_form"
+		//                    });
+		//                }
 
-                // Process patient records (prescription, treatment, invoice, receipt and symptom diary)
-                foreach (var r in records)
-                {
-                    var recordCategory = GetRecordCategory(r.Type);
+		//                // Process patient records (prescription, treatment, invoice, receipt and symptom diary)
+		//                foreach (var r in records)
+		//                {
+		//                    var recordCategory = GetRecordCategory(r.Type);
 
-                    // ✅ FIXED: Check if the specific record category is in the filter
-                    if (hasFilters && !categoryFilters.Contains(recordCategory))
-                        continue;
+		//                    // ✅ FIXED: Check if the specific record category is in the filter
+		//                    if (hasFilters && !categoryFilters.Contains(recordCategory))
+		//                        continue;
 
-                    try
-                    {
-                        using var doc = JsonDocument.Parse(r.JsonData);
-                        var root = doc.RootElement;
+		//                    try
+		//                    {
+		//                        using var doc = JsonDocument.Parse(r.JsonData);
+		//                        var root = doc.RootElement;
 
-                        if (root.ValueKind == JsonValueKind.Object &&
-                            root.TryGetProperty("url", out var urlElement) &&
-                            urlElement.ValueKind == JsonValueKind.String)
-                        {
-                            var urlValue = urlElement.GetString();
-                            // Only include records with actual URLs (not empty or null)
-                            if (!string.IsNullOrWhiteSpace(urlValue))
-                            {
-                                recordItems.Add(new PatientRecordItem
-                                {
-                                    Type = r.Type,
-                                    Url = urlValue,
-                                    SendToPatient = r.SendToPatient,
-                                    Category = recordCategory
-                                });
-                            }
-                        }
-                        else if (root.ValueKind == JsonValueKind.Array && r.Type == RecordType.Images)
-                        {
-                            foreach (var element in root.EnumerateArray())
-                            {
-                                if (element.ValueKind == JsonValueKind.String)
-                                {
-                                    var urlValue = element.GetString();
-                                    // Only include images with actual URLs (not empty or null)
-                                    if (!string.IsNullOrWhiteSpace(urlValue))
-                                    {
-                                        recordItems.Add(new PatientRecordItem
-                                        {
-                                            Type = r.Type,
-                                            Url = urlValue,
-                                            SendToPatient = r.SendToPatient,
-                                            Category = recordCategory
+		//                        if (root.ValueKind == JsonValueKind.Object &&
+		//                            root.TryGetProperty("url", out var urlElement) &&
+		//                            urlElement.ValueKind == JsonValueKind.String)
+		//                        {
+		//                            var urlValue = urlElement.GetString();
+		//                            // Only include records with actual URLs (not empty or null)
+		//                            if (!string.IsNullOrWhiteSpace(urlValue))
+		//                            {
+		//                                recordItems.Add(new PatientRecordItem
+		//                                {
+		//                                    Type = r.Type,
+		//                                    Url = urlValue,
+		//                                    SendToPatient = r.SendToPatient,
+		//                                    Category = recordCategory,
+		//                                    epochtime = r.EpochTime
+		//                                });
+		//                            }
+		//                        }
+		//                        else if (root.ValueKind == JsonValueKind.Array && r.Type == RecordType.Images)
+		//                        {
+		//                            foreach (var element in root.EnumerateArray())
+		//                            {
+		//                                if (element.ValueKind == JsonValueKind.String)
+		//                                {
+		//                                    var urlValue = element.GetString();
+		//                                    // Only include images with actual URLs (not empty or null)
+		//                                    if (!string.IsNullOrWhiteSpace(urlValue))
+		//                                    {
+		//                                        recordItems.Add(new PatientRecordItem
+		//                                        {
+		//                                            Type = r.Type,
+		//                                            Url = urlValue,
+		//                                            SendToPatient = r.SendToPatient,
+		//                                            Category = recordCategory
+		//                                        });
+		//                                    }
+		//                                }
+		//                            }
+		//                        }
+		//                    }
+		//                    catch (Exception ex)
+		//                    {
+		//                        _logger.LogWarning(ex, "Malformed JSON in ClinicPatientRecord ID {RecordId}", r.Id);
+		//                    }
+		//                }
+
+		//                // ✅ FIXED: Only include visit if it has matching records OR consent forms (when filters are applied)
+		//                // If no filters, include all visits with any data
+		//                bool shouldIncludeVisit = !hasFilters || (recordItems.Any() || consentForms.Any());
+
+		//                if (shouldIncludeVisit)
+		//                {
+		//                    var grouped = new VisitRecordGroup
+		//                    {
+		//                        AppointmentDate = visit.AppointmentDate,
+		//                        IsVerified = visit.ConsentFormsSent.Any(f => f.IsVerified),
+		//                        ConsentForms = consentForms.Select(cf => cf.Url).ToList(),
+		//                        ConsentFormsWithNames = consentForms.Select(cf => new ConsentFormSimple
+		//                        {
+		//                            Name = cf.Name,
+		//                            Url = cf.Url,
+		//                            IsVerified = cf.IsVerified
+		//                        }).ToList(),
+		//                        ConsentFormsDetails = consentForms,
+		//                        Records = recordItems
+		//                    };
+
+		//                    response.Visits.Add(grouped);
+		//                }
+		//            }
+
+		//            return response;
+		//        }
+
+
+		public async Task<PatientHistoryResponse?> GetPatientHistoryWithFiltersAsync(
+	int clinicId,
+	int patientId,
+	DateTime? startDate,
+	DateTime? endDate,
+	List<string> categoryFilters)
+		{
+			// ✅ Don't filter visits by date here - we need to filter individual documents instead
+			IQueryable<ClinicVisit> visitQuery = _context.ClinicVisits
+				.Where(v => v.ClinicId == clinicId && v.ClinicPatientId == patientId);
+
+			var visitGroups = await visitQuery
+				.Include(v => v.ConsentFormsSent)
+					.ThenInclude(cf => cf.ConsentForm)
+				.Include(v => v.Patient)
+				.ToListAsync();
+
+			if (!visitGroups.Any())
+				return null;
+
+			var firstVisit = visitGroups.First();
+			var hfId = firstVisit.Patient.HFID;
+			var user = await _context.Users.FirstOrDefaultAsync(u => u.HfId == hfId);
+
+			var response = new PatientHistoryResponse
+			{
+				PatientName = firstVisit.Patient.PatientName?.Trim() ?? string.Empty,
+				HfId = hfId ?? string.Empty,
+				Email = user?.Email ?? string.Empty,
+				Visits = new List<VisitRecordGroup>()
+			};
+
+			bool hasFilters = categoryFilters != null && categoryFilters.Any();
+
+			foreach (var visit in visitGroups)
+			{
+				var records = await _context.ClinicPatientRecords
+					.Where(r => r.ClinicVisitId == visit.Id)
+					.ToListAsync();
+
+				var recordItems = new List<PatientRecordItem>();
+				var consentForms = new List<ConsentFormInfo>();
+
+				// Process consent forms
+				foreach (var consentFormSent in visit.ConsentFormsSent)
+				{
+					if (string.IsNullOrWhiteSpace(consentFormSent.ConsentFormUrl))
+						continue;
+
+					if (categoryFilters.Any() && !categoryFilters.Contains("consent form"))
+						continue;
+
+					// ✅ Extract date from consent form URL
+					var consentFormDate = ExtractDateFromFilename(consentFormSent.ConsentFormUrl);
+
+					// ✅ Apply date filter to consent forms
+					if (startDate.HasValue && consentFormDate.HasValue && consentFormDate.Value.Date < startDate.Value.Date)
+						continue;
+
+					if (endDate.HasValue && consentFormDate.HasValue && consentFormDate.Value.Date > endDate.Value.Date)
+						continue;
+
+					consentForms.Add(new ConsentFormInfo
+					{
+						Name = consentFormSent.ConsentForm.Title,
+						Url = consentFormSent.ConsentFormUrl,
+						IsVerified = consentFormSent.IsVerified,
+						Category = "consent_form"
+					});
+				}
+
+				// Process patient records
+				foreach (var r in records)
+				{
+					var recordCategory = GetRecordCategory(r.Type);
+
+					if (hasFilters && !categoryFilters.Contains(recordCategory))
+						continue;
+
+					// ✅ Apply date filter to records using epochtime
+					// For images without epochtime, use CreatedAt or skip date filtering
+					if (r.EpochTime > 0)
+					{
+						var recordDate = DateTimeOffset.FromUnixTimeSeconds(r.EpochTime).DateTime;
+
+						if (startDate.HasValue && recordDate.Date < startDate.Value.Date)
+							continue;
+
+						if (endDate.HasValue && recordDate.Date > endDate.Value.Date)
+							continue;
+					}
+					else if (r.Type == RecordType.Images)
+					{
+						// ✅ For images without epochtime, try using CreatedAt
+						//if (r.CreatedAt.HasValue)
+						//{
+						//	if (startDate.HasValue && r.CreatedAt.Value.Date < startDate.Value.Date)
+						//		continue;
+
+						//	if (endDate.HasValue && r.CreatedAt.Value.Date > endDate.Value.Date)
+						//		continue;
+						//}
+						// If no CreatedAt either, include the image (or skip based on your business logic)
+					}
+
+					// Rest of your code to add the record...
+					try
+					{
+						using var doc = JsonDocument.Parse(r.JsonData);
+						var root = doc.RootElement;
+
+						if (root.ValueKind == JsonValueKind.Object &&
+							root.TryGetProperty("url", out var urlElement) &&
+							urlElement.ValueKind == JsonValueKind.String)
+						{
+							var urlValue = urlElement.GetString();
+							if (!string.IsNullOrWhiteSpace(urlValue))
+							{
+								recordItems.Add(new PatientRecordItem
+								{
+									Type = r.Type,
+									Url = urlValue,
+									SendToPatient = r.SendToPatient,
+									Category = recordCategory,
+									epochtime = r.EpochTime
+								});
+							}
+						}
+						else if (root.ValueKind == JsonValueKind.Array && r.Type == RecordType.Images)
+						{
+							foreach (var element in root.EnumerateArray())
+							{
+								if (element.ValueKind == JsonValueKind.String)
+								{
+									var urlValue = element.GetString();
+									if (!string.IsNullOrWhiteSpace(urlValue))
+									{
+										recordItems.Add(new PatientRecordItem
+										{
+											Type = r.Type,
+											Url = urlValue,
+											SendToPatient = r.SendToPatient,
+											Category = recordCategory,
+											epochtime = r.EpochTime
                                         });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Malformed JSON in ClinicPatientRecord ID {RecordId}", r.Id);
-                    }
-                }
+									}
+								}
+							}
+						}
+					}
+					catch (Exception ex)
+					{
+						_logger.LogError(ex, "Malformed JSON in ClinicPatientRecord ID {RecordId}", r.Id);
+					}
+				}
 
-                // ✅ FIXED: Only include visit if it has matching records OR consent forms (when filters are applied)
-                // If no filters, include all visits with any data
-                bool shouldIncludeVisit = !hasFilters || (recordItems.Any() || consentForms.Any());
+				bool shouldIncludeVisit = !hasFilters || (recordItems.Any() || consentForms.Any());
 
-                if (shouldIncludeVisit)
-                {
-                    var grouped = new VisitRecordGroup
-                    {
-                        AppointmentDate = visit.AppointmentDate,
-                        IsVerified = visit.ConsentFormsSent.Any(f => f.IsVerified),
-                        ConsentForms = consentForms.Select(cf => cf.Url).ToList(),
-                        ConsentFormsWithNames = consentForms.Select(cf => new ConsentFormSimple
-                        {
-                            Name = cf.Name,
-                            Url = cf.Url,
-                            IsVerified = cf.IsVerified
-                        }).ToList(),
-                        ConsentFormsDetails = consentForms,
-                        Records = recordItems
-                    };
+				if (shouldIncludeVisit)
+				{
+					var grouped = new VisitRecordGroup
+					{
+						AppointmentDate = visit.AppointmentDate,
+						IsVerified = visit.ConsentFormsSent.Any(f => f.IsVerified),
+						ConsentForms = consentForms.Select(cf => cf.Url).ToList(),
+						ConsentFormsWithNames = consentForms.Select(cf => new ConsentFormSimple
+						{
+							Name = cf.Name,
+							Url = cf.Url,
+							IsVerified = cf.IsVerified
+						}).ToList(),
+						ConsentFormsDetails = consentForms,
+						Records = recordItems
+					};
 
-                    response.Visits.Add(grouped);
-                }
-            }
+					response.Visits.Add(grouped);
+				}
+			}
 
-            return response;
-        }
+			return response;
+		}
 
+		// ✅ Helper method to extract date from filename
+		private DateTime? ExtractDateFromFilename(string url)
+		{
+			if (string.IsNullOrWhiteSpace(url))
+				return null;
 
-        private string GetRecordCategory(RecordType recordType)
+			// Pattern: YYYYMMDD_HHMMSS.pdf
+			var match = System.Text.RegularExpressions.Regex.Match(url, @"_(\d{8})_(\d{6})\.pdf");
+			if (match.Success)
+			{
+				var dateStr = match.Groups[1].Value;
+				var timeStr = match.Groups[2].Value;
+
+				int year = int.Parse(dateStr.Substring(0, 4));
+				int month = int.Parse(dateStr.Substring(4, 2));
+				int day = int.Parse(dateStr.Substring(6, 2));
+
+				int hour = int.Parse(timeStr.Substring(0, 2));
+				int minute = int.Parse(timeStr.Substring(2, 2));
+				int second = int.Parse(timeStr.Substring(4, 2));
+
+				return new DateTime(year, month, day, hour, minute, second);
+			}
+
+			return null;
+		}
+
+		private string GetRecordCategory(RecordType recordType)
         {
             return recordType switch
             {

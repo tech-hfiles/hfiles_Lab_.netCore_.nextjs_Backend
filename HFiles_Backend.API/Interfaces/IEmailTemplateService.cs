@@ -57,9 +57,14 @@ string clinicName
 	string teamName,
 	int clinicId = 0);
 
+        string GenerateDocumentEmailTemplate(
+    string patientName,
+    string clinicName,
+    dynamic documentInfoList,
+    string? customMessage = null
+);
 
-
-	}
+    }
 
 
 

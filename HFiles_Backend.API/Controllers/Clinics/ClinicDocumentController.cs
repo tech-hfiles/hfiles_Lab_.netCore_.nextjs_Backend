@@ -5,6 +5,12 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
 using HFiles_Backend.Application.Common;
+using HFiles_Backend.API.DTOs.Clinics;
+using HFiles_Backend.API.Services;
+using HFiles_Backend.Infrastructure.Repositories;
+using HFiles_Backend.API.Interfaces;
+using HFiles_Backend.Domain.Entities.Users;
+using HFiles_Backend.Domain.Enums;
 
 namespace HFiles_Backend.API.Controllers
 {
@@ -15,14 +21,23 @@ namespace HFiles_Backend.API.Controllers
         private readonly IClinicDocumentRepository _documentRepository;
         private readonly S3StorageService _s3StorageService;
         private readonly ILogger<ClinicDocumentController> _logger;
+        private readonly IEmailTemplateService _emailTemplateService;  
+        private readonly IUserRepository _userRepository;             
+        private readonly EmailService _emailService;
 
         public ClinicDocumentController(
-            IClinicDocumentRepository documentRepository,
-            S3StorageService s3StorageService,
-            ILogger<ClinicDocumentController> logger)
+      IClinicDocumentRepository documentRepository,
+      S3StorageService s3StorageService,
+      IEmailTemplateService emailTemplateService,
+      IUserRepository userRepository,                            
+      EmailService emailService,                                  
+      ILogger<ClinicDocumentController> logger)
         {
             _documentRepository = documentRepository;
             _s3StorageService = s3StorageService;
+            _emailTemplateService = emailTemplateService;             
+            _userRepository = userRepository;                           
+            _emailService = emailService;                               
             _logger = logger;
         }
 
@@ -273,6 +288,436 @@ namespace HFiles_Backend.API.Controllers
             {
                 _logger.LogError(ex, "Error updating filename for document {DocumentId}", documentId);
                 return StatusCode(500, ApiResponseFactory.Fail("An error occurred while updating the document filename."));
+            }
+        }
+
+        /// <summary>
+        /// Send selected documents to patient via email
+        /// </summary>
+        //[HttpPost("send-email")]
+        //[Authorize]
+        //public async Task<IActionResult> SendDocumentsEmail(
+        //    [FromRoute] int clinicId,
+        //    [FromRoute] int patientId,
+        //    [FromBody] SendDocumentEmailRequest request)
+        //{
+        //    HttpContext.Items["Log-Category"] = "Clinic Document Email Send";
+
+        //    if (!ModelState.IsValid)
+        //    {
+        //        var errors = ModelState.Values
+        //            .SelectMany(v => v.Errors)
+        //            .Select(e => e.ErrorMessage)
+        //            .ToList();
+        //        _logger.LogWarning("Validation failed for sending document email. Errors: {@Errors}", errors);
+        //        return BadRequest(ApiResponseFactory.Fail(errors));
+        //    }
+
+        //    if (request.DocumentIds == null || !request.DocumentIds.Any())
+        //    {
+        //        _logger.LogWarning("No document IDs provided in request");
+        //        return BadRequest(ApiResponseFactory.Fail("At least one document must be selected."));
+        //    }
+
+        //    await using var transaction = await _documentRepository.BeginTransactionAsync();
+        //    bool committed = false;
+
+        //    try
+        //    {
+        //        // Verify clinic exists
+        //        var clinic = await _documentRepository.GetClinicByIdAsync(clinicId);
+        //        if (clinic == null)
+        //        {
+        //            _logger.LogWarning("Clinic ID {ClinicId} not found", clinicId);
+        //            return NotFound(ApiResponseFactory.Fail("Clinic not found."));
+        //        }
+
+        //        // Get patient by ID
+        //        var patient = await _documentRepository.GetPatientByIdAsync(patientId);
+        //        if (patient == null)
+        //        {
+        //            _logger.LogWarning("Patient ID {PatientId} not found", patientId);
+        //            return NotFound(ApiResponseFactory.Fail("Patient not found."));
+        //        }
+
+        //        // Get user details by HFID
+        //        var user = await _userRepository.GetUserByHFIDAsync(patient.HFID);
+        //        if (user == null)
+        //        {
+        //            _logger.LogWarning("User not found for HFID {HFID}", patient.HFID);
+        //            return NotFound(ApiResponseFactory.Fail("User not found for this patient."));
+        //        }
+
+        //        if (string.IsNullOrWhiteSpace(user.Email))
+        //        {
+        //            _logger.LogWarning("Email not found for HFID {HFID}", patient.HFID);
+        //            return BadRequest(ApiResponseFactory.Fail("Patient does not have an email address on file."));
+        //        }
+
+        //        // Fetch all requested documents
+        //        var documents = new List<ClinicDocument_Storage>();
+        //        foreach (var docId in request.DocumentIds)
+        //        {
+        //            var document = await _documentRepository.GetDocumentByIdAsync(docId, clinicId, patientId);
+        //            if (document == null)
+        //            {
+        //                _logger.LogWarning("Document ID {DocumentId} not found or doesn't belong to Patient {PatientId}",
+        //                    docId, patientId);
+        //                return NotFound(ApiResponseFactory.Fail($"Document with ID {docId} not found or access denied."));
+        //            }
+
+        //            if (document.IsDeleted == true)
+        //            {
+        //                _logger.LogWarning("Attempting to send deleted document ID {DocumentId}", docId);
+        //                return BadRequest(ApiResponseFactory.Fail($"Document with ID {docId} has been deleted."));
+        //            }
+
+        //            documents.Add(document);
+        //        }
+
+        //        HttpContext.Items["Sent-To-UserId"] = user.Id;
+
+        //        // Prepare document information for email
+        //        var documentInfoList = documents.Select(doc => new
+        //        {
+        //            FileName = doc.FileName,
+        //            FileUrl = doc.FileUrl,
+        //            FileSizeInMB = (doc.FileSizeInBytes ?? 0) / (1024.0 * 1024.0)
+        //        }).ToList();
+
+        //        // Generate email template
+        //        var emailTemplate = _emailTemplateService.GenerateDocumentEmailTemplate(
+        //            user.FirstName ?? patient.PatientName,
+        //            clinic.ClinicName,
+        //        documentInfoList,
+        //            request.CustomMessage
+        //        );
+
+        //        // Send email
+        //        await _emailService.SendEmailAsync(
+        //            user.Email,
+        //            $"Medical Documents from {clinic.ClinicName}",
+        //            emailTemplate
+        //        );
+
+        //        // Update SendToPatient flag for all documents
+        //        foreach (var document in documents)
+        //        {
+        //            document.SendToPatient = true;
+        //        }
+
+        //        await _documentRepository.SaveChangesAsync();
+        //        await transaction.CommitAsync();
+        //        committed = true;
+
+        //        var response = new
+        //        {
+        //            TotalDocumentsSent = documents.Count,
+        //            Documents = documents.Select(doc => new
+        //            {
+        //                Id = doc.Id,
+        //                FileName = doc.FileName,
+        //                FileUrl = doc.FileUrl
+        //            }).ToList(),
+        //            PatientName = patient.PatientName,
+        //            PatientHFID = patient.HFID,
+        //            SentToEmail = user.Email,
+        //            ClinicName = clinic.ClinicName,
+
+        //            NotificationContext = new
+        //            {
+        //                PatientName = patient.PatientName,
+        //                PatientHFID = patient.HFID,
+        //                ClinicId = clinicId,
+        //                ClinicName = clinic.ClinicName,
+        //                DocumentsCount = documents.Count,
+        //                Status = "Sent"
+        //            },
+        //            NotificationMessage = $"{documents.Count} document(s) have been sent to {patient.PatientName} (HFID: {patient.HFID}) at {user.Email}"
+        //        };
+
+        //        _logger.LogInformation(
+        //            "{Count} document(s) sent to Patient {PatientName} (HFID: {HFID}) at {Email} for Clinic {ClinicId}",
+        //            documents.Count, patient.PatientName, patient.HFID, user.Email, clinicId);
+
+        //        return Ok(ApiResponseFactory.Success(response, "Documents sent successfully via email."));
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex,
+        //            "Error sending documents email to Patient ID {PatientId} for Clinic ID {ClinicId}",
+        //            patientId, clinicId);
+
+        //        return StatusCode(500, ApiResponseFactory.Fail("An error occurred while sending the documents."));
+        //    }
+        //    finally
+        //    {
+        //        if (!committed && transaction.GetDbTransaction().Connection != null)
+        //            await transaction.RollbackAsync();
+        //    }
+        //}
+
+
+
+        /// <summary>
+        /// Send selected documents to patient via email AND/OR save to HF account
+        /// </summary>
+        [HttpPost("send-email")]
+        [Authorize]
+        public async Task<IActionResult> SendDocumentsEmail(
+            [FromRoute] int clinicId,
+            [FromRoute] int patientId,
+            [FromBody] SendDocumentEmailRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Document Email Send";
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+                _logger.LogWarning("Validation failed for sending document email. Errors: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            if (request.DocumentIds == null || !request.DocumentIds.Any())
+            {
+                _logger.LogWarning("No document IDs provided in request");
+                return BadRequest(ApiResponseFactory.Fail("At least one document must be selected."));
+            }
+
+            await using var transaction = await _documentRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                // Verify clinic exists
+                var clinic = await _documentRepository.GetClinicByIdAsync(clinicId);
+                if (clinic == null)
+                {
+                    _logger.LogWarning("Clinic ID {ClinicId} not found", clinicId);
+                    return NotFound(ApiResponseFactory.Fail("Clinic not found."));
+                }
+
+                // Get patient by ID
+                var patient = await _documentRepository.GetPatientByIdAsync(patientId);
+                if (patient == null)
+                {
+                    _logger.LogWarning("Patient ID {PatientId} not found", patientId);
+                    return NotFound(ApiResponseFactory.Fail("Patient not found."));
+                }
+
+                // Get user details by HFID
+                var user = await _userRepository.GetUserByHFIDAsync(patient.HFID);
+                if (user == null)
+                {
+                    _logger.LogWarning("User not found for HFID {HFID}", patient.HFID);
+                    return NotFound(ApiResponseFactory.Fail("User not found for this patient."));
+                }
+
+                // Optional: Skip email if no email exists, but still allow saving to HF account
+                bool hasEmail = !string.IsNullOrWhiteSpace(user.Email);
+                if (!hasEmail && !request.SaveToHfAccount)
+                {
+                    return BadRequest(ApiResponseFactory.Fail("Patient has no email and 'SaveToHfAccount' is false."));
+                }
+
+                // Fetch all requested documents
+                var documents = new List<ClinicDocument_Storage>();
+                var documentInfoListForEmail = new List<object>();
+
+                foreach (var docId in request.DocumentIds)
+                {
+                    var document = await _documentRepository.GetDocumentByIdAsync(docId, clinicId, patientId);
+                    if (document == null)
+                    {
+                        _logger.LogWarning("Document ID {DocumentId} not found or doesn't belong to Patient {PatientId}",
+                            docId, patientId);
+                        return NotFound(ApiResponseFactory.Fail($"Document with ID {docId} not found or access denied."));
+                    }
+
+                    if (document.IsDeleted == true)
+                    {
+                        _logger.LogWarning("Attempting to send deleted document ID {DocumentId}", docId);
+                        return BadRequest(ApiResponseFactory.Fail($"Document with ID {docId} has been deleted."));
+                    }
+
+                    documents.Add(document);
+
+                    // Prepare data for email template
+                    documentInfoListForEmail.Add(new
+                    {
+                        FileName = document.FileName,
+                        FileUrl = document.FileUrl,
+                        FileSizeInMB = (document.FileSizeInBytes ?? 0) / (1024.0 * 1024.0)
+                    });
+                }
+
+                HttpContext.Items["Sent-To-UserId"] = user.Id;
+
+                // ────────────────────────────── NEW: Save to HF account if requested ──────────────────────────────
+                int reportsCreatedCount = 0;
+                var createdReports = new List<UserReport>();
+
+                if (request.SaveToHfAccount)
+                {
+                    foreach (var doc in documents)
+                    {
+                        // Determine report category based on filename (you can improve this logic)
+                        int reportCategory = (int)ReportType.SpecialReport; // default
+
+                        var fileNameLower = doc.FileName?.ToLowerInvariant() ?? "";
+
+                        if (fileNameLower.Contains("prescription") || fileNameLower.Contains("treatment"))
+                            reportCategory = (int)ReportType.MedicationsPrescription;
+                        else if (fileNameLower.Contains("invoice") || fileNameLower.Contains("bill") || fileNameLower.Contains("receipt"))
+                            reportCategory = (int)ReportType.InvoicesInsurance;
+                        else if (fileNameLower.Contains("lab") || fileNameLower.Contains("test") || fileNameLower.Contains("report"))
+                            reportCategory = (int)ReportType.LabReport;
+                        else if (fileNameLower.Contains("image") || fileNameLower.Contains("photo") || fileNameLower.Contains("scan"))
+                            reportCategory = (int)ReportType.LabReport;
+                        // You can add more specific rules here
+
+                        var report = new UserReport
+                        {
+                            UserId = user.Id,
+                            ReportName = doc.FileName ?? $"Document_{doc.Id}_{DateTime.UtcNow:yyyyMMdd}",
+                            ReportCategory = reportCategory,
+                            ReportUrl = doc.FileUrl!,
+                            EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                            FileSize = Math.Round((decimal)(doc.FileSizeInBytes ?? 0) / 1024, 2), // in KB
+                            UploadedBy = "Clinic",
+                            UserType = user.UserReference == 0 ? "Independent" : "Dependent",
+                            DeletedBy = 0
+                        };
+
+                        await _userRepository.SaveAsync(report);
+                        createdReports.Add(report);
+                        reportsCreatedCount++;
+                    }
+
+                    _logger.LogInformation(
+                        "Saved {Count} documents to HF account for UserId {UserId} (HFID: {HFID})",
+                        reportsCreatedCount, user.Id, patient.HFID);
+                }
+
+                // ────────────────────────────── Send email (only if email exists) ──────────────────────────────
+                bool emailSent = false;
+                string? sentToEmail = null;
+
+                if (hasEmail)
+                {
+                    try
+                    {
+                        var emailTemplate = _emailTemplateService.GenerateDocumentEmailTemplate(
+                            user.FirstName ?? patient.PatientName,
+                            clinic.ClinicName,
+                            documentInfoListForEmail,
+                            request.CustomMessage
+                        );
+
+                        await _emailService.SendEmailAsync(
+                            user.Email,
+                            $"Medical Documents from {clinic.ClinicName}",
+                            emailTemplate
+                        );
+
+                        emailSent = true;
+                        sentToEmail = user.Email;
+
+                        _logger.LogInformation(
+                            "Email sent successfully to {Email} with {Count} documents",
+                            user.Email, documents.Count);
+                    }
+                    catch (Exception emailEx)
+                    {
+                        _logger.LogError(emailEx, "Failed to send email to {Email}", user.Email);
+                        // Do NOT fail the whole request if email fails
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation("No email found for user {HFID}. Skipping email send.", patient.HFID);
+                }
+
+                // Update SendToPatient flag for all documents (you can make this conditional if needed)
+                foreach (var document in documents)
+                {
+                    document.SendToPatient = true;
+                }
+
+                await _documentRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+                committed = true;
+
+                // ────────────────────────────── Final Response ──────────────────────────────
+                var response = new
+                {
+                    TotalDocumentsProcessed = documents.Count,
+                    Documents = documents.Select(doc => new
+                    {
+                        Id = doc.Id,
+                        FileName = doc.FileName,
+                        FileUrl = doc.FileUrl
+                    }).ToList(),
+
+                    EmailSent = emailSent,
+                    SentToEmail = sentToEmail,
+
+                    SavedToHfAccount = request.SaveToHfAccount,
+                    HfReportsCreated = reportsCreatedCount,
+                    HfReports = createdReports.Select(r => new
+                    {
+                        ReportId = r.Id,
+                        ReportName = r.ReportName,
+                        ReportCategory = r.ReportCategory,
+                        ReportUrl = r.ReportUrl,
+                        EpochTime = r.EpochTime
+                    }),
+
+                    PatientName = patient.PatientName,
+                    PatientHFID = patient.HFID,
+                    ClinicName = clinic.ClinicName,
+
+                    NotificationMessage = $"{documents.Count} document(s) processed successfully. " +
+                                         (emailSent ? $"Email sent to {sentToEmail}. " : "No email sent (no email on file or failed). ") +
+                                         (request.SaveToHfAccount ? $"{reportsCreatedCount} document(s) saved to patient's HF account." : ""),
+
+                    NotificationContext = new
+                    {
+                        PatientName = patient.PatientName,
+                        PatientHFID = patient.HFID,
+                        ClinicId = clinicId,
+                        ClinicName = clinic.ClinicName,
+                        DocumentsCount = documents.Count,
+                        EmailStatus = emailSent ? "Sent" : "Not Sent",
+                        HfAccountStatus = request.SaveToHfAccount ? $"{reportsCreatedCount} reports created" : "Not saved",
+                        Status = "Processed"
+                    }
+                };
+
+                _logger.LogInformation(
+                    "{Count} document(s) processed for Patient {PatientName} (HFID: {HFID}) | Email: {EmailStatus} | HF Account: {HfStatus}",
+                    documents.Count, patient.PatientName, patient.HFID,
+                    emailSent ? "Sent" : "Skipped/Failed",
+                    request.SaveToHfAccount ? $"{reportsCreatedCount} saved" : "Not requested");
+
+                return Ok(ApiResponseFactory.Success(response, "Documents processed successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Error processing documents for Patient ID {PatientId} in Clinic ID {ClinicId}",
+                    patientId, clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while processing the documents."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction()?.Connection != null)
+                {
+                    await transaction.RollbackAsync();
+                }
             }
         }
     }

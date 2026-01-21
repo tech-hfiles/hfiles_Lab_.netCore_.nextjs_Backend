@@ -19,5 +19,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<IDbContextTransaction> BeginTransactionAsync();
         Task<ClinicDocument_Storage?> GetDocumentByIdAsync(int documentId, int clinicId, int patientId);
         Task<bool> UpdateDocumentFileNameAsync(int documentId, int clinicId, int patientId, string newFileName);
+        Task SaveChangesAsync();
     }
 }

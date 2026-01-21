@@ -89,5 +89,10 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
             return true;
         }
+
+        public async Task SaveChangesAsync()
+        {
+            await _context.SaveChangesAsync();
+        }
     }
 }

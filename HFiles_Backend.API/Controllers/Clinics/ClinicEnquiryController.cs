@@ -334,7 +334,7 @@ public class ClinicEnquiryController : ControllerBase
 	[HttpPut("{id}")]
 	public async Task<IActionResult> Update(
 	int id,
-	[FromBody] UpdateClinicEnquiryDto dto)
+	[FromBody] UpdateClinicEnquiryDto? dto)
 	{
 		if (dto == null)
 			return BadRequest("Request body is required.");

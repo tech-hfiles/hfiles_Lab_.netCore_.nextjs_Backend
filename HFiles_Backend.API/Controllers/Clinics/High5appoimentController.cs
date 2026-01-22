@@ -237,16 +237,16 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 		[HttpGet("clinic/{clinicId}/all-appointments")]
 		public async Task<IActionResult> GetAllAppointmentsByClinic(
-int clinicId,
-[FromQuery] int page = 1,
-[FromQuery] int pageSize = 100,
-[FromQuery] EnquiryStatus? status = null,
-[FromQuery] PaymentStatus? paymentStatus = null,
-[FromQuery] DateTime? startDate = null,
-[FromQuery] DateTime? endDate = null,
-[FromQuery] string? type = null,
-[FromQuery] int? coachId = null
-)
+		int clinicId,
+		[FromQuery] int page = 1,
+		[FromQuery] int pageSize = 100,
+		[FromQuery] EnquiryStatus? status = null,
+		[FromQuery] PaymentStatus? paymentStatus = null,
+		[FromQuery] DateTime? startDate = null,
+		[FromQuery] DateTime? endDate = null,
+		[FromQuery] string? type = null,
+		[FromQuery] int? coachId = null
+	)
 		{
 			try
 			{
@@ -286,7 +286,6 @@ int clinicId,
 							CoachName = h.CoachMember?.User != null
 								? $"{h.CoachMember.User.FirstName} {h.CoachMember.User.LastName}".Trim()
 								: "N/A",
-							
 							CoachColor = h.CoachMember.Color ?? "rgba(0, 0, 0, 1)",
 							Status = h.Status.ToString(),
 							EpochTime = h.EpochTime,
@@ -320,7 +319,7 @@ int clinicId,
 
 					foreach (var e in filteredEnquiries)
 					{
-						// AppointmentDate entry
+						// AppointmentDate entry (Trial) - Show on AppointmentDate only
 						if (e.AppointmentDate.HasValue &&
 							e.AppointmentDate.Value.Date >= filterStartDate &&
 							e.AppointmentDate.Value.Date <= filterEndDate)
@@ -350,19 +349,19 @@ int clinicId,
 										.Select(ac => $"{ac.ClinicMember.Color}"))
 									: "rgba(0, 0, 0, 1)",
 								Status = e.Status.ToString(),
-								EpochTime = null,
+								EpochTime = e.EpochTime,
 								PatientName = $"{e.Firstname} {e.Lastname}",
 								Source = "Enquiry",
 								EventType = "Trial",
-
 								PaymentStatus = e.Payment
 							});
 						}
 
-						// FollowUpDate entry
+						// FollowUpDate entry - Show on FollowUpDate only (and not same as AppointmentDate)
 						if (e.FollowUpDate.HasValue &&
 							e.FollowUpDate.Value.Date >= filterStartDate &&
-							e.FollowUpDate.Value.Date <= filterEndDate)
+							e.FollowUpDate.Value.Date <= filterEndDate &&
+							(!e.AppointmentDate.HasValue || e.FollowUpDate.Value.Date != e.AppointmentDate.Value.Date))
 						{
 							enquiryList.Add(new AppointmentMergedDto
 							{
@@ -385,18 +384,16 @@ int clinicId,
 									: "N/A",
 								CoachColor = "rgba(0, 0, 0, 1)",
 								Status = e.Status.ToString(),
-								EpochTime = null,
+								EpochTime = e.EpochTime,
 								PatientName = $"{e.Firstname} {e.Lastname}",
 								Source = "Enquiry",
 								EventType = "FollowUp",
-
 								PaymentStatus = e.Payment
 							});
 						}
 
-						// Epoch fallback
-						if ((!e.AppointmentDate.HasValue || e.AppointmentDate.Value.Date < filterStartDate || e.AppointmentDate.Value.Date > filterEndDate) &&
-							(!e.FollowUpDate.HasValue || e.FollowUpDate.Value.Date < filterStartDate || e.FollowUpDate.Value.Date > filterEndDate))
+						// Epoch fallback - ONLY if NO AppointmentDate AND NO FollowUpDate exist at all
+						if (!e.AppointmentDate.HasValue && !e.FollowUpDate.HasValue)
 						{
 							var epochDate = DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).Date;
 							if (epochDate >= filterStartDate && epochDate <= filterEndDate)
@@ -421,13 +418,14 @@ int clinicId,
 											.Select(ac => $"{ac.ClinicMember.User.FirstName} {ac.ClinicMember.User.LastName}"))
 										: "N/A",
 									CoachColor = e.AssignedCoaches != null && e.AssignedCoaches.Any()
-									? string.Join(",", e.AssignedCoaches.Select(ac =>
-								ac.ClinicMember.Color ?? "rgba(0,0,0,1)"))
-								: "rgba(0,0,0,1)",
+										? string.Join(",", e.AssignedCoaches.Select(ac =>
+											ac.ClinicMember.Color ?? "rgba(0,0,0,1)"))
+										: "rgba(0,0,0,1)",
 									Status = e.Status.ToString(),
 									EpochTime = e.EpochTime,
 									PatientName = $"{e.Firstname} {e.Lastname}",
 									Source = "Enquiry",
+									EventType = "Created",
 									PaymentStatus = e.Payment
 								});
 							}
@@ -441,22 +439,24 @@ int clinicId,
 					.OrderBy(x => x.Date)
 					.ThenBy(x => x.Time)
 					.ToList();
-				var lastSessionCheck = high5List
-	.Where(x => x.Date.HasValue) // safety
-	.GroupBy(x => new { x.UserId, x.PackageId })
-	.Select(g =>
-	{
-		var lastDate = g.Max(x => x.Date!.Value);
 
-		return new
-		{
-			UserId = g.Key.UserId,
-			PackageId = g.Key.PackageId,
-			LastSessionDate = lastDate,
-			IsWithin5Days = (lastDate.Date - DateTime.Today).TotalDays <= 5
-		};
-	})
-	.ToList();
+				var lastSessionCheck = high5List
+					.Where(x => x.Date.HasValue)
+					.GroupBy(x => new { x.UserId, x.PackageId })
+					.Select(g =>
+					{
+						var lastDate = g.Max(x => x.Date!.Value);
+
+						return new
+						{
+							UserId = g.Key.UserId,
+							PackageId = g.Key.PackageId,
+							LastSessionDate = lastDate,
+							IsWithin5Days = (lastDate.Date - DateTime.Today).TotalDays <= 5
+						};
+					})
+					.ToList();
+
 				// --- Log if 5 days remain ---
 				foreach (var check in lastSessionCheck)
 				{
@@ -468,14 +468,12 @@ int clinicId,
 					}
 				}
 
-               
-
-                // --- Pagination --- 
-                int totalRecords = mergedList.Count;
-					var pagedData = mergedList
-						.Skip((page - 1) * pageSize)
-						.Take(pageSize)
-						.ToList();
+				// --- Pagination --- 
+				int totalRecords = mergedList.Count;
+				var pagedData = mergedList
+					.Skip((page - 1) * pageSize)
+					.Take(pageSize)
+					.ToList();
 
 				var result = new
 				{
@@ -488,20 +486,20 @@ int clinicId,
 					Data = pagedData
 				};
 
-					return Ok(ApiResponseFactory.Success(result));
-				}
-				catch (Exception ex)
-				{
-					_logger.LogError(ex, "Error fetching appointments for ClinicId {ClinicId}", clinicId);
-					return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
-				}
+				return Ok(ApiResponseFactory.Success(result));
 			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error fetching appointments for ClinicId {ClinicId}", clinicId);
+				return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
+			}
+		}
 
 
 
 
-        // ================= NEW: Send Session Ending Reminders (5 Days & 1 Day) with Duplicate Prevention =================
-        [HttpPost("clinic/{clinicId}/send-session-reminders")]
+		// ================= NEW: Send Session Ending Reminders (5 Days & 1 Day) with Duplicate Prevention =================
+		[HttpPost("clinic/{clinicId}/send-session-reminders")]
         public async Task<IActionResult> SendSessionEndingReminders(int clinicId)
         {
             try
@@ -881,21 +879,35 @@ int clinicId,
 				{
 					if (e.Status == EnquiryStatus.Member) continue;
 
-					// Add AppointmentDate if exists
-					if (e.AppointmentDate.HasValue)
+					// Add AppointmentDate if exists and within range (Trial)
+					if (e.AppointmentDate.HasValue &&
+						e.AppointmentDate.Value.Date >= startDate &&
+						e.AppointmentDate.Value.Date <= endDate)
+					{
 						enquiryDates.Add(e.AppointmentDate.Value.Date);
+					}
 
-					// Add FollowUpDate if exists
-					if (e.FollowUpDate.HasValue)
+					// Add FollowUpDate if exists, within range, and different from AppointmentDate (FollowUp)
+					if (e.FollowUpDate.HasValue &&
+						e.FollowUpDate.Value.Date >= startDate &&
+						e.FollowUpDate.Value.Date <= endDate &&
+						(!e.AppointmentDate.HasValue || e.FollowUpDate.Value.Date != e.AppointmentDate.Value.Date))
+					{
 						enquiryDates.Add(e.FollowUpDate.Value.Date);
+					}
 
-					// If neither exists, fallback to EpochTime
+					// Epoch fallback - ONLY if NO AppointmentDate AND NO FollowUpDate exist at all
 					if (!e.AppointmentDate.HasValue && !e.FollowUpDate.HasValue)
-						enquiryDates.Add(DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).Date);
+					{
+						var epochDate = DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).Date;
+						if (epochDate >= startDate && epochDate <= endDate)
+						{
+							enquiryDates.Add(epochDate);
+						}
+					}
 				}
 
 				var enquiryDaily = enquiryDates
-					.Where(d => d >= startDate && d <= endDate)
 					.GroupBy(d => d)
 					.Select(g => new
 					{

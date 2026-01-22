@@ -2052,7 +2052,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 [FromQuery] string? paymentStatus,
 [FromQuery(Name = "packageName[]")] List<string>? packageName,
 [FromQuery(Name = "coachName[]")] List<string>? coachName,
-[FromQuery(Name = "paymentMethod[]")] List<string>? paymentMethod,      // ✅ Changed to List<string>
+[FromQuery] string? searchQuery,  // ✅ ADD THIS
+[FromQuery(Name = "paymentMethod[]")] List<string>? paymentMethod, 
 [FromQuery] int page = 1,
 [FromQuery] int pageSize = 6)
 		{
@@ -2148,7 +2149,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					if (paymentMethod != null && paymentMethod.Any())
 					{
 						var paymentMode = await recordRepository
-	.GetLatestPaymentModeFromReceiptAsync(patient.Id);
+	                .GetLatestPaymentModeFromReceiptAsync(patient.Id);
 
 						bool methodMatch = paymentMethod.Any(method =>
 							!string.IsNullOrEmpty(paymentMode) &&
@@ -2189,9 +2190,44 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						if (!coachMatch)
 							continue;
 					}
+					// ✅ NEW: Search Query filter (Name and Phone Number)
+					if (!string.IsNullOrWhiteSpace(searchQuery))
+					{
+						var query = searchQuery.Trim().ToLowerInvariant();
+						bool searchMatch = false;
+
+						// Search in patient name
+						if (!string.IsNullOrEmpty(patient.PatientName) &&
+							patient.PatientName.ToLowerInvariant().Contains(query))
+						{
+							searchMatch = true;
+						}
+
+						// Search in visitor phone number
+						if (!searchMatch && !string.IsNullOrEmpty(patient.VisitorPhoneNumber) &&
+							patient.VisitorPhoneNumber.Contains(query))
+						{
+							searchMatch = true;
+						}
+
+						// Check user's phone number if HFID exists
+						if (!searchMatch && !string.IsNullOrEmpty(patient.HFID))
+						{
+							var user = await userRepository.GetUserByHFIDAsync(patient.HFID);
+							if (user != null && !string.IsNullOrEmpty(user.PhoneNumber) &&
+								user.PhoneNumber.Contains(query))
+							{
+								searchMatch = true;
+							}
+						}
+
+						if (!searchMatch)
+							continue;
+					}
 
 					allMatchingPatients.Add(patient);
 				}
+
 
 				// Apply pagination
 				int totalCount = allMatchingPatients.Count;

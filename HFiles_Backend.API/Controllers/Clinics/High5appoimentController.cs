@@ -286,7 +286,8 @@ int clinicId,
 							CoachName = h.CoachMember?.User != null
 								? $"{h.CoachMember.User.FirstName} {h.CoachMember.User.LastName}".Trim()
 								: "N/A",
-							CoachColor = h.CoachMember?.Color ?? "rgba(0, 0, 0, 1)",
+							
+							CoachColor = h.CoachMember.Color ?? "rgba(0, 0, 0, 1)",
 							Status = h.Status.ToString(),
 							EpochTime = h.EpochTime,
 							PatientName = h.User != null
@@ -419,7 +420,10 @@ int clinicId,
 											.Where(ac => ac.ClinicMember != null && ac.ClinicMember.User != null)
 											.Select(ac => $"{ac.ClinicMember.User.FirstName} {ac.ClinicMember.User.LastName}"))
 										: "N/A",
-									CoachColor = "rgba(0, 0, 0, 1)",
+									CoachColor = e.AssignedCoaches != null && e.AssignedCoaches.Any()
+									? string.Join(",", e.AssignedCoaches.Select(ac =>
+								ac.ClinicMember.Color ?? "rgba(0,0,0,1)"))
+								: "rgba(0,0,0,1)",
 									Status = e.Status.ToString(),
 									EpochTime = e.EpochTime,
 									PatientName = $"{e.Firstname} {e.Lastname}",

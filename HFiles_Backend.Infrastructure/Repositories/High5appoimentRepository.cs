@@ -119,6 +119,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
 		}
 
 
+
 		public async Task<List<PatientPackageHistoryDto>> GetMEPPackagesByPatientAsync(int patientId)
 		{
 			var records = await _context.ClinicPatientRecords
@@ -126,14 +127,14 @@ namespace HFiles_Backend.Infrastructure.Repositories
 					r.PatientId == patientId &&
 					r.UniqueRecordId != null &&
 					r.UniqueRecordId.StartsWith("MEP"))
-				.OrderByDescending(r => r.EpochTime) // ✅ Sort by creation time (latest first)
+				.OrderByDescending(r => r.EpochTime)
 				.ToListAsync();
 
 			var appointments = await _context.High5Appointments
-				.Where(a =>
-					a.PatientId == patientId &&
-					a.UniqueRecordId != null &&
-					a.UniqueRecordId.StartsWith("MEP"))
+				.Include(a => a.CoachMember)            // ✅ Load Coach
+					.ThenInclude(c => c.User)           // ✅ Then load User from Coach
+				.Where(a => a.PatientId == patientId)
+				.OrderBy(a => a.PackageDate)
 				.ToListAsync();
 
 			var result = new List<PatientPackageHistoryDto>();
@@ -144,59 +145,50 @@ namespace HFiles_Backend.Infrastructure.Repositories
 				{
 					using var json = JsonDocument.Parse(rec.JsonData);
 					var root = json.RootElement;
-
 					var patientObj = root.GetProperty("patient");
 
-					// ✅ LOOP THROUGH ALL TREATMENTS
 					foreach (var treatmentObj in root.GetProperty("treatments").EnumerateArray())
 					{
+						var packageName = treatmentObj.GetProperty("name").GetString();
+
+
+						// ✅ MATCH FLEXIBLY - UniqueRecordId is optional
+						var packageAppointments = appointments
+							.Where(a =>
+								a.PackageName == packageName &&
+								(string.IsNullOrEmpty(a.UniqueRecordId) ||
+								 a.UniqueRecordId.Equals(rec.UniqueRecordId, StringComparison.OrdinalIgnoreCase)))
+							.ToList();
+						var latestAppointment = packageAppointments
+						.OrderByDescending(a => a.PackageDate)
+						.FirstOrDefault();
+
+						// ✅ GET CURRENT COACH NAME FROM MOST RECENT APPOINTMENT
+						var coachName = latestAppointment?.CoachMember?.User != null
+						? $"{latestAppointment.CoachMember.User.FirstName} {latestAppointment.CoachMember.User.LastName}".Trim()
+						: (treatmentObj.TryGetProperty("coach", out var c)
+						? c.GetString()	
+						: "Not Assigned");
+
 						var package = new PatientPackageHistoryDto
 						{
 							UniqueRecordId = rec.UniqueRecordId,
 							PatientName = patientObj.TryGetProperty("name", out var n) ? n.GetString() : "",
-							CoachName = treatmentObj.TryGetProperty("coach", out var c) ? c.GetString() : "Not Assigned",
+							CoachName = coachName, // ✅ FROM APPOINTMENTS TABLE
 							HFID = patientObj.TryGetProperty("hfid", out var h)
 								? h.GetString()
 								: patientObj.TryGetProperty("uhid", out var u) ? u.GetString() : "",
-							PackageName = treatmentObj.GetProperty("name").GetString(),
+							PackageName = packageName,
 							StartDate = treatmentObj.TryGetProperty("startDate", out var sd) ? sd.GetString() : "",
 							EndDate = treatmentObj.TryGetProperty("endDate", out var ed) ? ed.GetString() : "",
-							Sessions = new List<SessionDetail>()
-						};
-
-						var sessionDates = treatmentObj
-							.GetProperty("sessionDates")
-							.EnumerateArray()
-							.Select(d => d.GetString())
-							.ToList();
-
-						var sessionTimes = treatmentObj
-							.GetProperty("sessionTimes")
-							.EnumerateArray()
-							.Select(t => t.GetString())
-							.ToList();
-
-						for (int i = 0; i < sessionDates.Count; i++)
-						{
-							if (!DateTime.TryParse(sessionDates[i], out var targetDate))
-								continue;
-
-							var dbApp = appointments.FirstOrDefault(a =>
-								a.PatientId == patientId &&
-								a.ClinicVisitId == rec.ClinicVisitId &&
-								a.UniqueRecordId.Equals(rec.UniqueRecordId, StringComparison.OrdinalIgnoreCase) &&
-								a.PackageName == package.PackageName &&     // ✅ CRITICAL
-								a.PackageDate.Date == targetDate.Date
-							);
-
-							package.Sessions.Add(new SessionDetail
+							Sessions = packageAppointments.Select(a => new SessionDetail
 							{
-								Date = sessionDates[i],
-								Time = sessionTimes.Count > i ? sessionTimes[i] : "00:00:00",
-								Status = dbApp != null ? (int)dbApp.Status : 0,
-								AppointmentId = dbApp?.Id ?? 0
-							});
-						}
+								Date = a.PackageDate.ToString("yyyy-MM-dd"),
+								Time = a.PackageDate.ToString("HH:mm:ss"),
+								Status = (int)a.Status,
+								AppointmentId = a.Id
+							}).ToList()
+						};
 
 						result.Add(package);
 					}
@@ -209,7 +201,6 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
 			return result;
 		}
-
 
 		public async Task<bool> IsDuplicateAppointmentAsync(int excludeId, int userId, int? packageId, DateTime date)
 		{

@@ -1340,10 +1340,37 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 if (string.IsNullOrWhiteSpace(dto.LastName))
                     validationErrors.Add("Last name is required when HFID is not provided.");
 
-                if (string.IsNullOrWhiteSpace(dto.DOB))
-                    validationErrors.Add("Date of birth is required when HFID is not provided.");
+                
+				if (string.IsNullOrWhiteSpace(dto.DOB))
+				{
+					validationErrors.Add("Date of birth is required when HFID is not provided.");
+				}
+				if (string.IsNullOrWhiteSpace(dto.DOB))
+				{
+					validationErrors.Add("Date of birth is required when HFID is not provided.");
+				}
+				else
+				{
+					if (!DateTime.TryParseExact(
+							dto.DOB,
+							"dd-MM-yyyy",
+							CultureInfo.InvariantCulture,
+							DateTimeStyles.None,
+							out var parsedDob))
+					{
+						validationErrors.Add("Invalid DOB format. Please use dd-MM-yyyy.");
+					}
+					else
+					{
+						var age = DateTime.Today.Year - parsedDob.Year;
+						if (parsedDob > DateTime.Today.AddYears(-age)) age--;
 
-                if (string.IsNullOrWhiteSpace(dto.PhoneNumber))
+						if (age < 18)
+							validationErrors.Add("Patient must be at least 18 years old.");
+					}
+				}
+
+				if (string.IsNullOrWhiteSpace(dto.PhoneNumber))
                     validationErrors.Add("Phone number is required when HFID is not provided.");
 
                 if (string.IsNullOrWhiteSpace(dto.CountryCode))
@@ -1777,7 +1804,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     user.HfId, clinicId, isPatientNewlyCreated, consentFormLinks.Count);
 
                 var successMessage = isPatientNewlyCreated
-                    ? "Registration and appointment created successfully."
+                    ? "Registration successfully."
                     : "Appointment created successfully.";
 
                 return Ok(ApiResponseFactory.Success(response, successMessage));

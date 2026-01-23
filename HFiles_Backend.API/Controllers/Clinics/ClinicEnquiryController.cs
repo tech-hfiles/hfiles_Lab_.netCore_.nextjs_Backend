@@ -45,16 +45,16 @@ public class ClinicEnquiryController : ControllerBase
 	// =====================================================
 	[HttpGet("{clinicId}")]
 	public async Task<IActionResult> GetAll(
-	int clinicId,
-	[FromQuery] int page = 1,
-	[FromQuery] int pageSize = 10,
-	[FromQuery] EnquiryStatus? status = null,
-	[FromQuery] PaymentStatus? paymentStatus = null,
-	[FromQuery] int? coachId = null,
-	[FromQuery] string? search = null,
-	[FromQuery] DateTime? startDate = null,  // ✅ Added
-	[FromQuery] DateTime? endDate = null      // ✅ Added
-)
+		int clinicId,
+		[FromQuery] int page = 1,
+		[FromQuery] int pageSize = 10,
+		[FromQuery] List<EnquiryStatus>? status = null,  // ✅ Removed Name attribute - accepts both status and status[]
+		[FromQuery] PaymentStatus? paymentStatus = null,
+		[FromQuery] int? coachId = null,
+		[FromQuery] string? search = null,
+		[FromQuery] DateTime? startDate = null,
+		[FromQuery] DateTime? endDate = null
+	)
 	{
 		HttpContext.Items["Log-Category"] = "Clinic Enquiry";
 		try
@@ -76,10 +76,11 @@ public class ClinicEnquiryController : ControllerBase
 			var filteredEnquiries = enquiries
 				.Where(e => e.Status != EnquiryStatus.Member);
 
-			if (status != null)
+			// ✅ Modified: Multiselect status filter
+			if (status != null && status.Any())
 			{
 				filteredEnquiries = filteredEnquiries
-					.Where(e => e.Status == status.Value);
+					.Where(e => status.Contains(e.Status));
 			}
 
 			if (paymentStatus != null)
@@ -95,7 +96,7 @@ public class ClinicEnquiryController : ControllerBase
 					.Where(e => e.AssignedCoaches.Any(ac => ac.CoachId == coachId.Value));
 			}
 
-			// ✅ Date range filtering
+			// Date range filtering
 			if (startDate.HasValue)
 			{
 				filteredEnquiries = filteredEnquiries

@@ -382,7 +382,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
 										.Where(ac => ac.ClinicMember != null && ac.ClinicMember.User != null)
 										.Select(ac => $"{ac.ClinicMember.User.FirstName} {ac.ClinicMember.User.LastName}"))
 									: "N/A",
-								CoachColor = "rgba(0, 0, 0, 1)",
+								CoachColor = e.AssignedCoaches != null && e.AssignedCoaches.Any()
+									? string.Join(",", e.AssignedCoaches
+										.Where(ac => ac.ClinicMember != null && ac.ClinicMember.User != null)
+										.Select(ac => $"{ac.ClinicMember.Color}"))
+									: "rgba(0, 0, 0, 1)",
 								Status = e.Status.ToString(),
 								EpochTime = e.EpochTime,
 								PatientName = $"{e.Firstname} {e.Lastname}",
@@ -673,11 +677,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         }
 
                         // Send email
-                        await _emailService.SendEmailAsync(
-                            user.Email,
-                            emailSubject,
-                            emailTemplate
-                        );
+                        //await _emailService.SendEmailAsync(
+                        //    user.Email,
+                        //    emailSubject,
+                        //    emailTemplate
+                        //);
 
                         // Log the sent email to prevent duplicates
                         await _reminderLogRepo.CreateReminderLogAsync(new SessionReminderLog

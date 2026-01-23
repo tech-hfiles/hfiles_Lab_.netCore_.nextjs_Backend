@@ -4,6 +4,7 @@
     {
         public class ClinicConsentFormResponse
         {
+            public int ConsentFormId { get; set; }
             public int ClinicConsentFormId { get; set; }
             public string Title { get; set; } = null!;
             public string? ConsentFormUrl { get; set; }

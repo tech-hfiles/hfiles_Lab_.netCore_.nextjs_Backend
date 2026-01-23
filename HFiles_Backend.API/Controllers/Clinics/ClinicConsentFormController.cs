@@ -237,6 +237,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 var response = consentForms.Select(cf => new ClinicConsentFormResponse
                 {
+                    ConsentFormId = cf.ConsentForm.Id,
                     ClinicConsentFormId = cf.Id,
                     Title = cf.ConsentForm.Title,
                     ConsentFormUrl = cf.ConsentFormUrl,

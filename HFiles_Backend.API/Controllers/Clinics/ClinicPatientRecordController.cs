@@ -1232,55 +1232,55 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
         [HttpPut("clinic/patient/documents/verify-payment/{receiptRecordId}")]
-		[Authorize]
-		public async Task<IActionResult> VerifyPayment(int receiptRecordId)
-		{
-			try
-			{
-				var receiptRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(receiptRecordId);
-				if (receiptRecord == null)
-					return NotFound(ApiResponseFactory.Fail("Receipt record not found."));
+        [Authorize]
+        public async Task<IActionResult> VerifyPayment(int receiptRecordId)
+        {
+            try
+            {
+                var receiptRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(receiptRecordId);
+                if (receiptRecord == null)
+                    return NotFound(ApiResponseFactory.Fail("Receipt record not found."));
 
-				if (receiptRecord.Type != RecordType.Receipt)
-					return BadRequest(ApiResponseFactory.Fail("Record is not a receipt type."));
+                if (receiptRecord.Type != RecordType.Receipt)
+                    return BadRequest(ApiResponseFactory.Fail("Record is not a receipt type."));
 
-				// Check if UniqueRecordId is null or empty
-				if (string.IsNullOrWhiteSpace(receiptRecord.UniqueRecordId))
-					return BadRequest(ApiResponseFactory.Fail("Receipt does not have a valid UniqueRecordId."));
+                // Check if UniqueRecordId is null or empty
+                if (string.IsNullOrWhiteSpace(receiptRecord.UniqueRecordId))
+                    return BadRequest(ApiResponseFactory.Fail("Receipt does not have a valid UniqueRecordId."));
 
-				// Check if another receipt with the same UniqueRecordId already exists with payment verified
-				var existingVerifiedReceipt = await _clinicPatientRecordRepository
-					.GetRecordByUniqueRecordIdAsync(receiptRecord.UniqueRecordId);
+                // Check if another receipt with the same UniqueRecordId already exists with payment verified
+                var existingVerifiedReceipt = await _clinicPatientRecordRepository
+                    .GetRecordByUniqueRecordIdAsync(receiptRecord.UniqueRecordId);
 
-				if (existingVerifiedReceipt != null &&
-					existingVerifiedReceipt.Id != receiptRecordId &&
-					existingVerifiedReceipt.payment_verify == true &&
-					existingVerifiedReceipt.Is_editable == true)
-				{
-					return BadRequest(ApiResponseFactory.Fail("A receipt with this UniqueRecordId is already verified and editable."));
-				}
+                if (existingVerifiedReceipt != null &&
+                    existingVerifiedReceipt.Id != receiptRecordId &&
+                    existingVerifiedReceipt.payment_verify == true &&
+                    existingVerifiedReceipt.Is_editable == true)
+                {
+                    return BadRequest(ApiResponseFactory.Fail("A receipt with this UniqueRecordId is already verified and editable."));
+                }
 
-				// Update Receipt
-				receiptRecord.payment_verify = true;
-				receiptRecord.Is_editable = true;
-				await _clinicPatientRecordRepository.UpdateAsync(receiptRecord);
+                // Update Receipt
+                receiptRecord.payment_verify = true;
+                receiptRecord.Is_editable = true;
+                await _clinicPatientRecordRepository.UpdateAsync(receiptRecord);
 
-				// Update Invoice
-				if (receiptRecord.Reference_Id.HasValue && receiptRecord.Reference_Id.Value > 0)
-				{
-					var invoiceRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(receiptRecord.Reference_Id.Value);
-					if (invoiceRecord != null && invoiceRecord.Type == RecordType.Invoice)
-					{
-						invoiceRecord.payment_verify = true;
-						invoiceRecord.Is_editable = true;
-						await _clinicPatientRecordRepository.UpdateAsync(invoiceRecord);
+                // Update Invoice
+                if (receiptRecord.Reference_Id.HasValue && receiptRecord.Reference_Id.Value > 0)
+                {
+                    var invoiceRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(receiptRecord.Reference_Id.Value);
+                    if (invoiceRecord != null && invoiceRecord.Type == RecordType.Invoice)
+                    {
+                        invoiceRecord.payment_verify = true;
+                        invoiceRecord.Is_editable = true;
+                        await _clinicPatientRecordRepository.UpdateAsync(invoiceRecord);
 
-						// Update Package/MEP
-						if (invoiceRecord.Reference_Id.HasValue && invoiceRecord.Reference_Id.Value > 0)
-						{
-							var packageRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(invoiceRecord.Reference_Id.Value);
+                        // Update Package/MEP/Treatment
+                        if (invoiceRecord.Reference_Id.HasValue && invoiceRecord.Reference_Id.Value > 0)
+                        {
+                            var packageRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(invoiceRecord.Reference_Id.Value);
 
-                            // After updating Package/MEP (around line 56)
+                            // Check for MembershipPlan
                             if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
                             {
                                 packageRecord.payment_verify = true;
@@ -1293,124 +1293,305 @@ namespace HFiles_Backend.API.Controllers.Clinics
                                 string packageId = packageRecord.Id.ToString();
                                 int clinicId = 36; // or get from receiptRecord if it has a ClinicId property
 
-								// Create appointments
-								await CreateAppointmentsFromMepData(
-									packageJsonData,
-									packageId,
-									clinicId,
-									packageRecord.PatientId,
-									packageRecord.ClinicVisitId,
-									packageRecord.UniqueRecordId
-								);
+                                // Create appointments
+                                await CreateAppointmentsFromMepData(
+                                    packageJsonData,
+                                    packageId,
+                                    clinicId,
+                                    packageRecord.PatientId,
+                                    packageRecord.ClinicVisitId,
+                                    packageRecord.UniqueRecordId
+                                );
+
                                 if (clinicId != 36)
                                 {
                                     try
-								{
-									// Parse JSON data
-									// Use System.Text.Json (built-in)
-									var mepData = System.Text.Json.JsonSerializer.Deserialize<MepJsonData>(
-										packageJsonData,
-										new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-									);
-									if (mepData?.treatments != null && mepData.treatments.Count > 0)
-									{
+                                    {
+                                        // Parse JSON data
+                                        var mepData = System.Text.Json.JsonSerializer.Deserialize<MepJsonData>(
+                                            packageJsonData,
+                                            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                                        );
+                                        if (mepData?.treatments != null && mepData.treatments.Count > 0)
+                                        {
+                                            string coachName = "";
+                                            int coachIndex = packageJsonData.IndexOf("\"coach\":");
+                                            if (coachIndex != -1)
+                                            {
+                                                int startQuote = packageJsonData.IndexOf("\"", coachIndex + 8);
+                                                if (startQuote != -1)
+                                                {
+                                                    int endQuote = packageJsonData.IndexOf("\"", startQuote + 1);
+                                                    if (endQuote != -1)
+                                                    {
+                                                        coachName = packageJsonData.Substring(startQuote + 1, endQuote - startQuote - 1);
+                                                    }
+                                                }
+                                            }
+                                            var firstTreatment = mepData.treatments[0];
+                                            var firstSessionDate = firstTreatment.sessionDates?.FirstOrDefault();
+                                            var firstSessionTime = firstTreatment.sessionTimes?.FirstOrDefault();
 
-										string coachName = ""; 
-										int coachIndex = packageJsonData.IndexOf("\"coach\":");
-										if (coachIndex != -1)
-										{
-											int startQuote = packageJsonData.IndexOf("\"", coachIndex + 8);
-											if (startQuote != -1)
-											{
-												int endQuote = packageJsonData.IndexOf("\"", startQuote + 1);
-												if (endQuote != -1)
-												{
-													 coachName = packageJsonData.Substring(startQuote + 1, endQuote - startQuote - 1);
-												}
-											}
-										}
-										var firstTreatment = mepData.treatments[0];
-										var firstSessionDate = firstTreatment.sessionDates?.FirstOrDefault();
-										var firstSessionTime = firstTreatment.sessionTimes?.FirstOrDefault();
+                                            if (!string.IsNullOrEmpty(firstSessionDate) && !string.IsNullOrEmpty(firstSessionTime))
+                                            {
+                                                // Get clinic details
+                                                var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
 
-										if (!string.IsNullOrEmpty(firstSessionDate) && !string.IsNullOrEmpty(firstSessionTime))
-										{
-											// Get clinic details
-											var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
+                                                // Format date (convert from yyyy-MM-dd to dd-MM-yyyy)
+                                                DateTime.TryParseExact(firstSessionDate, "yyyy-MM-dd", null,
+                                                    System.Globalization.DateTimeStyles.None, out var parsedDate);
+                                                var formattedDate = parsedDate.ToString("dd-MM-yyyy");
 
-											// Format date (convert from yyyy-MM-dd to dd-MM-yyyy)
-											DateTime.TryParseExact(firstSessionDate, "yyyy-MM-dd", null,
-												System.Globalization.DateTimeStyles.None, out var parsedDate);
-											var formattedDate = parsedDate.ToString("dd-MM-yyyy");
+                                                // Format time (HH:mm:ss to hh:mm tt)
+                                                TimeSpan.TryParse(firstSessionTime, out var parsedTime);
+                                                var formattedTime = DateTime.Today.Add(parsedTime).ToString("hh:mm tt");
 
-											// Format time (HH:mm:ss to hh:mm tt)
-											TimeSpan.TryParse(firstSessionTime, out var parsedTime);
-											var formattedTime = DateTime.Today.Add(parsedTime).ToString("hh:mm tt");
+                                                // Generate email template
+                                                var emailTemplate = _emailTemplateService.GenerateFirstSessionConfirmationEmailTemplate(
+                                                    mepData.patient.name,
+                                                    coachName,
+                                                    formattedDate,
+                                                    formattedTime,
+                                                    clinic?.ClinicName ?? "High 5"
+                                                );
 
-											// Generate email template
-											var emailTemplate = _emailTemplateService.GenerateFirstSessionConfirmationEmailTemplate(
-												mepData.patient.name,
-												coachName,
-												formattedDate,
-												formattedTime,
-												clinic?.ClinicName ?? "High 5"
-											);
+                                                // Get user email from HFID
+                                                var user = await _userRepository.GetUserByHFIDAsync(mepData.patient.hfid);
+                                                if (user != null && !string.IsNullOrEmpty(user.Email))
+                                                {
+                                                    await _emailService.SendEmailAsync(
+                                                        user.Email,
+                                                        "Your Fitness Journey Begins Today! 🔥",
+                                                        emailTemplate
+                                                    );
 
-											// Get user email from HFID
-											var user = await _userRepository.GetUserByHFIDAsync(mepData.patient.hfid);
-											if (user != null && !string.IsNullOrEmpty(user.Email))
-											{
-												await _emailService.SendEmailAsync(
-													user.Email,
-													"Your Fitness Journey Begins Today! 🔥",
-													emailTemplate
-												);
-
-												_logger.LogInformation(
-													"First session confirmation email sent to {Email} for {Date} at {Time}",
-													user.Email,
-													formattedDate,
-													formattedTime
-												);
-											}
-										}
-									}
-								}
-								catch (Exception emailEx)
-								{
-									_logger.LogError(
-										emailEx,
-										"Failed to send first session confirmation email for package {PackageId}",
-										packageId
-									);
-									// Don't fail the entire operation if email fails
-								}
+                                                    _logger.LogInformation(
+                                                        "First session confirmation email sent to {Email} for {Date} at {Time}",
+                                                        user.Email,
+                                                        formattedDate,
+                                                        formattedTime
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    catch (Exception emailEx)
+                                    {
+                                        _logger.LogError(
+                                            emailEx,
+                                            "Failed to send first session confirmation email for package {PackageId}",
+                                            packageId
+                                        );
+                                        // Don't fail the entire operation if email fails
+                                    }
                                 }
                                 else
                                 {
                                     _logger.LogInformation("Email sending skipped for clinicId {ClinicId}", clinicId);
                                 }
-
                             }
-							//if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
-							//                     {
-							//                         packageRecord.payment_verify = true;
-							//                         packageRecord.Is_editable = true;
-							//                         await _clinicPatientRecordRepository.UpdateAsync(packageRecord);
-							//                     }
-						}
-					}
-				}
+                            // Check for Treatment if MembershipPlan not found
+                            else if (packageRecord != null && packageRecord.Type == RecordType.Treatment)
+                            {
+                                packageRecord.payment_verify = true;
+                                packageRecord.Is_editable = true;
+                                await _clinicPatientRecordRepository.UpdateAsync(packageRecord);
+
+                                _logger.LogInformation("Payment verified for Treatment record {RecordId}", packageRecord.Id);
+                            }
+                        }
+                    }
+                }
+
+                return Ok(ApiResponseFactory.Success("Payment verification updated successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating payment verification");
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred."));
+            }
+        }
+
+        //      [HttpPut("clinic/patient/documents/verify-payment/{receiptRecordId}")]
+        //[Authorize]
+        //public async Task<IActionResult> VerifyPayment(int receiptRecordId)
+        //{
+        //	try
+        //	{
+        //		var receiptRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(receiptRecordId);
+        //		if (receiptRecord == null)
+        //			return NotFound(ApiResponseFactory.Fail("Receipt record not found."));
+
+        //		if (receiptRecord.Type != RecordType.Receipt)
+        //			return BadRequest(ApiResponseFactory.Fail("Record is not a receipt type."));
+
+        //		// Check if UniqueRecordId is null or empty
+        //		if (string.IsNullOrWhiteSpace(receiptRecord.UniqueRecordId))
+        //			return BadRequest(ApiResponseFactory.Fail("Receipt does not have a valid UniqueRecordId."));
+
+        //		// Check if another receipt with the same UniqueRecordId already exists with payment verified
+        //		var existingVerifiedReceipt = await _clinicPatientRecordRepository
+        //			.GetRecordByUniqueRecordIdAsync(receiptRecord.UniqueRecordId);
+
+        //		if (existingVerifiedReceipt != null &&
+        //			existingVerifiedReceipt.Id != receiptRecordId &&
+        //			existingVerifiedReceipt.payment_verify == true &&
+        //			existingVerifiedReceipt.Is_editable == true)
+        //		{
+        //			return BadRequest(ApiResponseFactory.Fail("A receipt with this UniqueRecordId is already verified and editable."));
+        //		}
+
+        //		// Update Receipt
+        //		receiptRecord.payment_verify = true;
+        //		receiptRecord.Is_editable = true;
+        //		await _clinicPatientRecordRepository.UpdateAsync(receiptRecord);
+
+        //		// Update Invoice
+        //		if (receiptRecord.Reference_Id.HasValue && receiptRecord.Reference_Id.Value > 0)
+        //		{
+        //			var invoiceRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(receiptRecord.Reference_Id.Value);
+        //			if (invoiceRecord != null && invoiceRecord.Type == RecordType.Invoice)
+        //			{
+        //				invoiceRecord.payment_verify = true;
+        //				invoiceRecord.Is_editable = true;
+        //				await _clinicPatientRecordRepository.UpdateAsync(invoiceRecord);
+
+        //				// Update Package/MEP
+        //				if (invoiceRecord.Reference_Id.HasValue && invoiceRecord.Reference_Id.Value > 0)
+        //				{
+        //					var packageRecord = await _clinicPatientRecordRepository.GetRecordByIdAsync(invoiceRecord.Reference_Id.Value);
+
+        //                          // After updating Package/MEP (around line 56)
+        //                          if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
+        //                          {
+        //                              packageRecord.payment_verify = true;
+        //                              packageRecord.Is_editable = true;
+        //                              await _clinicPatientRecordRepository.UpdateAsync(packageRecord);
+
+        //                              // Extract the data you need here
+        //                              string packageJsonData = packageRecord.JsonData;
+        //                              string packageUniqueRecordId = packageRecord.UniqueRecordId;
+        //                              string packageId = packageRecord.Id.ToString();
+        //                              int clinicId = 36; // or get from receiptRecord if it has a ClinicId property
+
+        //						// Create appointments
+        //						await CreateAppointmentsFromMepData(
+        //							packageJsonData,
+        //							packageId,
+        //							clinicId,
+        //							packageRecord.PatientId,
+        //							packageRecord.ClinicVisitId,
+        //							packageRecord.UniqueRecordId
+        //						);
+        //                              if (clinicId != 36)
+        //                              {
+        //                                  try
+        //						{
+        //							// Parse JSON data
+        //							// Use System.Text.Json (built-in)
+        //							var mepData = System.Text.Json.JsonSerializer.Deserialize<MepJsonData>(
+        //								packageJsonData,
+        //								new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+        //							);
+        //							if (mepData?.treatments != null && mepData.treatments.Count > 0)
+        //							{
+
+        //								string coachName = ""; 
+        //								int coachIndex = packageJsonData.IndexOf("\"coach\":");
+        //								if (coachIndex != -1)
+        //								{
+        //									int startQuote = packageJsonData.IndexOf("\"", coachIndex + 8);
+        //									if (startQuote != -1)
+        //									{
+        //										int endQuote = packageJsonData.IndexOf("\"", startQuote + 1);
+        //										if (endQuote != -1)
+        //										{
+        //											 coachName = packageJsonData.Substring(startQuote + 1, endQuote - startQuote - 1);
+        //										}
+        //									}
+        //								}
+        //								var firstTreatment = mepData.treatments[0];
+        //								var firstSessionDate = firstTreatment.sessionDates?.FirstOrDefault();
+        //								var firstSessionTime = firstTreatment.sessionTimes?.FirstOrDefault();
+
+        //								if (!string.IsNullOrEmpty(firstSessionDate) && !string.IsNullOrEmpty(firstSessionTime))
+        //								{
+        //									// Get clinic details
+        //									var clinic = await _clinicRepository.GetClinicByIdAsync(clinicId);
+
+        //									// Format date (convert from yyyy-MM-dd to dd-MM-yyyy)
+        //									DateTime.TryParseExact(firstSessionDate, "yyyy-MM-dd", null,
+        //										System.Globalization.DateTimeStyles.None, out var parsedDate);
+        //									var formattedDate = parsedDate.ToString("dd-MM-yyyy");
+
+        //									// Format time (HH:mm:ss to hh:mm tt)
+        //									TimeSpan.TryParse(firstSessionTime, out var parsedTime);
+        //									var formattedTime = DateTime.Today.Add(parsedTime).ToString("hh:mm tt");
+
+        //									// Generate email template
+        //									var emailTemplate = _emailTemplateService.GenerateFirstSessionConfirmationEmailTemplate(
+        //										mepData.patient.name,
+        //										coachName,
+        //										formattedDate,
+        //										formattedTime,
+        //										clinic?.ClinicName ?? "High 5"
+        //									);
+
+        //									// Get user email from HFID
+        //									var user = await _userRepository.GetUserByHFIDAsync(mepData.patient.hfid);
+        //									if (user != null && !string.IsNullOrEmpty(user.Email))
+        //									{
+        //										await _emailService.SendEmailAsync(
+        //											user.Email,
+        //											"Your Fitness Journey Begins Today! 🔥",
+        //											emailTemplate
+        //										);
+
+        //										_logger.LogInformation(
+        //											"First session confirmation email sent to {Email} for {Date} at {Time}",
+        //											user.Email,
+        //											formattedDate,
+        //											formattedTime
+        //										);
+        //									}
+        //								}
+        //							}
+        //						}
+        //						catch (Exception emailEx)
+        //						{
+        //							_logger.LogError(
+        //								emailEx,
+        //								"Failed to send first session confirmation email for package {PackageId}",
+        //								packageId
+        //							);
+        //							// Don't fail the entire operation if email fails
+        //						}
+        //                              }
+        //                              else
+        //                              {
+        //                                  _logger.LogInformation("Email sending skipped for clinicId {ClinicId}", clinicId);
+        //                              }
+
+        //                          }
+        //					//if (packageRecord != null && packageRecord.Type == RecordType.MembershipPlan)
+        //					//                     {
+        //					//                         packageRecord.payment_verify = true;
+        //					//                         packageRecord.Is_editable = true;
+        //					//                         await _clinicPatientRecordRepository.UpdateAsync(packageRecord);
+        //					//                     }
+        //				}
+        //			}
+        //		}
 
 
-				return Ok(ApiResponseFactory.Success("Payment verification updated successfully."));
-			}
-			catch (Exception ex)
-			{
-				_logger.LogError(ex, "Error updating payment verification");
-				return StatusCode(500, ApiResponseFactory.Fail("An error occurred."));
-			}
-		}
+        //		return Ok(ApiResponseFactory.Success("Payment verification updated successfully."));
+        //	}
+        //	catch (Exception ex)
+        //	{
+        //		_logger.LogError(ex, "Error updating payment verification");
+        //		return StatusCode(500, ApiResponseFactory.Fail("An error occurred."));
+        //	}
+        //}
 
 
 
@@ -9641,11 +9822,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			HttpContext.Items["Log-Category"] = "Receipt Document Upload";
 
 			// Validate clinic ID is 36 (High5 Performance)
-			if (request.ClinicId != 36)
-			{
-				_logger.LogWarning("Receipt document upload attempted for non-High5 clinic: {ClinicId}", request.ClinicId);
-				return BadRequest(ApiResponseFactory.Fail("Receipt document attachment is only available for High5 Performance clinic."));
-			}
+			//if (request.ClinicId != 36)
+			//{
+			//	_logger.LogWarning("Receipt document upload attempted for non-High5 clinic: {ClinicId}", request.ClinicId);
+			//	return BadRequest(ApiResponseFactory.Fail("Receipt document attachment is only available for High5 Performance clinic."));
+			//}
 
 			if (!ModelState.IsValid)
 			{
@@ -9818,11 +9999,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			HttpContext.Items["Log-Category"] = "Receipt Document Fetch";
 
 			// Validate clinic ID is 36
-			if (clinicId != 36)
-			{
-				_logger.LogWarning("Receipt document fetch attempted for non-High5 clinic: {ClinicId}", clinicId);
-				return BadRequest(ApiResponseFactory.Fail("Receipt document attachment is only available for High5 Performance clinic."));
-			}
+			//if (clinicId != 36)
+			//{
+			//	_logger.LogWarning("Receipt document fetch attempted for non-High5 clinic: {ClinicId}", clinicId);
+			//	return BadRequest(ApiResponseFactory.Fail("Receipt document attachment is only available for High5 Performance clinic."));
+			//}
 
 			if (clinicId <= 0 || patientId <= 0 || visitId <= 0)
 			{
@@ -9892,11 +10073,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			HttpContext.Items["Log-Category"] = "Receipt Document Delete";
 
 			// Validate clinic ID is 36
-			if (clinicId != 36)
-			{
-				_logger.LogWarning("Receipt document delete attempted for non-High5 clinic: {ClinicId}", clinicId);
-				return BadRequest(ApiResponseFactory.Fail("Receipt document attachment is only available for High5 Performance clinic."));
-			}
+			//if (clinicId != 36)
+			//{
+			//	_logger.LogWarning("Receipt document delete attempted for non-High5 clinic: {ClinicId}", clinicId);
+			//	return BadRequest(ApiResponseFactory.Fail("Receipt document attachment is only available for High5 Performance clinic."));
+			//}
 
 			if (recordId <= 0)
 			{

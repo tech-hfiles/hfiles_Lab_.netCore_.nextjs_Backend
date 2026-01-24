@@ -1365,9 +1365,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						var age = DateTime.Today.Year - parsedDob.Year;
 						if (parsedDob > DateTime.Today.AddYears(-age)) age--;
 
-						if (age < 18)
-							validationErrors.Add("Patient must be at least 18 years old.");
-					}
+                        if (age < 18)
+                        {
+                            if (clinicId == 36)
+                                validationErrors.Add("Member must be at least 18 years old.");
+                            else
+                                validationErrors.Add("Patient must be at least 18 years old.");
+                        }
+                    }
 				}
 
 				if (string.IsNullOrWhiteSpace(dto.PhoneNumber))

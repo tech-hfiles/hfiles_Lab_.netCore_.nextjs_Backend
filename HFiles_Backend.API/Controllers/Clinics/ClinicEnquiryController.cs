@@ -232,101 +232,101 @@ public class ClinicEnquiryController : ControllerBase
     // =====================================================
     // POST : Create Enquiry
     // =====================================================
-    [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateClinicEnquiryDto dto)
-    {
-        HttpContext.Items["Log-Category"] = "Clinic Enquiry";
-
-        if (!ModelState.IsValid)
-        {
-            var errors = ModelState.Values
-                .SelectMany(v => v.Errors)
-                .Select(e => e.ErrorMessage)
-                .ToList();
-
-            return BadRequest(ApiResponseFactory.Fail(errors));
-        }
-
-        bool isAuthorized = await _clinicAuthorizationService
-            .IsClinicAuthorized(dto.ClinicId, User);
-
-        if (!isAuthorized)
-            return Unauthorized(ApiResponseFactory.Fail("Only authorized clinic users can create enquiries."));
-
-        var enquiry = new ClinicEnquiry
-        {
-            ClinicId = dto.ClinicId,
-            UserId = dto.UserId,
-            Firstname = dto.Firstname,
-            Lastname = dto.Lastname,
-            Email = dto.Email,
-            Contact = dto.Contact,
-            DateOfBirth = dto.DateOfBirth,
-            Source = dto.Source,
-            FollowUpDate = dto.FollowUpDate,
-            FitnessGoal = dto.FitnessGoal,
-            Status = dto.Status ?? EnquiryStatus.Inquiry,
-            Payment = dto.Payment ?? PaymentStatus.NA,
-            AppointmentDate = dto.AppointmentDate,
-            AppointmentTime = dto.AppointmentTime,
-            Remark = dto.Remark,
-			PricingPackageId = dto.PricingPackageId,
-
-			FirstCall = false,
-            SecondCall = false,
-            EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-        };
-		// trial done 
-		if (false)
+		[HttpPost]
+		public async Task<IActionResult> Create([FromBody] CreateClinicEnquiryDto dto)
 		{
-			try
+			HttpContext.Items["Log-Category"] = "Clinic Enquiry";
+
+			if (!ModelState.IsValid)
 			{
-				// Get clinic details
-				var clinic = await _clinicRepository.GetClinicByIdAsync(dto.ClinicId);
+				var errors = ModelState.Values
+					.SelectMany(v => v.Errors)
+					.Select(e => e.ErrorMessage)
+					.ToList();
 
-				// Format date and time
-				var appointmentDateFormatted = dto.AppointmentDate.Value.ToString("dd-MM-yyyy");
-				var appointmentTimeFormatted = dto.AppointmentTime.Value.ToString(@"hh\:mm");
-
-				// Generate email template
-				var emailTemplate = _emailTemplateService.GenerateTrialAppointmentConfirmationEmailTemplate(
-					dto.Firstname,
-					clinic?.ClinicName ?? "Clinic",
-					appointmentDateFormatted,
-					appointmentTimeFormatted,
-					dto.FitnessGoal
-				);
-
-				// Send email
-				await _emailService.SendEmailAsync(
-					dto.Email,
-					$"Trial Appointment Confirmation - {clinic?.ClinicName}",
-					emailTemplate
-				);
-
-				_logger.LogInformation(
-					"Trial appointment confirmation email sent to {Email} for {Date} at {Time}",
-					dto.Email,
-					appointmentDateFormatted,
-					appointmentTimeFormatted
-				);
+				return BadRequest(ApiResponseFactory.Fail(errors));
 			}
-			catch (Exception emailEx)
+
+			bool isAuthorized = await _clinicAuthorizationService
+				.IsClinicAuthorized(dto.ClinicId, User);
+
+			if (!isAuthorized)
+				return Unauthorized(ApiResponseFactory.Fail("Only authorized clinic users can create enquiries."));
+
+			var enquiry = new ClinicEnquiry
 			{
-				_logger.LogError(
-					emailEx,
-					"Failed to send trial appointment email to {Email}",
-					dto.Email
-				);
-				// Don't fail the entire operation if email fails
+				ClinicId = dto.ClinicId,
+				UserId = dto.UserId,
+				Firstname = dto.Firstname,
+				Lastname = dto.Lastname,
+				Email = dto.Email,
+				Contact = dto.Contact,
+				DateOfBirth = dto.DateOfBirth,
+				Source = dto.Source,
+				FollowUpDate = dto.FollowUpDate,
+				FitnessGoal = dto.FitnessGoal,
+				Status = dto.Status ?? EnquiryStatus.Inquiry,
+				Payment = dto.Payment ?? PaymentStatus.NA,
+				AppointmentDate = dto.AppointmentDate,
+				AppointmentTime = dto.AppointmentTime,
+				Remark = dto.Remark,
+				PricingPackageId = dto.PricingPackageId,
+
+				FirstCall = false,
+				SecondCall = false,
+				EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+			};
+			// trial done 
+			if (false)
+			{
+				try
+				{
+					// Get clinic details
+					var clinic = await _clinicRepository.GetClinicByIdAsync(dto.ClinicId);
+
+					// Format date and time
+					var appointmentDateFormatted = dto.AppointmentDate.Value.ToString("dd-MM-yyyy");
+					var appointmentTimeFormatted = dto.AppointmentTime.Value.ToString(@"hh\:mm");
+
+					// Generate email template
+					var emailTemplate = _emailTemplateService.GenerateTrialAppointmentConfirmationEmailTemplate(
+						dto.Firstname,
+						clinic?.ClinicName ?? "Clinic",
+						appointmentDateFormatted,
+						appointmentTimeFormatted,
+						dto.FitnessGoal
+					);
+
+					// Send email
+					await _emailService.SendEmailAsync(
+						dto.Email,
+						$"Trial Appointment Confirmation - {clinic?.ClinicName}",
+						emailTemplate
+					);
+
+					_logger.LogInformation(
+						"Trial appointment confirmation email sent to {Email} for {Date} at {Time}",
+						dto.Email,
+						appointmentDateFormatted,
+						appointmentTimeFormatted
+					);
+				}
+				catch (Exception emailEx)
+				{
+					_logger.LogError(
+						emailEx,
+						"Failed to send trial appointment email to {Email}",
+						dto.Email
+					);
+					// Don't fail the entire operation if email fails
+				}
 			}
+
+
+			await _repo.AddAsync(enquiry);
+
+			return Ok(ApiResponseFactory.Success(enquiry, "Enquiry created successfully."));
 		}
-
-
-		await _repo.AddAsync(enquiry);
-
-        return Ok(ApiResponseFactory.Success(enquiry, "Enquiry created successfully."));
-    }
 
 	// =====================================================
 	// POST : Update Enquiry

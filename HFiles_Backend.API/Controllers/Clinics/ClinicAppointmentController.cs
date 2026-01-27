@@ -1472,16 +1472,23 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         return BadRequest(ApiResponseFactory.Fail("Invalid date of birth. Age must be between 0 and 150."));
                     }
 
-                    // Check if phone number already exists - we validated these are not null earlier
-                    bool phoneExists = await _userRepository.IsPhoneNumberExistsAsync(dto.PhoneNumber!, dto.CountryCode!);
-                    if (phoneExists)
-                    {
-                        _logger.LogWarning("Phone number already registered: {CountryCode} {Phone}", dto.CountryCode, dto.PhoneNumber);
-                        return BadRequest(ApiResponseFactory.Fail("Phone number is already registered."));
-                    }
+					// In your backend CreateFollowUpAppointment method
+					var existingUserByPhone = await _userRepository.GetUserByPhoneNumberAsync(dto.PhoneNumber!, dto.CountryCode!);
+					if (existingUserByPhone != null)
+					{
+						_logger.LogWarning("Phone number already registered: {CountryCode} {Phone}, HFID: {HFID}",
+							dto.CountryCode, dto.PhoneNumber, existingUserByPhone.HfId);
+						return BadRequest(ApiResponseFactory.Fail(
+							new
+							{
+								Message = "Phone number is already registered.",
+								HFID = existingUserByPhone.HfId,
+								ShouldSwitchToHFID = true
+							}));
+					}
 
-                    // Check if email already exists (only if email is provided)
-                    if (!string.IsNullOrWhiteSpace(dto.Email))
+					// Check if email already exists (only if email is provided)
+					if (!string.IsNullOrWhiteSpace(dto.Email))
                     {
                         bool emailExists = await _userRepository.IsEmailExistsAsync(dto.Email);
                         if (emailExists)

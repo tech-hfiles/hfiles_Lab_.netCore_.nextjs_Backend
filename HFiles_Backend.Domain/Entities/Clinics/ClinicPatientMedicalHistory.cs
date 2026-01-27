@@ -66,8 +66,10 @@ namespace HFiles_Backend.Domain.Entities.Clinics
         [Column(TypeName = "longtext")]
         public string? RelievingFacors { get; set; }
 
+		public string? EmergencyNumber { get; set; }
 
-        [Required]
+
+		[Required]
         public long CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
         public long? UpdatedAt { get; set; }

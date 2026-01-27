@@ -158,10 +158,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     existingHistory.RelievingFacors = request.RelievingFacors;
                     existingHistory.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                     existingHistory.UpdatedBy = adminId;
+					existingHistory.EmergencyNumber = request.EmergencyNumber;
 
-                    // Entity is already tracked, so we just assign it
-                    // No need to call UpdateAsync since EF is tracking changes
-                    history = existingHistory;
+
+					// Entity is already tracked, so we just assign it
+					// No need to call UpdateAsync since EF is tracking changes
+					history = existingHistory;
 
                     _logger.LogInformation("Updating existing medical history ID: {HistoryId} for ClinicPatient ID: {ClinicPatientId}",
                         existingHistory.Id, clinicPatient.Id);
@@ -191,7 +193,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
                         AggravatingFactors = request.AggravatingFactors,
                         RelievingFacors = request.RelievingFacors,
                         CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                        CreatedBy = adminId
+						EmergencyNumber = request.EmergencyNumber,
+
+						CreatedBy = adminId
                     };
 
                     await _medicalHistoryRepository.CreateAsync(history);
@@ -344,8 +348,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
                     CreatedAt = history.CreatedAt,
                     UpdatedAt = history.UpdatedAt,
                     CreatedBy = createdByUser ?? "Unknown",
-                    UpdatedBy = updatedByUser
-                };
+                    UpdatedBy = updatedByUser,
+					EmergencyNumber = history.EmergencyNumber,
+				};
 
                 _logger.LogInformation("Medical history retrieved for Patient ID: {PatientId}, Clinic ID: {ClinicId}", patientId, clinicId);
                 return Ok(ApiResponseFactory.Success(response, "Medical history retrieved successfully."));

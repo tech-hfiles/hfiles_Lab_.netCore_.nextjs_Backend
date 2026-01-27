@@ -66,5 +66,9 @@ namespace HFiles_Backend.Application.DTOs.Clinics.PatientHistory
 
         [StringLength(4000, ErrorMessage = "Relieving Facors cannot exceed 4000 characters.")]
         public string? RelievingFacors { get; set; }
-    }
+
+		[StringLength(100, ErrorMessage = "Emergency number cannot exceed 100 characters.")]
+		public string? EmergencyNumber { get; set; }
+
+	}
 }

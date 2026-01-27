@@ -32,5 +32,7 @@
         public long? UpdatedAt { get; set; }
         public string CreatedBy { get; set; } = string.Empty;
         public string? UpdatedBy { get; set; }
-    }
+        public string? EmergencyNumber { get; set; }
+
+	}
 }

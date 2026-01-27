@@ -639,6 +639,13 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 var now = DateTime.Now;
                 var appointmentDateTime = appointment.AppointmentDate.Date + appointment.AppointmentTime;
 
+                //  ALWAYS save treatment if provided
+                if (!string.IsNullOrWhiteSpace(dto.Treatment))
+                {
+                    appointment.Treatment = dto.Treatment;
+                }
+
+                //  STATUS RULES ONLY
                 if (dto.Status == "Canceled")
                 {
                     if (appointmentDateTime <= now)
@@ -647,32 +654,21 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 }
                 else if (dto.Status == "Completed")
                 {
-                    // Calculate 2 hours before current time
                     var twoHoursAgo = now.AddHours(-2);
 
-                    // Check if appointment is today
                     if (appointment.AppointmentDate.Date != now.Date)
                     {
                         return BadRequest(ApiResponseFactory.Fail(
                             "Can only mark as completed if appointment is today."));
                     }
 
-                    // Check if appointment time is within the last 2 hours or has passed
-                    //if (appointmentDateTime > now)
-                    //{
-                    //    return BadRequest(ApiResponseFactory.Fail(
-                    //        "Cannot mark appointment as completed before it occurs."));
-                    //}
-
-                    // Check if appointment was more than 2 hours ago
                     if (appointmentDateTime < twoHoursAgo)
                     {
                         return BadRequest(ApiResponseFactory.Fail(
                             "Can only mark as completed within 2 hours of the appointment time."));
                     }
-
-                    appointment.Treatment = dto.Treatment;
                 }
+
 
                 // Save appointment changes
                 await _appointmentRepository.UpdateAsync(appointment);

@@ -20,5 +20,7 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<ClinicDocument_Storage?> GetDocumentByIdAsync(int documentId, int clinicId, int patientId);
         Task<bool> UpdateDocumentFileNameAsync(int documentId, int clinicId, int patientId, string newFileName);
         Task SaveChangesAsync();
+        Task<ClinicVisit?> GetOrCreateVisitForTodayAsync(int clinicId, int patientId);
+        Task SaveClinicPatientRecordAsync(ClinicPatientRecord record);
     }
 }

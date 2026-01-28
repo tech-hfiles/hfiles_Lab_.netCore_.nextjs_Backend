@@ -94,5 +94,35 @@ namespace HFiles_Backend.Infrastructure.Repositories
         {
             await _context.SaveChangesAsync();
         }
+
+        public async Task<ClinicVisit?> GetOrCreateVisitForTodayAsync(int clinicId, int patientId)
+        {
+            var today = DateTime.UtcNow.Date;
+            var existingVisit = await _context.ClinicVisits
+                .FirstOrDefaultAsync(v => v.ClinicId == clinicId &&
+                                          v.ClinicPatientId == patientId &&
+                                          v.AppointmentDate.Date == today);
+
+            if (existingVisit == null)
+            {
+                var visit = new ClinicVisit
+                {
+                    ClinicId = clinicId,
+                    ClinicPatientId = patientId,
+                    AppointmentDate = DateTime.UtcNow
+                };
+                _context.ClinicVisits.Add(visit);
+                await _context.SaveChangesAsync();
+                return visit;
+            }
+
+            return existingVisit;
+        }
+
+        public async Task SaveClinicPatientRecordAsync(ClinicPatientRecord record)
+        {
+            _context.ClinicPatientRecords.Add(record);
+            await _context.SaveChangesAsync();
+        }
     }
 }

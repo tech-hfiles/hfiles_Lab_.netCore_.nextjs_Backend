@@ -1,16 +1,18 @@
-﻿using HFiles_Backend.Application.DTOs.Clinics.PatientRecord;
+﻿using HFiles_Backend.API.DTOs.Clinics;
+using HFiles_Backend.API.Interfaces;
+using HFiles_Backend.API.Services;
+using HFiles_Backend.Application.Common;
+using HFiles_Backend.Application.DTOs.Clinics.PatientRecord;
 using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Entities.Users;
+using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
+using HFiles_Backend.Infrastructure.Data;
+using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
-using HFiles_Backend.Application.Common;
-using HFiles_Backend.API.DTOs.Clinics;
-using HFiles_Backend.API.Services;
-using HFiles_Backend.Infrastructure.Repositories;
-using HFiles_Backend.API.Interfaces;
-using HFiles_Backend.Domain.Entities.Users;
-using HFiles_Backend.Domain.Enums;
+
 
 namespace HFiles_Backend.API.Controllers
 {
@@ -25,19 +27,20 @@ namespace HFiles_Backend.API.Controllers
         private readonly IUserRepository _userRepository;             
         private readonly EmailService _emailService;
 
+
         public ClinicDocumentController(
       IClinicDocumentRepository documentRepository,
       S3StorageService s3StorageService,
       IEmailTemplateService emailTemplateService,
       IUserRepository userRepository,                            
-      EmailService emailService,                                  
+      EmailService emailService,
       ILogger<ClinicDocumentController> logger)
         {
             _documentRepository = documentRepository;
             _s3StorageService = s3StorageService;
             _emailTemplateService = emailTemplateService;             
             _userRepository = userRepository;                           
-            _emailService = emailService;                               
+            _emailService = emailService;
             _logger = logger;
         }
 
@@ -468,7 +471,7 @@ namespace HFiles_Backend.API.Controllers
             [FromRoute] int clinicId,
             [FromRoute] int patientId,
             [FromBody] SendDocumentEmailRequest request)
-        {
+                        {
             HttpContext.Items["Log-Category"] = "Clinic Document Email Send";
 
             if (!ModelState.IsValid)
@@ -557,16 +560,69 @@ namespace HFiles_Backend.API.Controllers
                 HttpContext.Items["Sent-To-UserId"] = user.Id;
 
                 // ────────────────────────────── NEW: Save to HF account if requested ──────────────────────────────
+                //int reportsCreatedCount = 0;
+                //var createdReports = new List<UserReport>();
+
+                //if (request.SaveToHfAccount)
+                //{
+                //    foreach (var doc in documents)
+                //    {
+                //        // Determine report category based on filename (you can improve this logic)
+                //        int reportCategory = (int)ReportType.SpecialReport; // default
+
+                //        var fileNameLower = doc.FileName?.ToLowerInvariant() ?? "";
+
+                //        if (fileNameLower.Contains("prescription") || fileNameLower.Contains("treatment"))
+                //            reportCategory = (int)ReportType.MedicationsPrescription;
+                //        else if (fileNameLower.Contains("invoice") || fileNameLower.Contains("bill") || fileNameLower.Contains("receipt"))
+                //            reportCategory = (int)ReportType.InvoicesInsurance;
+                //        else if (fileNameLower.Contains("lab") || fileNameLower.Contains("test") || fileNameLower.Contains("report"))
+                //            reportCategory = (int)ReportType.LabReport;
+                //        else if (fileNameLower.Contains("image") || fileNameLower.Contains("photo") || fileNameLower.Contains("scan"))
+                //            reportCategory = (int)ReportType.LabReport;
+                //        // You can add more specific rules here
+
+                //        var report = new UserReport
+                //        {
+                //            UserId = user.Id,
+                //            ReportName = doc.FileName ?? $"Document_{doc.Id}_{DateTime.UtcNow:yyyyMMdd}",
+                //            ReportCategory = reportCategory,
+                //            ReportUrl = doc.FileUrl!,
+                //            EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                //            FileSize = Math.Round((decimal)(doc.FileSizeInBytes ?? 0) / 1024, 2), // in KB
+                //            UploadedBy = "Clinic",
+                //            UserType = user.UserReference == 0 ? "Independent" : "Dependent",
+                //            DeletedBy = 0
+                //        };
+
+                //        await _userRepository.SaveAsync(report);
+                //        createdReports.Add(report);
+                //        reportsCreatedCount++;
+                //    }
+
+                //    _logger.LogInformation(
+                //        "Saved {Count} documents to HF account for UserId {UserId} (HFID: {HFID})",
+                //        reportsCreatedCount, user.Id, patient.HFID);
+                //}
+
+                // ────────────────────────────── NEW: Save to HF account if requested ──────────────────────────────
                 int reportsCreatedCount = 0;
                 var createdReports = new List<UserReport>();
 
                 if (request.SaveToHfAccount)
                 {
+                    // ✅ Use repository method instead of direct _context
+                    var visit = await _documentRepository.GetOrCreateVisitForTodayAsync(clinicId, patientId);
+
+                    if (visit == null)
+                    {
+                        return StatusCode(500, ApiResponseFactory.Fail("Failed to create or retrieve visit."));
+                    }
+
                     foreach (var doc in documents)
                     {
-                        // Determine report category based on filename (you can improve this logic)
-                        int reportCategory = (int)ReportType.SpecialReport; // default
-
+                        // Determine report category based on filename
+                        int reportCategory = (int)ReportType.SpecialReport;
                         var fileNameLower = doc.FileName?.ToLowerInvariant() ?? "";
 
                         if (fileNameLower.Contains("prescription") || fileNameLower.Contains("treatment"))
@@ -577,8 +633,8 @@ namespace HFiles_Backend.API.Controllers
                             reportCategory = (int)ReportType.LabReport;
                         else if (fileNameLower.Contains("image") || fileNameLower.Contains("photo") || fileNameLower.Contains("scan"))
                             reportCategory = (int)ReportType.LabReport;
-                        // You can add more specific rules here
 
+                        // ✅ Save to UserReports table (for HF account)
                         var report = new UserReport
                         {
                             UserId = user.Id,
@@ -586,7 +642,7 @@ namespace HFiles_Backend.API.Controllers
                             ReportCategory = reportCategory,
                             ReportUrl = doc.FileUrl!,
                             EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                            FileSize = Math.Round((decimal)(doc.FileSizeInBytes ?? 0) / 1024, 2), // in KB
+                            FileSize = Math.Round((decimal)(doc.FileSizeInBytes ?? 0) / 1024, 2),
                             UploadedBy = "Clinic",
                             UserType = user.UserReference == 0 ? "Independent" : "Dependent",
                             DeletedBy = 0
@@ -595,10 +651,28 @@ namespace HFiles_Backend.API.Controllers
                         await _userRepository.SaveAsync(report);
                         createdReports.Add(report);
                         reportsCreatedCount++;
+
+                        // ✅ Save to ClinicPatientRecords (using repository method)
+                        var patientRecord = new ClinicPatientRecord
+                        {
+                            ClinicId = clinicId,
+                            ClinicVisitId = visit.Id,
+                            PatientId = patientId,
+                            Type = RecordType.Images,
+                            JsonData = System.Text.Json.JsonSerializer.Serialize(new { url = doc.FileUrl }),
+                            SendToPatient = true,
+                            EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                        };
+
+                        await _documentRepository.SaveClinicPatientRecordAsync(patientRecord);
+
+                        _logger.LogInformation(
+                            "Created ClinicPatientRecord for document {FileName} in Visit {VisitId}",
+                            doc.FileName, visit.Id);
                     }
 
                     _logger.LogInformation(
-                        "Saved {Count} documents to HF account for UserId {UserId} (HFID: {HFID})",
+                        "Saved {Count} documents to HF account AND ClinicPatientRecords for UserId {UserId} (HFID: {HFID})",
                         reportsCreatedCount, user.Id, patient.HFID);
                 }
 

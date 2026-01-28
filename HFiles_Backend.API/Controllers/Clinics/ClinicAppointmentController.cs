@@ -1312,6 +1312,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			[FromBody] FollowUpAppointmentDto dto,
 			[FromRoute] int clinicId)
 		{
+			bool isNotificationAllowed = clinicId != 36;
+
 			HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
 			// Basic model validation
@@ -1799,7 +1801,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 								Email = user.Email ?? string.Empty,
 								HfId = childHfid,
 								UserReference = user.Id,
-								Relation = relation,
 								IsEmailVerified = user.IsEmailVerified,
 								IsPhoneVerified = user.IsPhoneVerified,
 								DeletedBy = 0,
@@ -2097,36 +2098,33 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					SentToEmail = string.IsNullOrWhiteSpace(user.Email) ? null : user.Email,
 
 					// Notification Context
-					NotificationContext = new
-					{
-						AppointmentId = appointment.Id,
-						PatientName = childUser != null ? $"{childUser.FirstName} {childUser.LastName}" : patient.PatientName,
-						HFID = visitForHfid,
-						PhoneNumber = user.PhoneNumber,
-						AppointmentDate = appointmentDateFormatted,
-						AppointmentTime = appointmentTimeFormatted,
-						Status = "Scheduled",
-						ConsentFormsCount = consentFormLinks.Count,
-						ConsentFormNames = string.Join(", ", consentFormLinks.Select(f => f.ConsentFormName)),
-						ClinicName = clinic?.ClinicName,
-						EmailStatus = !string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any() && clinicId != 36
-							? "Sent"
-							: string.IsNullOrWhiteSpace(user.Email)
-								? "No email provided"
-								: consentFormLinks.Count == 0
-									? "No consent forms provided"
-									: clinicId == 36
-										? "Email blocked for clinic 36"
-										: "No forms to send",
-						IsNewPatient = isPatientNewlyCreated,
-						ChildCreated = isChildCreated,
-						IsExistingChild = isExistingChild
-					},
+					NotificationContext = isNotificationAllowed
+	? new
+	{
+		AppointmentId = appointment.Id,
+		PatientName = childUser != null
+			? $"{childUser.FirstName} {childUser.LastName}"
+			: patient.PatientName,
+		HFID = visitForHfid,
+		PhoneNumber = user.PhoneNumber,
+		AppointmentDate = appointmentDateFormatted,
+		AppointmentTime = appointmentTimeFormatted,
+		Status = "Scheduled",
+		ConsentFormsCount = consentFormLinks.Count,
+		ConsentFormNames = string.Join(", ", consentFormLinks.Select(f => f.ConsentFormName)),
+		ClinicName = clinic?.ClinicName,
+		EmailStatus = !string.IsNullOrWhiteSpace(user.Email)
+			? "Sent"
+			: "No email"
+	}
+	: null,
 
-					NotificationMessage = $"Appointment scheduled for {(childUser != null ? $"{childUser.FirstName} {childUser.LastName}" : patient.PatientName)} on {appointmentDateFormatted} at {appointmentTimeFormatted}." +
-										(consentFormLinks.Any() ? $" {consentFormLinks.Count} consent form(s) sent." : "") +
-										(isChildCreated ? $" New child account created: {childUser?.HfId}" : "") +
-										(isExistingChild ? $" Existing child used: {childUser?.HfId}" : ""),
+					NotificationMessage = isNotificationAllowed
+	? $"Appointment scheduled for {(childUser != null
+		? $"{childUser.FirstName} {childUser.LastName}"
+		: patient.PatientName)} on {appointmentDateFormatted} at {appointmentTimeFormatted}."
+	: null,
+
 					UserNotificationMessage = userNotificationMessage
 				};
 

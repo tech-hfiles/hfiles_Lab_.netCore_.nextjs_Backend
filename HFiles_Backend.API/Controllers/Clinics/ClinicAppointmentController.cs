@@ -869,478 +869,473 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-        // Add new patient API
-        // Updated Add new patient API with enhanced email service
-        /// Creates a follow-up appointment. Supports both existing patients (via HFID) 
-        /// and new patient registration (via patient details)
-        //[HttpPost("clinics/{clinicId}/follow-up")]
-        //[Authorize]
-        //public async Task<IActionResult> CreateFollowUpAppointment(
-        // [FromBody] FollowUpAppointmentDto dto,
-        // [FromRoute] int clinicId)
-        //{
-        //    HttpContext.Items["Log-Category"] = "Clinic Appointment";
-
-        //    // Basic model validation
-        //    if (!ModelState.IsValid)
-        //    {
-        //        var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
-        //        _logger.LogWarning("Validation failed: {@Errors}", errors);
-        //        return BadRequest(ApiResponseFactory.Fail(errors));
-        //    }
-
-        //    // Custom validation - either HFID OR new patient details must be provided
-        //    var isExistingPatient = !string.IsNullOrWhiteSpace(dto.HFID);
-        //    var isNewPatient = !isExistingPatient;
-
-        //    if (isNewPatient)
-        //    {
-        //        var validationErrors = new List<string>();
-
-        //        if (string.IsNullOrWhiteSpace(dto.FirstName))
-        //            validationErrors.Add("First name is required when HFID is not provided.");
-
-        //        if (string.IsNullOrWhiteSpace(dto.LastName))
-        //            validationErrors.Add("Last name is required when HFID is not provided.");
-
-        //        if (string.IsNullOrWhiteSpace(dto.DOB))
-        //            validationErrors.Add("Date of birth is required when HFID is not provided.");
-
-        //        if (string.IsNullOrWhiteSpace(dto.PhoneNumber))
-        //            validationErrors.Add("Phone number is required when HFID is not provided.");
-
-        //        if (string.IsNullOrWhiteSpace(dto.CountryCode))
-        //            validationErrors.Add("Country code is required when HFID is not provided.");
-
-        //        if (validationErrors.Any())
-        //        {
-        //            _logger.LogWarning("New patient validation failed: {@Errors}", validationErrors);
-        //            return BadRequest(ApiResponseFactory.Fail(validationErrors));
-        //        }
-        //    }
-
-        //    // Validate appointment date format
-        //    if (!DateTime.TryParseExact(dto.AppointmentDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var appointmentDate))
-        //    {
-        //        _logger.LogWarning("Invalid appointment date format: {Date}", dto.AppointmentDate);
-        //        return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentDate format. Expected dd-MM-yyyy."));
-        //    }
-
-        //    // Validate appointment time format
-        //    if (!TimeSpan.TryParse(dto.AppointmentTime, out var appointmentTime))
-        //    {
-        //        _logger.LogWarning("Invalid appointment time format: {Time}", dto.AppointmentTime);
-        //        return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentTime format. Expected HH:mm."));
-        //    }
-
-        //    // Begin atomic transaction
-        //    await using var transaction = await _userRepository.BeginTransactionAsync();
-        //    var committed = false;
-
-        //    try
-        //    {
-        //        // Check clinic authorization
-        //        bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
-        //        if (!isAuthorized)
-        //        {
-        //            _logger.LogWarning("Unauthorized appointment creation attempt for Clinic ID {ClinicId}", clinicId);
-        //            return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can create appointments."));
-        //        }
-
-        //        // Verify clinic exists
-        //        var clinicExists = await _userRepository.ExistsAsync(clinicId);
-        //        if (!clinicExists)
-        //        {
-        //            _logger.LogWarning("Clinic ID {ClinicId} does not exist", clinicId);
-        //            return BadRequest(ApiResponseFactory.Fail("Invalid Clinic ID."));
-        //        }
-
-        //        User? user;
-        //        bool isPatientNewlyCreated = false;
-
-        //        // ==================== FLOW 1: EXISTING PATIENT WITH HFID ====================
-        //        if (isExistingPatient)
-        //        {
-        //            _logger.LogInformation("Processing existing patient with HFID: {HFID}", dto.HFID);
-
-        //            // Use null-forgiving operator after validation
-        //            // Check if patient already has a visit in this clinic
-        //            bool hasVisit = await _clinicVisitRepository.HasVisitInClinicAsync(dto.HFID!, clinicId);
-        //            if (hasVisit)
-        //            {
-        //                _logger.LogWarning("Patient with HFID {HFID} already has a visit in Clinic ID {ClinicId}", dto.HFID, clinicId);
-        //                return BadRequest(ApiResponseFactory.Fail("This patient already has a visit in this clinic."));
-        //            }
-
-        //            // Retrieve user by HFID - we know dto.HFID is not null here
-        //            user = await _userRepository.GetUserByHFIDAsync(dto.HFID!);
-        //            if (user == null)
-        //            {
-        //                _logger.LogWarning("No user found for HFID {HFID}", dto.HFID);
-        //                return NotFound(ApiResponseFactory.Fail("No user found for provided HFID."));
-        //            }
-
-        //            if (string.IsNullOrWhiteSpace(user.FirstName))
-        //            {
-        //                _logger.LogWarning("User found but FirstName is missing for HFID {HFID}", dto.HFID);
-        //                return BadRequest(ApiResponseFactory.Fail("User data is incomplete. FirstName is required."));
-        //            }
-        //        }
-        //        // ==================== FLOW 2: NEW PATIENT CREATION ====================
-        //        else
-        //        {
-        //            _logger.LogInformation("Processing new patient registration: {FirstName} {LastName}", dto.FirstName, dto.LastName);
-
-        //            // Validate and parse DOB
-        //            if (!DateTime.TryParseExact(dto.DOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsedDob))
-        //            {
-        //                _logger.LogWarning("Invalid DOB format for new patient: {DOB}", dto.DOB);
-        //                return BadRequest(ApiResponseFactory.Fail("Invalid DOB format. Please use dd-MM-yyyy."));
-        //            }
-
-        //            // Calculate and validate age
-        //            var age = DateTime.Today.Year - parsedDob.Year;
-        //            if (parsedDob > DateTime.Today.AddYears(-age)) age--;
-        //            if (age < 0 || age > 150)
-        //            {
-        //                _logger.LogWarning("Unrealistic age calculated from DOB: {Age} years", age);
-        //                return BadRequest(ApiResponseFactory.Fail("Invalid date of birth. Age must be between 0 and 150."));
-        //            }
-
-        //            // Check if phone number already exists - we validated these are not null earlier
-        //            bool phoneExists = await _userRepository.IsPhoneNumberExistsAsync(dto.PhoneNumber!, dto.CountryCode!);
-        //            if (phoneExists)
-        //            {
-        //                _logger.LogWarning("Phone number already registered: {CountryCode} {Phone}", dto.CountryCode, dto.PhoneNumber);
-        //                return BadRequest(ApiResponseFactory.Fail("Phone number is already registered."));
-        //            }
-
-        //            // Check if email already exists (only if email is provided)
-        //            if (!string.IsNullOrWhiteSpace(dto.Email))
-        //            {
-        //                bool emailExists = await _userRepository.IsEmailExistsAsync(dto.Email);
-        //                if (emailExists)
-        //                {
-        //                    _logger.LogWarning("Email already registered: {Email}", dto.Email);
-        //                    return BadRequest(ApiResponseFactory.Fail("Email is already registered."));
-        //                }
-        //            }
-
-        //            // Generate HFID and timestamp - we validated these are not null earlier
-        //            var hfid = _hfidService.GenerateHfid(dto.FirstName!, dto.LastName!, parsedDob);
-        //            var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-
-        //            // Create new user entity
-        //            user = new User
-        //            {
-        //                FirstName = dto.FirstName!,
-        //                LastName = dto.LastName!,
-        //                DOB = dto.DOB!,
-        //                CountryCallingCode = dto.CountryCode!,
-        //                PhoneNumber = dto.PhoneNumber!,
-        //                Email = string.IsNullOrWhiteSpace(dto.Email) ? string.Empty : dto.Email,
-        //                HfId = hfid,
-        //                UserReference = 0,
-        //                IsEmailVerified = !string.IsNullOrWhiteSpace(dto.Email), // True only if email provided
-        //                IsPhoneVerified = true, // Always true for clinic-created patients
-        //                DeletedBy = 0,
-        //                CreatedEpoch = epochTime,
-        //                Password = null // No password for clinic-created patients
-        //            };
-
-        //            // Save user to database
-        //            await _userRepository.AddUserAsync(user);
-        //            await _userRepository.CommitAsync();
-
-        //            // Assign default "Basic" subscription to the new user
-        //            var subscription = new UserSubscription
-        //            {
-        //                UserId = user.Id,
-        //                SubscriptionPlan = "Basic",
-        //                StartEpoch = epochTime,
-        //                EndEpoch = SUBSCRIPTION_UNLIMITED
-        //            };
-
-        //            await _userRepository.AddSubscriptionAsync(subscription);
-        //            await _userRepository.CommitAsync();
-
-        //            isPatientNewlyCreated = true;
-
-        //            _logger.LogInformation(
-        //                "New patient created successfully. UserId: {UserId}, HFID: {HFID}, Email: {Email}",
-        //                user.Id, user.HfId, string.IsNullOrWhiteSpace(user.Email) ? "Not provided" : user.Email);
-        //        }
-
-        //        // ==================== COMMON FLOW: CREATE APPOINTMENT AND VISIT ====================
-
-        //        HttpContext.Items["Sent-To-UserId"] = user.Id;
-
-        //        var fullName = $"{user.FirstName} {user.LastName}";
-        //        var phone = user.PhoneNumber ?? "N/A";
-
-        //        // Get or create patient record in clinic system - user.HfId is guaranteed to be non-null here
-        //        var patient = await _clinicVisitRepository.GetOrCreatePatientAsync(user.HfId!, fullName);
-
-        //        // Validate consent forms
-        //        var consentForms = await _clinicVisitRepository.GetConsentFormsByTitlesAsync(dto.ConsentFormTitles);
-        //        if (consentForms.Count != dto.ConsentFormTitles.Count)
-        //        {
-        //            var missing = dto.ConsentFormTitles.Except(consentForms.Select(f => f.Title)).ToList();
-        //            _logger.LogWarning("Invalid consent form titles: {Missing}", string.Join(", ", missing));
-        //            return BadRequest(ApiResponseFactory.Fail($"Invalid consent form titles: {string.Join(", ", missing)}"));
-        //        }
-
-        //        // Create clinic visit record
-        //        var visit = new ClinicVisit
-        //        {
-        //            ClinicPatientId = patient.Id,
-        //            ClinicId = clinicId,
-        //            AppointmentDate = appointmentDate.Date,
-        //            AppointmentTime = appointmentTime,
-        //            ConsentFormsSent = consentForms.Select(f => new ClinicVisitConsentForm
-        //            {
-        //                ConsentFormId = f.Id
-        //            }).ToList()
-        //        };
-        //        await _clinicVisitRepository.SaveVisitAsync(visit);
-
-        //        // Create appointment record
-        //        var appointment = new ClinicAppointment
-        //        {
-        //            VisitorUsername = fullName,
-        //            VisitorPhoneNumber = phone,
-        //            AppointmentDate = appointmentDate.Date,
-        //            AppointmentTime = appointmentTime,
-        //            ClinicId = clinicId,
-        //            Status = "Scheduled"
-        //        };
-        //        await _appointmentRepository.SaveAppointmentAsync(appointment);
-
-        //        // Create Google Calendar Event
-        //        var clinic = await _userRepository.GetClinicByIdAsync(clinicId);
-        //        var googleEventId = await _googleCalendarService.CreateAppointmentAsync(
-        //            clinicId,
-        //            fullName,
-        //            clinic?.ClinicName ?? "Clinic",
-        //            appointmentDate.Date,
-        //            appointmentTime,
-        //            phone
-        //        );
-
-        //        if (!string.IsNullOrEmpty(googleEventId))
-        //        {
-        //            appointment.GoogleCalendarEventId = googleEventId;
-        //            await _userRepository.SaveChangesAsync();
-        //            _logger.LogInformation("Google Calendar event created successfully. EventId: {EventId}", googleEventId);
-        //        }
-
-        //        // Commit transaction before sending emails
-        //        await transaction.CommitAsync();
-        //        committed = true;
-
-        //        // ==================== GENERATE CONSENT FORM LINKS ====================
-
-        //        var consentFormLinks = new List<ConsentFormLinkInfo>();
-
-        //        if (visit.ConsentFormsSent.Any())
-        //        {
-        //            var baseUrl = GetBaseUrl();
-
-        //            for (int i = 0; i < visit.ConsentFormsSent.Count; i++)
-        //            {
-        //                var consentFormEntry = visit.ConsentFormsSent.ElementAt(i);
-        //                var consentFormTitle = dto.ConsentFormTitles[i];
-        //                var encodedConsentName = Uri.EscapeDataString(consentFormTitle);
-
-        //                string formUrl = DetermineConsentFormUrl(consentFormTitle);
-        //                var consentFormLink = $"{baseUrl}/{formUrl}?ConsentId={consentFormEntry.Id}&ConsentName={encodedConsentName}&hfid={patient.HFID}";
-
-        //                consentFormLinks.Add(new ConsentFormLinkInfo
-        //                {
-        //                    ConsentFormId = consentFormEntry.Id,
-        //                    ConsentFormName = consentFormTitle,
-        //                    ConsentFormLink = consentFormLink
-        //                });
-        //            }
-
-        //            // ==================== SEND EMAIL NOTIFICATION ====================
-
-        //            // Only send email if email is provided
-        //            if (!string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any())
-        //            {
-        //                try
-        //                {
-        //                    var emailTemplate = _emailTemplateService.GenerateAppointmentConfirmationWithConsentFormsEmailTemplate(
-        //                        user.FirstName!,
-        //                        consentFormLinks,
-        //                        clinic?.ClinicName ?? "Clinic",
-        //                        appointmentDate.ToString("dd-MM-yyyy"),
-        //                        appointmentTime.ToString(@"hh\:mm")
-        //                    );
-
-        //                    await _emailService.SendEmailAsync(
-        //                        user.Email,
-        //                        $"Appointment Confirmation & Consent Forms - {clinic?.ClinicName}",
-        //                        emailTemplate
-        //                    );
-
-        //                    _logger.LogInformation(
-        //                        "Appointment confirmation email sent successfully to {Email} with {Count} consent forms",
-        //                        user.Email, consentFormLinks.Count);
-        //                }
-        //                catch (Exception emailEx)
-        //                {
-        //                    _logger.LogError(emailEx,
-        //                        "Failed to send appointment confirmation email to {Email} for appointment {AppointmentId}",
-        //                        user.Email, appointment.Id);
-        //                    // Don't fail the entire operation if email fails
-        //                }
-        //            }
-        //            else if (string.IsNullOrWhiteSpace(user.Email))
-        //            {
-        //                _logger.LogInformation("Email not provided for patient HFID {HFID}. Skipping email notification.", user.HfId);
-        //            }
-        //        }
-
-        //        // Invalidate cache after successful creation
-        //        _cacheService.InvalidateClinicStatistics(clinicId);
-
-        //        // ==================== BUILD RESPONSE ====================
-
-        //        var consentFormsInfo = consentFormLinks.Any()
-        //            ? $"\n\nConsent Forms to Complete:\n{string.Join("\n", consentFormLinks.Select((link, index) => $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"))}"
-        //            : "";
-
-        //        var appointmentDateFormatted = appointmentDate.ToString("dd-MM-yyyy");
-        //        var appointmentTimeFormatted = appointmentTime.ToString(@"hh\:mm");
-
-        //        var userNotificationMessage = $"{clinic?.ClinicName} has scheduled an appointment for you on {appointmentDateFormatted} at {appointmentTimeFormatted}. Please arrive on time.{consentFormsInfo}";
-
-        //        var response = new
-        //        {
-        //            // Patient Information
-        //            PatientName = patient.PatientName,
-        //            HFID = patient.HFID,
-        //            ProfilePhoto = user.ProfilePhoto,
-        //            IsNewPatient = isPatientNewlyCreated,
-        //            Email = string.IsNullOrWhiteSpace(user.Email) ? "Not provided" : user.Email,
-        //            PhoneNumber = user.PhoneNumber,
-        //            IsEmailVerified = user.IsEmailVerified,
-        //            IsPhoneVerified = user.IsPhoneVerified,
-
-        //            // Appointment Details
-        //            AppointmentDate = appointmentDateFormatted,
-        //            AppointmentTime = appointmentTimeFormatted,
-        //            Treatment = appointment.Treatment,
-        //            AppointmentStatus = appointment.Status,
-        //            ClinicId = clinicId,
-        //            ClinicName = clinic?.ClinicName,
-
-        //            // Consent Forms
-        //            ConsentFormsSent = consentForms.Select(f => f.Title).ToList(),
-        //            ConsentFormLinks = consentFormLinks.Select(link => new
-        //            {
-        //                ConsentFormId = link.ConsentFormId,
-        //                ConsentFormName = link.ConsentFormName,
-        //                ConsentFormLink = link.ConsentFormLink
-        //            }).ToList(),
-
-        //            // Email Status
-        //            EmailSent = !string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any(),
-        //            SentToEmail = string.IsNullOrWhiteSpace(user.Email) ? null : user.Email,
-
-        //            // Notification Context
-        //            NotificationContext = new
-        //            {
-        //                AppointmentId = appointment.Id,
-        //                PatientName = patient.PatientName,
-        //                HFID = patient.HFID,
-        //                PhoneNumber = user.PhoneNumber,
-        //                AppointmentDate = appointmentDateFormatted,
-        //                AppointmentTime = appointmentTimeFormatted,
-        //                Status = "Scheduled",
-        //                ConsentFormsCount = consentFormLinks.Count,
-        //                ConsentFormNames = string.Join(", ", consentFormLinks.Select(f => f.ConsentFormName)),
-        //                ClinicName = clinic?.ClinicName,
-        //                EmailStatus = !string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any()
-        //                    ? "Sent"
-        //                    : string.IsNullOrWhiteSpace(user.Email)
-        //                        ? "No email provided"
-        //                        : "No forms to send",
-        //                IsNewPatient = isPatientNewlyCreated
-        //            },
-
-        //            NotificationMessage = $"Appointment scheduled for {patient.PatientName} on {appointmentDateFormatted} at {appointmentTimeFormatted}." +
-        //                                (consentFormLinks.Any() ? $" {consentFormLinks.Count} consent form(s) sent." : ""),
-        //            UserNotificationMessage = userNotificationMessage
-        //        };
-
-        //        _logger.LogInformation(
-        //            "Follow-up appointment created successfully. HFID: {HFID}, ClinicId: {ClinicId}, IsNewPatient: {IsNewPatient}, ConsentFormsCount: {Count}",
-        //            user.HfId, clinicId, isPatientNewlyCreated, consentFormLinks.Count);
-
-        //        var successMessage = isPatientNewlyCreated
-        //            ? "Patient registered and appointment created successfully."
-        //            : "Appointment created successfully.";
-
-        //        return Ok(ApiResponseFactory.Success(response, successMessage));
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        _logger.LogError(ex, "Error while creating follow-up appointment for ClinicId {ClinicId}", clinicId);
-        //        return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while processing the appointment."));
-        //    }
-        //    finally
-        //    {
-        //        if (!committed && transaction.GetDbTransaction().Connection != null)
-        //        {
-        //            await transaction.RollbackAsync();
-        //            _logger.LogWarning("Transaction rolled back for ClinicId {ClinicId}", clinicId);
-        //        }
-        //    }
-        //}
-
-
-
-        // Add new patient API
-        // Updated Add new patient API with enhanced email service
-        /// Creates a follow-up appointment. Supports both existing patients (via HFID) 
-        /// and new patient registration (via patient details)
-        [HttpPost("clinics/{clinicId}/follow-up")]
-        [Authorize]
-        public async Task<IActionResult> CreateFollowUpAppointment(
-            [FromBody] FollowUpAppointmentDto dto,
-            [FromRoute] int clinicId)
-        {
-            HttpContext.Items["Log-Category"] = "Clinic Appointment";
-
-            // Basic model validation
-            if (!ModelState.IsValid)
-            {
-                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
-                _logger.LogWarning("Validation failed: {@Errors}", errors);
-                return BadRequest(ApiResponseFactory.Fail(errors));
-            }
-
-            // Custom validation - either HFID OR new patient details must be provided
-            var isExistingPatient = !string.IsNullOrWhiteSpace(dto.HFID);
-            var isNewPatient = !isExistingPatient;
-
-            if (isNewPatient)
-            {
-                var validationErrors = new List<string>();
-
-                if (string.IsNullOrWhiteSpace(dto.FirstName))
-                    validationErrors.Add("First name is required when HFID is not provided.");
-
-                if (string.IsNullOrWhiteSpace(dto.LastName))
-                    validationErrors.Add("Last name is required when HFID is not provided.");
-
-                
-				if (string.IsNullOrWhiteSpace(dto.DOB))
-				{
-					validationErrors.Add("Date of birth is required when HFID is not provided.");
-				}
+		// Add new patient API
+		// Updated Add new patient API with enhanced email service
+		/// Creates a follow-up appointment. Supports both existing patients (via HFID) 
+		/// and new patient registration (via patient details)
+		//[HttpPost("clinics/{clinicId}/follow-up")]
+		//[Authorize]
+		//public async Task<IActionResult> CreateFollowUpAppointment(
+		// [FromBody] FollowUpAppointmentDto dto,
+		// [FromRoute] int clinicId)
+		//{
+		//    HttpContext.Items["Log-Category"] = "Clinic Appointment";
+
+		//    // Basic model validation
+		//    if (!ModelState.IsValid)
+		//    {
+		//        var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+		//        _logger.LogWarning("Validation failed: {@Errors}", errors);
+		//        return BadRequest(ApiResponseFactory.Fail(errors));
+		//    }
+
+		//    // Custom validation - either HFID OR new patient details must be provided
+		//    var isExistingPatient = !string.IsNullOrWhiteSpace(dto.HFID);
+		//    var isNewPatient = !isExistingPatient;
+
+		//    if (isNewPatient)
+		//    {
+		//        var validationErrors = new List<string>();
+
+		//        if (string.IsNullOrWhiteSpace(dto.FirstName))
+		//            validationErrors.Add("First name is required when HFID is not provided.");
+
+		//        if (string.IsNullOrWhiteSpace(dto.LastName))
+		//            validationErrors.Add("Last name is required when HFID is not provided.");
+
+		//        if (string.IsNullOrWhiteSpace(dto.DOB))
+		//            validationErrors.Add("Date of birth is required when HFID is not provided.");
+
+		//        if (string.IsNullOrWhiteSpace(dto.PhoneNumber))
+		//            validationErrors.Add("Phone number is required when HFID is not provided.");
+
+		//        if (string.IsNullOrWhiteSpace(dto.CountryCode))
+		//            validationErrors.Add("Country code is required when HFID is not provided.");
+
+		//        if (validationErrors.Any())
+		//        {
+		//            _logger.LogWarning("New patient validation failed: {@Errors}", validationErrors);
+		//            return BadRequest(ApiResponseFactory.Fail(validationErrors));
+		//        }
+		//    }
+
+		//    // Validate appointment date format
+		//    if (!DateTime.TryParseExact(dto.AppointmentDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var appointmentDate))
+		//    {
+		//        _logger.LogWarning("Invalid appointment date format: {Date}", dto.AppointmentDate);
+		//        return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentDate format. Expected dd-MM-yyyy."));
+		//    }
+
+		//    // Validate appointment time format
+		//    if (!TimeSpan.TryParse(dto.AppointmentTime, out var appointmentTime))
+		//    {
+		//        _logger.LogWarning("Invalid appointment time format: {Time}", dto.AppointmentTime);
+		//        return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentTime format. Expected HH:mm."));
+		//    }
+
+		//    // Begin atomic transaction
+		//    await using var transaction = await _userRepository.BeginTransactionAsync();
+		//    var committed = false;
+
+		//    try
+		//    {
+		//        // Check clinic authorization
+		//        bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+		//        if (!isAuthorized)
+		//        {
+		//            _logger.LogWarning("Unauthorized appointment creation attempt for Clinic ID {ClinicId}", clinicId);
+		//            return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can create appointments."));
+		//        }
+
+		//        // Verify clinic exists
+		//        var clinicExists = await _userRepository.ExistsAsync(clinicId);
+		//        if (!clinicExists)
+		//        {
+		//            _logger.LogWarning("Clinic ID {ClinicId} does not exist", clinicId);
+		//            return BadRequest(ApiResponseFactory.Fail("Invalid Clinic ID."));
+		//        }
+
+		//        User? user;
+		//        bool isPatientNewlyCreated = false;
+
+		//        // ==================== FLOW 1: EXISTING PATIENT WITH HFID ====================
+		//        if (isExistingPatient)
+		//        {
+		//            _logger.LogInformation("Processing existing patient with HFID: {HFID}", dto.HFID);
+
+		//            // Use null-forgiving operator after validation
+		//            // Check if patient already has a visit in this clinic
+		//            bool hasVisit = await _clinicVisitRepository.HasVisitInClinicAsync(dto.HFID!, clinicId);
+		//            if (hasVisit)
+		//            {
+		//                _logger.LogWarning("Patient with HFID {HFID} already has a visit in Clinic ID {ClinicId}", dto.HFID, clinicId);
+		//                return BadRequest(ApiResponseFactory.Fail("This patient already has a visit in this clinic."));
+		//            }
+
+		//            // Retrieve user by HFID - we know dto.HFID is not null here
+		//            user = await _userRepository.GetUserByHFIDAsync(dto.HFID!);
+		//            if (user == null)
+		//            {
+		//                _logger.LogWarning("No user found for HFID {HFID}", dto.HFID);
+		//                return NotFound(ApiResponseFactory.Fail("No user found for provided HFID."));
+		//            }
+
+		//            if (string.IsNullOrWhiteSpace(user.FirstName))
+		//            {
+		//                _logger.LogWarning("User found but FirstName is missing for HFID {HFID}", dto.HFID);
+		//                return BadRequest(ApiResponseFactory.Fail("User data is incomplete. FirstName is required."));
+		//            }
+		//        }
+		//        // ==================== FLOW 2: NEW PATIENT CREATION ====================
+		//        else
+		//        {
+		//            _logger.LogInformation("Processing new patient registration: {FirstName} {LastName}", dto.FirstName, dto.LastName);
+
+		//            // Validate and parse DOB
+		//            if (!DateTime.TryParseExact(dto.DOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsedDob))
+		//            {
+		//                _logger.LogWarning("Invalid DOB format for new patient: {DOB}", dto.DOB);
+		//                return BadRequest(ApiResponseFactory.Fail("Invalid DOB format. Please use dd-MM-yyyy."));
+		//            }
+
+		//            // Calculate and validate age
+		//            var age = DateTime.Today.Year - parsedDob.Year;
+		//            if (parsedDob > DateTime.Today.AddYears(-age)) age--;
+		//            if (age < 0 || age > 150)
+		//            {
+		//                _logger.LogWarning("Unrealistic age calculated from DOB: {Age} years", age);
+		//                return BadRequest(ApiResponseFactory.Fail("Invalid date of birth. Age must be between 0 and 150."));
+		//            }
+
+		//            // Check if phone number already exists - we validated these are not null earlier
+		//            bool phoneExists = await _userRepository.IsPhoneNumberExistsAsync(dto.PhoneNumber!, dto.CountryCode!);
+		//            if (phoneExists)
+		//            {
+		//                _logger.LogWarning("Phone number already registered: {CountryCode} {Phone}", dto.CountryCode, dto.PhoneNumber);
+		//                return BadRequest(ApiResponseFactory.Fail("Phone number is already registered."));
+		//            }
+
+		//            // Check if email already exists (only if email is provided)
+		//            if (!string.IsNullOrWhiteSpace(dto.Email))
+		//            {
+		//                bool emailExists = await _userRepository.IsEmailExistsAsync(dto.Email);
+		//                if (emailExists)
+		//                {
+		//                    _logger.LogWarning("Email already registered: {Email}", dto.Email);
+		//                    return BadRequest(ApiResponseFactory.Fail("Email is already registered."));
+		//                }
+		//            }
+
+		//            // Generate HFID and timestamp - we validated these are not null earlier
+		//            var hfid = _hfidService.GenerateHfid(dto.FirstName!, dto.LastName!, parsedDob);
+		//            var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+		//            // Create new user entity
+		//            user = new User
+		//            {
+		//                FirstName = dto.FirstName!,
+		//                LastName = dto.LastName!,
+		//                DOB = dto.DOB!,
+		//                CountryCallingCode = dto.CountryCode!,
+		//                PhoneNumber = dto.PhoneNumber!,
+		//                Email = string.IsNullOrWhiteSpace(dto.Email) ? string.Empty : dto.Email,
+		//                HfId = hfid,
+		//                UserReference = 0,
+		//                IsEmailVerified = !string.IsNullOrWhiteSpace(dto.Email), // True only if email provided
+		//                IsPhoneVerified = true, // Always true for clinic-created patients
+		//                DeletedBy = 0,
+		//                CreatedEpoch = epochTime,
+		//                Password = null // No password for clinic-created patients
+		//            };
+
+		//            // Save user to database
+		//            await _userRepository.AddUserAsync(user);
+		//            await _userRepository.CommitAsync();
+
+		//            // Assign default "Basic" subscription to the new user
+		//            var subscription = new UserSubscription
+		//            {
+		//                UserId = user.Id,
+		//                SubscriptionPlan = "Basic",
+		//                StartEpoch = epochTime,
+		//                EndEpoch = SUBSCRIPTION_UNLIMITED
+		//            };
+
+		//            await _userRepository.AddSubscriptionAsync(subscription);
+		//            await _userRepository.CommitAsync();
+
+		//            isPatientNewlyCreated = true;
+
+		//            _logger.LogInformation(
+		//                "New patient created successfully. UserId: {UserId}, HFID: {HFID}, Email: {Email}",
+		//                user.Id, user.HfId, string.IsNullOrWhiteSpace(user.Email) ? "Not provided" : user.Email);
+		//        }
+
+		//        // ==================== COMMON FLOW: CREATE APPOINTMENT AND VISIT ====================
+
+		//        HttpContext.Items["Sent-To-UserId"] = user.Id;
+
+		//        var fullName = $"{user.FirstName} {user.LastName}";
+		//        var phone = user.PhoneNumber ?? "N/A";
+
+		//        // Get or create patient record in clinic system - user.HfId is guaranteed to be non-null here
+		//        var patient = await _clinicVisitRepository.GetOrCreatePatientAsync(user.HfId!, fullName);
+
+		//        // Validate consent forms
+		//        var consentForms = await _clinicVisitRepository.GetConsentFormsByTitlesAsync(dto.ConsentFormTitles);
+		//        if (consentForms.Count != dto.ConsentFormTitles.Count)
+		//        {
+		//            var missing = dto.ConsentFormTitles.Except(consentForms.Select(f => f.Title)).ToList();
+		//            _logger.LogWarning("Invalid consent form titles: {Missing}", string.Join(", ", missing));
+		//            return BadRequest(ApiResponseFactory.Fail($"Invalid consent form titles: {string.Join(", ", missing)}"));
+		//        }
+
+		//        // Create clinic visit record
+		//        var visit = new ClinicVisit
+		//        {
+		//            ClinicPatientId = patient.Id,
+		//            ClinicId = clinicId,
+		//            AppointmentDate = appointmentDate.Date,
+		//            AppointmentTime = appointmentTime,
+		//            ConsentFormsSent = consentForms.Select(f => new ClinicVisitConsentForm
+		//            {
+		//                ConsentFormId = f.Id
+		//            }).ToList()
+		//        };
+		//        await _clinicVisitRepository.SaveVisitAsync(visit);
+
+		//        // Create appointment record
+		//        var appointment = new ClinicAppointment
+		//        {
+		//            VisitorUsername = fullName,
+		//            VisitorPhoneNumber = phone,
+		//            AppointmentDate = appointmentDate.Date,
+		//            AppointmentTime = appointmentTime,
+		//            ClinicId = clinicId,
+		//            Status = "Scheduled"
+		//        };
+		//        await _appointmentRepository.SaveAppointmentAsync(appointment);
+
+		//        // Create Google Calendar Event
+		//        var clinic = await _userRepository.GetClinicByIdAsync(clinicId);
+		//        var googleEventId = await _googleCalendarService.CreateAppointmentAsync(
+		//            clinicId,
+		//            fullName,
+		//            clinic?.ClinicName ?? "Clinic",
+		//            appointmentDate.Date,
+		//            appointmentTime,
+		//            phone
+		//        );
+
+		//        if (!string.IsNullOrEmpty(googleEventId))
+		//        {
+		//            appointment.GoogleCalendarEventId = googleEventId;
+		//            await _userRepository.SaveChangesAsync();
+		//            _logger.LogInformation("Google Calendar event created successfully. EventId: {EventId}", googleEventId);
+		//        }
+
+		//        // Commit transaction before sending emails
+		//        await transaction.CommitAsync();
+		//        committed = true;
+
+		//        // ==================== GENERATE CONSENT FORM LINKS ====================
+
+		//        var consentFormLinks = new List<ConsentFormLinkInfo>();
+
+		//        if (visit.ConsentFormsSent.Any())
+		//        {
+		//            var baseUrl = GetBaseUrl();
+
+		//            for (int i = 0; i < visit.ConsentFormsSent.Count; i++)
+		//            {
+		//                var consentFormEntry = visit.ConsentFormsSent.ElementAt(i);
+		//                var consentFormTitle = dto.ConsentFormTitles[i];
+		//                var encodedConsentName = Uri.EscapeDataString(consentFormTitle);
+
+		//                string formUrl = DetermineConsentFormUrl(consentFormTitle);
+		//                var consentFormLink = $"{baseUrl}/{formUrl}?ConsentId={consentFormEntry.Id}&ConsentName={encodedConsentName}&hfid={patient.HFID}";
+
+		//                consentFormLinks.Add(new ConsentFormLinkInfo
+		//                {
+		//                    ConsentFormId = consentFormEntry.Id,
+		//                    ConsentFormName = consentFormTitle,
+		//                    ConsentFormLink = consentFormLink
+		//                });
+		//            }
+
+		//            // ==================== SEND EMAIL NOTIFICATION ====================
+
+		//            // Only send email if email is provided
+		//            if (!string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any())
+		//            {
+		//                try
+		//                {
+		//                    var emailTemplate = _emailTemplateService.GenerateAppointmentConfirmationWithConsentFormsEmailTemplate(
+		//                        user.FirstName!,
+		//                        consentFormLinks,
+		//                        clinic?.ClinicName ?? "Clinic",
+		//                        appointmentDate.ToString("dd-MM-yyyy"),
+		//                        appointmentTime.ToString(@"hh\:mm")
+		//                    );
+
+		//                    await _emailService.SendEmailAsync(
+		//                        user.Email,
+		//                        $"Appointment Confirmation & Consent Forms - {clinic?.ClinicName}",
+		//                        emailTemplate
+		//                    );
+
+		//                    _logger.LogInformation(
+		//                        "Appointment confirmation email sent successfully to {Email} with {Count} consent forms",
+		//                        user.Email, consentFormLinks.Count);
+		//                }
+		//                catch (Exception emailEx)
+		//                {
+		//                    _logger.LogError(emailEx,
+		//                        "Failed to send appointment confirmation email to {Email} for appointment {AppointmentId}",
+		//                        user.Email, appointment.Id);
+		//                    // Don't fail the entire operation if email fails
+		//                }
+		//            }
+		//            else if (string.IsNullOrWhiteSpace(user.Email))
+		//            {
+		//                _logger.LogInformation("Email not provided for patient HFID {HFID}. Skipping email notification.", user.HfId);
+		//            }
+		//        }
+
+		//        // Invalidate cache after successful creation
+		//        _cacheService.InvalidateClinicStatistics(clinicId);
+
+		//        // ==================== BUILD RESPONSE ====================
+
+		//        var consentFormsInfo = consentFormLinks.Any()
+		//            ? $"\n\nConsent Forms to Complete:\n{string.Join("\n", consentFormLinks.Select((link, index) => $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"))}"
+		//            : "";
+
+		//        var appointmentDateFormatted = appointmentDate.ToString("dd-MM-yyyy");
+		//        var appointmentTimeFormatted = appointmentTime.ToString(@"hh\:mm");
+
+		//        var userNotificationMessage = $"{clinic?.ClinicName} has scheduled an appointment for you on {appointmentDateFormatted} at {appointmentTimeFormatted}. Please arrive on time.{consentFormsInfo}";
+
+		//        var response = new
+		//        {
+		//            // Patient Information
+		//            PatientName = patient.PatientName,
+		//            HFID = patient.HFID,
+		//            ProfilePhoto = user.ProfilePhoto,
+		//            IsNewPatient = isPatientNewlyCreated,
+		//            Email = string.IsNullOrWhiteSpace(user.Email) ? "Not provided" : user.Email,
+		//            PhoneNumber = user.PhoneNumber,
+		//            IsEmailVerified = user.IsEmailVerified,
+		//            IsPhoneVerified = user.IsPhoneVerified,
+
+		//            // Appointment Details
+		//            AppointmentDate = appointmentDateFormatted,
+		//            AppointmentTime = appointmentTimeFormatted,
+		//            Treatment = appointment.Treatment,
+		//            AppointmentStatus = appointment.Status,
+		//            ClinicId = clinicId,
+		//            ClinicName = clinic?.ClinicName,
+
+		//            // Consent Forms
+		//            ConsentFormsSent = consentForms.Select(f => f.Title).ToList(),
+		//            ConsentFormLinks = consentFormLinks.Select(link => new
+		//            {
+		//                ConsentFormId = link.ConsentFormId,
+		//                ConsentFormName = link.ConsentFormName,
+		//                ConsentFormLink = link.ConsentFormLink
+		//            }).ToList(),
+
+		//            // Email Status
+		//            EmailSent = !string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any(),
+		//            SentToEmail = string.IsNullOrWhiteSpace(user.Email) ? null : user.Email,
+
+		//            // Notification Context
+		//            NotificationContext = new
+		//            {
+		//                AppointmentId = appointment.Id,
+		//                PatientName = patient.PatientName,
+		//                HFID = patient.HFID,
+		//                PhoneNumber = user.PhoneNumber,
+		//                AppointmentDate = appointmentDateFormatted,
+		//                AppointmentTime = appointmentTimeFormatted,
+		//                Status = "Scheduled",
+		//                ConsentFormsCount = consentFormLinks.Count,
+		//                ConsentFormNames = string.Join(", ", consentFormLinks.Select(f => f.ConsentFormName)),
+		//                ClinicName = clinic?.ClinicName,
+		//                EmailStatus = !string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any()
+		//                    ? "Sent"
+		//                    : string.IsNullOrWhiteSpace(user.Email)
+		//                        ? "No email provided"
+		//                        : "No forms to send",
+		//                IsNewPatient = isPatientNewlyCreated
+		//            },
+
+		//            NotificationMessage = $"Appointment scheduled for {patient.PatientName} on {appointmentDateFormatted} at {appointmentTimeFormatted}." +
+		//                                (consentFormLinks.Any() ? $" {consentFormLinks.Count} consent form(s) sent." : ""),
+		//            UserNotificationMessage = userNotificationMessage
+		//        };
+
+		//        _logger.LogInformation(
+		//            "Follow-up appointment created successfully. HFID: {HFID}, ClinicId: {ClinicId}, IsNewPatient: {IsNewPatient}, ConsentFormsCount: {Count}",
+		//            user.HfId, clinicId, isPatientNewlyCreated, consentFormLinks.Count);
+
+		//        var successMessage = isPatientNewlyCreated
+		//            ? "Patient registered and appointment created successfully."
+		//            : "Appointment created successfully.";
+
+		//        return Ok(ApiResponseFactory.Success(response, successMessage));
+		//    }
+		//    catch (Exception ex)
+		//    {
+		//        _logger.LogError(ex, "Error while creating follow-up appointment for ClinicId {ClinicId}", clinicId);
+		//        return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while processing the appointment."));
+		//    }
+		//    finally
+		//    {
+		//        if (!committed && transaction.GetDbTransaction().Connection != null)
+		//        {
+		//            await transaction.RollbackAsync();
+		//            _logger.LogWarning("Transaction rolled back for ClinicId {ClinicId}", clinicId);
+		//        }
+		//    }
+		//}
+
+
+
+		// Add new patient API
+		// Updated Add new patient API with enhanced email service
+		/// Creates a follow-up appointment. Supports both existing patients (via HFID) 
+		/// and new patient registration (via patient details)
+		[HttpPost("clinics/{clinicId}/follow-up")]
+		[Authorize]
+		public async Task<IActionResult> CreateFollowUpAppointment(
+			[FromBody] FollowUpAppointmentDto dto,
+			[FromRoute] int clinicId)
+		{
+			HttpContext.Items["Log-Category"] = "Clinic Appointment";
+
+			// Basic model validation
+			if (!ModelState.IsValid)
+			{
+				var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+				_logger.LogWarning("Validation failed: {@Errors}", errors);
+				return BadRequest(ApiResponseFactory.Fail(errors));
+			}
+
+			// Custom validation - either HFID OR new patient details must be provided
+			var isExistingPatient = !string.IsNullOrWhiteSpace(dto.HFID);
+			var isNewPatient = !isExistingPatient;
+
+			if (isNewPatient)
+			{
+				var validationErrors = new List<string>();
+
+				if (string.IsNullOrWhiteSpace(dto.FirstName))
+					validationErrors.Add("First name is required when HFID is not provided.");
+
+				if (string.IsNullOrWhiteSpace(dto.LastName))
+					validationErrors.Add("Last name is required when HFID is not provided.");
+
 				if (string.IsNullOrWhiteSpace(dto.DOB))
 				{
 					validationErrors.Add("Date of birth is required when HFID is not provided.");
@@ -1361,482 +1356,820 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						var age = DateTime.Today.Year - parsedDob.Year;
 						if (parsedDob > DateTime.Today.AddYears(-age)) age--;
 
-                        if (age < 18)
-                        {
-                            if (clinicId == 36)
-                                validationErrors.Add("Member must be at least 18 years old.");
-                            else
-                                validationErrors.Add("Patient must be at least 18 years old.");
-                        }
-                    }
+						if (age < 18)
+						{
+							if (clinicId == 36)
+								validationErrors.Add("Member must be at least 18 years old.");
+							else
+								validationErrors.Add("Patient must be at least 18 years old.");
+						}
+					}
 				}
 
 				if (string.IsNullOrWhiteSpace(dto.PhoneNumber))
-                    validationErrors.Add("Phone number is required when HFID is not provided.");
+					validationErrors.Add("Phone number is required when HFID is not provided.");
 
-                if (string.IsNullOrWhiteSpace(dto.CountryCode))
-                    validationErrors.Add("Country code is required when HFID is not provided.");
+				if (string.IsNullOrWhiteSpace(dto.CountryCode))
+					validationErrors.Add("Country code is required when HFID is not provided.");
 
-                if (validationErrors.Any())
-                {
-                    _logger.LogWarning("New patient validation failed: {@Errors}", validationErrors);
-                    return BadRequest(ApiResponseFactory.Fail(validationErrors));
-                }
-            }
+				if (validationErrors.Any())
+				{
+					_logger.LogWarning("New patient validation failed: {@Errors}", validationErrors);
+					return BadRequest(ApiResponseFactory.Fail(validationErrors));
+				}
+			}
 
-            // Validate appointment date format
-            if (!DateTime.TryParseExact(dto.AppointmentDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var appointmentDate))
-            {
-                _logger.LogWarning("Invalid appointment date format: {Date}", dto.AppointmentDate);
-                return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentDate format. Expected dd-MM-yyyy."));
-            }
+			// ✅ VALIDATE CHILD DATA (Only for Clinic ID 36)
+			if (dto.IsAddChild && clinicId == 36)
+			{
+				var childValidationErrors = new List<string>();
 
-            // Validate appointment time format
-            if (!TimeSpan.TryParse(dto.AppointmentTime, out var appointmentTime))
-            {
-                _logger.LogWarning("Invalid appointment time format: {Time}", dto.AppointmentTime);
-                return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentTime format. Expected HH:mm."));
-            }
+				if (string.IsNullOrWhiteSpace(dto.ChildFirstName))
+					childValidationErrors.Add("Child first name is required when adding a child.");
 
-            // Begin atomic transaction
-            await using var transaction = await _userRepository.BeginTransactionAsync();
-            var committed = false;
+				if (string.IsNullOrWhiteSpace(dto.ChildLastName))
+					childValidationErrors.Add("Child last name is required when adding a child.");
 
-            try
-            {
-                // Check clinic authorization
-                bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
-                if (!isAuthorized)
-                {
-                    _logger.LogWarning("Unauthorized appointment creation attempt for Clinic ID {ClinicId}", clinicId);
-                    return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can create appointments."));
-                }
+				if (string.IsNullOrWhiteSpace(dto.ChildDOB))
+				{
+					childValidationErrors.Add("Child date of birth is required when adding a child.");
+				}
+				else
+				{
+					if (!DateTime.TryParseExact(
+							dto.ChildDOB,
+							"dd-MM-yyyy",
+							CultureInfo.InvariantCulture,
+							DateTimeStyles.None,
+							out var parsedChildDob))
+					{
+						childValidationErrors.Add("Invalid child DOB format. Please use dd-MM-yyyy.");
+					}
+					else
+					{
+						var childAge = DateTime.Today.Year - parsedChildDob.Year;
+						if (parsedChildDob > DateTime.Today.AddYears(-childAge)) childAge--;
 
-                // Verify clinic exists
-                var clinicExists = await _userRepository.ExistsAsync(clinicId);
-                if (!clinicExists)
-                {
-                    _logger.LogWarning("Clinic ID {ClinicId} does not exist", clinicId);
-                    return BadRequest(ApiResponseFactory.Fail("Invalid Clinic ID."));
-                }
+						if (childAge >= 18)
+						{
+							childValidationErrors.Add("Child must be under 18 years old.");
+						}
+						else if (childAge < 0)
+						{
+							childValidationErrors.Add("Invalid child date of birth.");
+						}
+					}
+				}
 
-                User? user;
-                bool isPatientNewlyCreated = false;
+				if (string.IsNullOrWhiteSpace(dto.ChildGender))
+				{
+					childValidationErrors.Add("Child gender is required when adding a child.");
+				}
+				else if (!new[] { "Male", "Female", "Other" }.Contains(dto.ChildGender))
+				{
+					childValidationErrors.Add("Child gender must be 'Male', 'Female', or 'Other'.");
+				}
 
-                // ==================== FLOW 1: EXISTING PATIENT WITH HFID ====================
-                if (isExistingPatient)
-                {
-                    _logger.LogInformation("Processing existing patient with HFID: {HFID}", dto.HFID);
+				if (childValidationErrors.Any())
+				{
+					_logger.LogWarning("Child validation failed: {@Errors}", childValidationErrors);
+					return BadRequest(ApiResponseFactory.Fail(childValidationErrors));
+				}
+			}
 
-                    // Use null-forgiving operator after validation
-                    // Check if patient already has a visit in this clinic
-                    bool hasVisit = await _clinicVisitRepository.HasVisitInClinicAsync(dto.HFID!, clinicId);
-                    if (hasVisit)
-                    {
-                        _logger.LogWarning("Patient with HFID {HFID} already has a visit in Clinic ID {ClinicId}", dto.HFID, clinicId);
-                        return BadRequest(ApiResponseFactory.Fail("This patient already has a visit in this clinic."));
-                    }
+			// Validate appointment date format
+			if (!DateTime.TryParseExact(dto.AppointmentDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var appointmentDate))
+			{
+				_logger.LogWarning("Invalid appointment date format: {Date}", dto.AppointmentDate);
+				return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentDate format. Expected dd-MM-yyyy."));
+			}
 
-                    // Retrieve user by HFID - we know dto.HFID is not null here
-                    user = await _userRepository.GetUserByHFIDAsync(dto.HFID!);
-                    if (user == null)
-                    {
-                        _logger.LogWarning("No user found for HFID {HFID}", dto.HFID);
-                        return NotFound(ApiResponseFactory.Fail("No user found for provided HFID."));
-                    }
+			// Validate appointment time format
+			if (!TimeSpan.TryParse(dto.AppointmentTime, out var appointmentTime))
+			{
+				_logger.LogWarning("Invalid appointment time format: {Time}", dto.AppointmentTime);
+				return BadRequest(ApiResponseFactory.Fail("Invalid AppointmentTime format. Expected HH:mm."));
+			}
 
-                    if (string.IsNullOrWhiteSpace(user.FirstName))
-                    {
-                        _logger.LogWarning("User found but FirstName is missing for HFID {HFID}", dto.HFID);
-                        return BadRequest(ApiResponseFactory.Fail("User data is incomplete. FirstName is required."));
-                    }
-                }
-                // ==================== FLOW 2: NEW PATIENT CREATION ====================
-                else
-                {
-                    _logger.LogInformation("Processing new patient registration: {FirstName} {LastName}", dto.FirstName, dto.LastName);
+			// Begin atomic transaction
+			await using var transaction = await _userRepository.BeginTransactionAsync();
+			var committed = false;
 
-                    // Validate and parse DOB
-                    if (!DateTime.TryParseExact(dto.DOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsedDob))
-                    {
-                        _logger.LogWarning("Invalid DOB format for new patient: {DOB}", dto.DOB);
-                        return BadRequest(ApiResponseFactory.Fail("Invalid DOB format. Please use dd-MM-yyyy."));
-                    }
+			try
+			{
+				// Check clinic authorization
+				bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+				if (!isAuthorized)
+				{
+					_logger.LogWarning("Unauthorized appointment creation attempt for Clinic ID {ClinicId}", clinicId);
+					return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can create appointments."));
+				}
 
-                    // Calculate and validate age
-                    var age = DateTime.Today.Year - parsedDob.Year;
-                    if (parsedDob > DateTime.Today.AddYears(-age)) age--;
-                    if (age < 0 || age > 150)
-                    {
-                        _logger.LogWarning("Unrealistic age calculated from DOB: {Age} years", age);
-                        return BadRequest(ApiResponseFactory.Fail("Invalid date of birth. Age must be between 0 and 150."));
-                    }
+				// Verify clinic exists
+				var clinicExists = await _userRepository.ExistsAsync(clinicId);
+				if (!clinicExists)
+				{
+					_logger.LogWarning("Clinic ID {ClinicId} does not exist", clinicId);
+					return BadRequest(ApiResponseFactory.Fail("Invalid Clinic ID."));
+				}
 
-					// In your backend CreateFollowUpAppointment method
+				User? user = null;
+				User? childUser = null;
+				bool isPatientNewlyCreated = false;
+				bool isChildCreated = false;
+				bool isExistingChild = false; // ✅ NEW: Flag for existing child
+
+				// ==================== FLOW 1: EXISTING PATIENT WITH HFID ====================
+				if (isExistingPatient)
+				{
+					_logger.LogInformation("Processing existing patient with HFID: {HFID}", dto.HFID);
+
+					// ✅ MODIFIED: Only check visit for parent if NOT adding child
+					if (!dto.IsAddChild || clinicId != 36)
+					{
+						bool hasVisit = await _clinicVisitRepository.HasVisitInClinicAsync(dto.HFID!, clinicId);
+						if (hasVisit)
+						{
+							_logger.LogWarning("Patient with HFID {HFID} already has a visit in Clinic ID {ClinicId}", dto.HFID, clinicId);
+							return BadRequest(ApiResponseFactory.Fail("This patient already has a visit in this clinic."));
+						}
+					}
+
+					// Retrieve user by HFID
+					user = await _userRepository.GetUserByHFIDAsync(dto.HFID!);
+					if (user == null)
+					{
+						_logger.LogWarning("No user found for HFID {HFID}", dto.HFID);
+						return NotFound(ApiResponseFactory.Fail("No user found for provided HFID."));
+					}
+
+					if (string.IsNullOrWhiteSpace(user.FirstName))
+					{
+						_logger.LogWarning("User found but FirstName is missing for HFID {HFID}", dto.HFID);
+						return BadRequest(ApiResponseFactory.Fail("User data is incomplete. FirstName is required."));
+					}
+
+					// ✅ CREATE OR USE EXISTING CHILD USER (Only for Clinic ID 36 and when IsAddChild is true)
+					if (dto.IsAddChild && clinicId == 36)
+					{
+						_logger.LogInformation("Processing child for parent HFID: {HFID}", user.HfId);
+
+						// Parse child DOB
+						if (!DateTime.TryParseExact(dto.ChildDOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsedChildDob))
+						{
+							_logger.LogWarning("Invalid child DOB format: {DOB}", dto.ChildDOB);
+							return BadRequest(ApiResponseFactory.Fail("Invalid child DOB format. Please use dd-MM-yyyy."));
+						}
+
+						// Generate child HFID
+						var childHfid = _hfidService.GenerateChildHfid(user.HfId!, dto.ChildFirstName!, dto.ChildLastName!, parsedChildDob);
+
+						// ✅ CHECK IF CHILD ALREADY EXISTS
+						var existingChild = await _userRepository.GetUserByHFIDAsync(childHfid);
+						if (existingChild != null)
+						{
+							// ✅ Child already exists - check if already has visit in this clinic
+							bool childHasVisit = await _clinicVisitRepository.HasVisitInClinicAsync(childHfid, clinicId);
+							if (childHasVisit)
+							{
+								_logger.LogWarning(
+									"Child with HFID {ChildHFID} already has a visit in Clinic ID {ClinicId}",
+									childHfid, clinicId);
+								return BadRequest(ApiResponseFactory.Fail(
+									new
+									{
+										Message = "This child already has a visit in this clinic.",
+										ChildHFID = childHfid,
+										ParentHFID = user.HfId,
+										ChildName = $"{existingChild.FirstName} {existingChild.LastName}"
+									}));
+							}
+
+							// ✅ Child exists but no visit in this clinic - use existing child
+							childUser = existingChild;
+							isChildCreated = false;
+							isExistingChild = true;
+
+							_logger.LogInformation(
+								"Using existing child. ChildHFID: {ChildHFID}, ParentHFID: {ParentHFID}",
+								childHfid, user.HfId);
+						}
+						else
+						{
+							// ✅ Child doesn't exist - create new child
+							var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+							// Determine relation based on gender
+							string relation = dto.ChildGender switch
+							{
+								"Male" => "Son",
+								"Female" => "Daughter",
+								_ => "Child"
+							};
+
+							// Create child user entity
+							childUser = new User
+							{
+								FirstName = dto.ChildFirstName!,
+								LastName = dto.ChildLastName!,
+								DOB = dto.ChildDOB!,
+								Gender = dto.ChildGender!,
+								CountryCallingCode = user.CountryCallingCode,
+								PhoneNumber = user.PhoneNumber,
+								Email = user.Email ?? string.Empty,
+								HfId = childHfid,
+								UserReference = user.Id,
+								Relation = relation,
+								IsEmailVerified = user.IsEmailVerified,
+								IsPhoneVerified = user.IsPhoneVerified,
+								DeletedBy = 0,
+								CreatedEpoch = epochTime,
+								Password = null
+							};
+
+							// Save child user to database
+							await _userRepository.AddUserAsync(childUser);
+							await _userRepository.CommitAsync();
+
+							// Assign default "Basic" subscription to child
+							var childSubscription = new UserSubscription
+							{
+								UserId = childUser.Id,
+								SubscriptionPlan = "Basic",
+								StartEpoch = epochTime,
+								EndEpoch = SUBSCRIPTION_UNLIMITED
+							};
+
+							await _userRepository.AddSubscriptionAsync(childSubscription);
+							await _userRepository.CommitAsync();
+
+							isChildCreated = true;
+
+							_logger.LogInformation(
+								"Child user created successfully. UserId: {UserId}, HFID: {HFID}, Parent: {ParentHFID}",
+								childUser.Id, childUser.HfId, user.HfId);
+						}
+					}
+				}
+				// ==================== FLOW 2: NEW PATIENT CREATION ====================
+				else
+				{
+					_logger.LogInformation("Processing new patient registration: {FirstName} {LastName}", dto.FirstName, dto.LastName);
+
+					// Validate and parse DOB
+					if (!DateTime.TryParseExact(dto.DOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsedDob))
+					{
+						_logger.LogWarning("Invalid DOB format for new patient: {DOB}", dto.DOB);
+						return BadRequest(ApiResponseFactory.Fail("Invalid DOB format. Please use dd-MM-yyyy."));
+					}
+
+					// Calculate and validate age
+					var age = DateTime.Today.Year - parsedDob.Year;
+					if (parsedDob > DateTime.Today.AddYears(-age)) age--;
+					if (age < 0 || age > 150)
+					{
+						_logger.LogWarning("Unrealistic age calculated from DOB: {Age} years", age);
+						return BadRequest(ApiResponseFactory.Fail("Invalid date of birth. Age must be between 0 and 150."));
+					}
+
+					// ✅ Check if phone number already exists
 					var existingUserByPhone = await _userRepository.GetUserByPhoneNumberAsync(dto.PhoneNumber!, dto.CountryCode!);
 					if (existingUserByPhone != null)
 					{
-						_logger.LogWarning("Phone number already registered: {CountryCode} {Phone}, HFID: {HFID}",
-							dto.CountryCode, dto.PhoneNumber, existingUserByPhone.HfId);
-						return BadRequest(ApiResponseFactory.Fail(
-							new
-							{
-								Message = "Phone number is already registered.",
-								HFID = existingUserByPhone.HfId,
-								ShouldSwitchToHFID = true
-							}));
+						if (dto.IsAddChild && clinicId == 36)
+						{
+							user = existingUserByPhone; // ✅ Use existing as parent
+							isPatientNewlyCreated = false;
+
+							_logger.LogInformation(
+								"Using existing member by phone. HFID: {HFID}, Phone: {Phone}",
+								existingUserByPhone.HfId, dto.PhoneNumber);
+						}
+						else
+						{
+							_logger.LogWarning("Phone number already registered: {CountryCode} {Phone}, HFID: {HFID}",
+								dto.CountryCode, dto.PhoneNumber, existingUserByPhone.HfId);
+							return BadRequest(ApiResponseFactory.Fail(
+								new
+								{
+									Message = "Phone number is already registered.",
+									HFID = existingUserByPhone.HfId,
+									ShouldSwitchToHFID = true
+								}));
+						}
 					}
 
-					// Check if email already exists (only if email is provided)
-					if (!string.IsNullOrWhiteSpace(dto.Email))
-                    {
-                        bool emailExists = await _userRepository.IsEmailExistsAsync(dto.Email);
-                        if (emailExists)
-                        {
-                            _logger.LogWarning("Email already registered: {Email}", dto.Email);
-                            return BadRequest(ApiResponseFactory.Fail("Email is already registered."));
-                        }
-                    }
+					// ✅ Check if email already exists (only if email is provided and user not already found)
+					if (user == null && !string.IsNullOrWhiteSpace(dto.Email))
+					{
+						var existingUserByEmail = await _userRepository.GetUserByEmailAsync(dto.Email);
+						if (existingUserByEmail != null)
+						{
+							if (dto.IsAddChild && clinicId == 36)
+							{
+								user = existingUserByEmail; // ✅ Use existing as parent
+								isPatientNewlyCreated = false;
 
-                    // Generate HFID and timestamp - we validated these are not null earlier
-                    var hfid = _hfidService.GenerateHfid(dto.FirstName!, dto.LastName!, parsedDob);
-                    var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+								_logger.LogInformation(
+									"Using existing member by email. HFID: {HFID}, Email: {Email}",
+									existingUserByEmail.HfId, dto.Email);
+							}
+							else
+							{
+								_logger.LogWarning("Email already registered: {Email}", dto.Email);
+								return BadRequest(ApiResponseFactory.Fail("Email is already registered."));
+							}
+						}
+					}
 
-                    // Create new user entity
-                    user = new User
-                    {
-                        FirstName = dto.FirstName!,
-                        LastName = dto.LastName!,
-                        DOB = dto.DOB!,
-                        CountryCallingCode = dto.CountryCode!,
-                        PhoneNumber = dto.PhoneNumber!,
-                        Email = string.IsNullOrWhiteSpace(dto.Email) ? string.Empty : dto.Email,
-                        HfId = hfid,
-                        UserReference = 0,
-                        IsEmailVerified = !string.IsNullOrWhiteSpace(dto.Email), // True only if email provided
-                        IsPhoneVerified = true, // Always true for clinic-created patients
-                        DeletedBy = 0,
-                        CreatedEpoch = epochTime,
-                        Password = null // No password for clinic-created patients
-                    };
+					// ✅ CREATE NEW USER ONLY IF NOT FOUND BY PHONE/EMAIL
+					if (user == null)
+					{
+						// Generate HFID and timestamp
+						var hfid = _hfidService.GenerateHfid(dto.FirstName!, dto.LastName!, parsedDob);
+						var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-                    // Save user to database
-                    await _userRepository.AddUserAsync(user);
-                    await _userRepository.CommitAsync();
+						// Create new user entity
+						user = new User
+						{
+							FirstName = dto.FirstName!,
+							LastName = dto.LastName!,
+							DOB = dto.DOB!,
+							CountryCallingCode = dto.CountryCode!,
+							PhoneNumber = dto.PhoneNumber!,
+							Email = string.IsNullOrWhiteSpace(dto.Email) ? string.Empty : dto.Email,
+							HfId = hfid,
+							UserReference = 0,
+							IsEmailVerified = !string.IsNullOrWhiteSpace(dto.Email),
+							IsPhoneVerified = true,
+							DeletedBy = 0,
+							CreatedEpoch = epochTime,
+							Password = null
+						};
 
-                    // Assign default "Basic" subscription to the new user
-                    var subscription = new UserSubscription
-                    {
-                        UserId = user.Id,
-                        SubscriptionPlan = "Basic",
-                        StartEpoch = epochTime,
-                        EndEpoch = SUBSCRIPTION_UNLIMITED
-                    };
+						// Save user to database
+						await _userRepository.AddUserAsync(user);
+						await _userRepository.CommitAsync();
 
-                    await _userRepository.AddSubscriptionAsync(subscription);
-                    await _userRepository.CommitAsync();
+						// Assign default "Basic" subscription
+						var subscription = new UserSubscription
+						{
+							UserId = user.Id,
+							SubscriptionPlan = "Basic",
+							StartEpoch = epochTime,
+							EndEpoch = SUBSCRIPTION_UNLIMITED
+						};
 
-                    isPatientNewlyCreated = true;
+						await _userRepository.AddSubscriptionAsync(subscription);
+						await _userRepository.CommitAsync();
 
-                    _logger.LogInformation(
-                        "New patient created successfully. UserId: {UserId}, HFID: {HFID}, Email: {Email}",
-                        user.Id, user.HfId, string.IsNullOrWhiteSpace(user.Email) ? "Not provided" : user.Email);
-                }
+						isPatientNewlyCreated = true;
 
-                // ==================== COMMON FLOW: CREATE APPOINTMENT AND VISIT ====================
+						_logger.LogInformation(
+							"New patient created successfully. UserId: {UserId}, HFID: {HFID}, Email: {Email}",
+							user.Id, user.HfId, string.IsNullOrWhiteSpace(user.Email) ? "Not provided" : user.Email);
+					}
 
-                HttpContext.Items["Sent-To-UserId"] = user.Id;
+					// ✅ CREATE OR USE EXISTING CHILD USER (Only for Clinic ID 36 and when IsAddChild is true)
+					if (dto.IsAddChild && clinicId == 36)
+					{
+						_logger.LogInformation("Processing child for parent: {HFID}", user.HfId);
 
-                var fullName = $"{user.FirstName} {user.LastName}";
-                var phone = user.PhoneNumber ?? "N/A";
+						// Parse child DOB
+						if (!DateTime.TryParseExact(dto.ChildDOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsedChildDob))
+						{
+							_logger.LogWarning("Invalid child DOB format: {DOB}", dto.ChildDOB);
+							return BadRequest(ApiResponseFactory.Fail("Invalid child DOB format. Please use dd-MM-yyyy."));
+						}
 
-                // Get or create patient record in clinic system - user.HfId is guaranteed to be non-null here
-                var patient = await _clinicVisitRepository.GetOrCreatePatientAsync(user.HfId!, fullName);
+						// Generate child HFID
+						var childHfid = _hfidService.GenerateChildHfid(user.HfId!, dto.ChildFirstName!, dto.ChildLastName!, parsedChildDob);
+						var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+						// ✅ CHECK IF CHILD ALREADY EXISTS
+						var existingChild = await _userRepository.GetUserByHFIDAsync(childHfid);
+						if (existingChild != null)
+						{
+							// ✅ Child already exists - check if already has visit in this clinic
+							bool childHasVisit = await _clinicVisitRepository.HasVisitInClinicAsync(childHfid, clinicId);
+							if (childHasVisit)
+							{
+								_logger.LogWarning(
+									"Child with HFID {ChildHFID} already has a visit in Clinic ID {ClinicId}",
+									childHfid, clinicId);
+								return BadRequest(ApiResponseFactory.Fail(
+									new
+									{
+										Message = "This child already has a visit in this clinic.",
+										ChildHFID = childHfid,
+										ParentHFID = user.HfId,
+										ChildName = $"{existingChild.FirstName} {existingChild.LastName}"
+									}));
+							}
+
+							// ✅ Child exists but no visit in this clinic - use existing child
+							childUser = existingChild;
+							isChildCreated = false;
+							isExistingChild = true;
+
+							_logger.LogInformation(
+								"Using existing child. ChildHFID: {ChildHFID}, ParentHFID: {ParentHFID}",
+								childHfid, user.HfId);
+						}
+						else
+						{
+							// ✅ Child doesn't exist - create new child
+							// Determine relation based on gender
+							string relation = dto.ChildGender switch
+							{
+								"Male" => "Son",
+								"Female" => "Daughter",
+								_ => "Child"
+							};
+
+							// Create child user entity
+							childUser = new User
+							{
+								FirstName = dto.ChildFirstName!,
+								LastName = dto.ChildLastName!,
+								DOB = dto.ChildDOB!,
+								Gender = dto.ChildGender!,
+								CountryCallingCode = user.CountryCallingCode,
+								PhoneNumber = user.PhoneNumber,
+								Email = user.Email ?? string.Empty,
+								HfId = childHfid,
+								UserReference = user.Id,
+								Relation = relation,
+								IsEmailVerified = user.IsEmailVerified,
+								IsPhoneVerified = user.IsPhoneVerified,
+								DeletedBy = 0,
+								CreatedEpoch = epochTime,
+								Password = null
+							};
+
+							// Save child user to database
+							await _userRepository.AddUserAsync(childUser);
+							await _userRepository.CommitAsync();
+
+							// Assign default "Basic" subscription to child
+							var childSubscription = new UserSubscription
+							{
+								UserId = childUser.Id,
+								SubscriptionPlan = "Basic",
+								StartEpoch = epochTime,
+								EndEpoch = SUBSCRIPTION_UNLIMITED
+							};
+
+							await _userRepository.AddSubscriptionAsync(childSubscription);
+							await _userRepository.CommitAsync();
+
+							isChildCreated = true;
+
+							_logger.LogInformation(
+								"Child user created successfully. UserId: {UserId}, HFID: {HFID}, Parent: {ParentHFID}",
+								childUser.Id, childUser.HfId, user.HfId);
+						}
+					}
+				}
+
+				// ==================== COMMON FLOW: CREATE APPOINTMENT AND VISIT ====================
+
+				HttpContext.Items["Sent-To-UserId"] = user.Id;
+
+				var fullName = $"{user.FirstName} {user.LastName}";
+				var phone = user.PhoneNumber ?? "N/A";
+
+				// Get or create patient record in clinic system for PARENT
+				var patient = await _clinicVisitRepository.GetOrCreatePatientAsync(user.HfId!, fullName);
+
+				// ✅ Get or create patient record for CHILD (if child exists - new or existing)
+				ClinicPatient? childPatient = null;
+				if (childUser != null)
+				{
+					var childFullName = $"{childUser.FirstName} {childUser.LastName}";
+					childPatient = await _clinicVisitRepository.GetOrCreatePatientAsync(childUser.HfId!, childFullName);
+
+					_logger.LogInformation(
+						"Child patient record in clinic. HFID: {HFID}, Name: {Name}, IsNewChild: {IsNew}",
+						childUser.HfId, childFullName, isChildCreated);
+				}
+
+				// Validate consent forms (only if provided)
+				var consentForms = new List<ClinicConsentForm>();
+				if (dto.ConsentFormTitles != null && dto.ConsentFormTitles.Any())
+				{
+					consentForms = await _clinicVisitRepository.GetConsentFormsByTitlesAsync(dto.ConsentFormTitles);
+					if (consentForms.Count != dto.ConsentFormTitles.Count)
+					{
+						var missing = dto.ConsentFormTitles.Except(consentForms.Select(f => f.Title)).ToList();
+						_logger.LogWarning("Invalid consent form titles: {Missing}", string.Join(", ", missing));
+						return BadRequest(ApiResponseFactory.Fail($"Invalid consent form titles: {string.Join(", ", missing)}"));
+					}
+				}
+
+				// ✅ MODIFIED: Create clinic visit record based on scenario
+				ClinicVisit visit;
+				string visitForHfid; // Track whose HFID the visit is for
+
+				if (childUser != null && childPatient != null)
+				{
+					// ✅ CHILD EXISTS (new or existing): Create ClinicVisit for CHILD only
+					visit = new ClinicVisit
+					{
+						ClinicPatientId = childPatient.Id, // ✅ Use CHILD patient ID
+						ClinicId = clinicId,
+						AppointmentDate = appointmentDate.Date,
+						AppointmentTime = appointmentTime,
+						ConsentFormsSent = consentForms.Any()
+							? consentForms.Select(f => new ClinicVisitConsentForm
+							{
+								ConsentFormId = f.Id
+							}).ToList()
+							: new List<ClinicVisitConsentForm>()
+					};
+
+					visitForHfid = childUser.HfId!;
+
+					_logger.LogInformation(
+						"ClinicVisit created for CHILD. ChildHFID: {ChildHFID}, ParentHFID: {ParentHFID}, IsNewChild: {IsNew}, IsExistingChild: {IsExisting}",
+						childUser.HfId, user.HfId, isChildCreated, isExistingChild);
+				}
+				else
+				{
+					// ✅ NO CHILD: Create ClinicVisit for MEMBER/PATIENT as normal
+					visit = new ClinicVisit
+					{
+						ClinicPatientId = patient.Id,
+						ClinicId = clinicId,
+						AppointmentDate = appointmentDate.Date,
+						AppointmentTime = appointmentTime,
+						ConsentFormsSent = consentForms.Any()
+							? consentForms.Select(f => new ClinicVisitConsentForm
+							{
+								ConsentFormId = f.Id
+							}).ToList()
+							: new List<ClinicVisitConsentForm>()
+					};
+
+					visitForHfid = user.HfId!;
+
+					_logger.LogInformation("ClinicVisit created for MEMBER. HFID: {HFID}", user.HfId);
+				}
+
+				await _clinicVisitRepository.SaveVisitAsync(visit);
+
+				// Create appointment record
+				var appointment = new ClinicAppointment
+				{
+					VisitorUsername = childUser != null ? $"{childUser.FirstName} {childUser.LastName}" : fullName,
+					VisitorPhoneNumber = phone,
+					AppointmentDate = appointmentDate.Date,
+					AppointmentTime = appointmentTime,
+					ClinicId = clinicId,
+					Status = "Scheduled"
+				};
+				await _appointmentRepository.SaveAppointmentAsync(appointment);
+
+				// Create Google Calendar Event
+				var clinic = await _userRepository.GetClinicByIdAsync(clinicId);
+				var calendarName = childUser != null ? $"{childUser.FirstName} {childUser.LastName}" : fullName;
+				var googleEventId = await _googleCalendarService.CreateAppointmentAsync(
+					clinicId,
+					calendarName,
+					clinic?.ClinicName ?? "Clinic",
+					appointmentDate.Date,
+					appointmentTime,
+					phone
+				);
+
+				if (!string.IsNullOrEmpty(googleEventId))
+				{
+					appointment.GoogleCalendarEventId = googleEventId;
+					await _userRepository.SaveChangesAsync();
+					_logger.LogInformation("Google Calendar event created successfully. EventId: {EventId}", googleEventId);
+				}
+
+				// Commit transaction before sending emails
+				await transaction.CommitAsync();
+				committed = true;
+
+				// ==================== GENERATE CONSENT FORM LINKS ====================
+
+				var consentFormLinks = new List<ConsentFormLinkInfo>();
+
+				if (dto.ConsentFormTitles != null && dto.ConsentFormTitles.Any() && visit.ConsentFormsSent.Any())
+				{
+					var baseUrl = GetBaseUrl();
+
+					for (int i = 0; i < visit.ConsentFormsSent.Count; i++)
+					{
+						var consentFormEntry = visit.ConsentFormsSent.ElementAt(i);
+						var consentFormTitle = dto.ConsentFormTitles[i];
+						var encodedConsentName = Uri.EscapeDataString(consentFormTitle);
+
+						string formUrl = DetermineConsentFormUrl(consentFormTitle);
+						// ✅ Use correct HFID (child or parent)
+						var consentFormLink = $"{baseUrl}/{formUrl}?ConsentId={consentFormEntry.Id}&ConsentName={encodedConsentName}&hfid={visitForHfid}";
+
+						consentFormLinks.Add(new ConsentFormLinkInfo
+						{
+							ConsentFormId = consentFormEntry.Id,
+							ConsentFormName = consentFormTitle,
+							ConsentFormLink = consentFormLink
+						});
+					}
+
+					// ==================== SEND EMAIL NOTIFICATION ====================
+
+					// Only send email if email is provided and clinicId is not 36
+					if (!string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any())
+					{
+						if (clinicId == 36)
+						{
+							_logger.LogInformation(
+								"Email sending blocked for Clinic ID 36. Email notification skipped for {Email}",
+								user.Email);
+						}
+						else
+						{
+							try
+							{
+								var emailTemplate = _emailTemplateService.GenerateAppointmentConfirmationWithConsentFormsEmailTemplate(
+									user.FirstName!,
+									consentFormLinks,
+									clinic?.ClinicName ?? "Clinic",
+									appointmentDate.ToString("dd-MM-yyyy"),
+									appointmentTime.ToString(@"hh\:mm")
+								);
+
+								await _emailService.SendEmailAsync(
+									user.Email,
+									$"Appointment Confirmation & Consent Forms - {clinic?.ClinicName}",
+									emailTemplate
+								);
+
+								_logger.LogInformation(
+									"Appointment confirmation email sent successfully to {Email} with {Count} consent forms",
+									user.Email, consentFormLinks.Count);
+							}
+							catch (Exception emailEx)
+							{
+								_logger.LogError(emailEx,
+									"Failed to send appointment confirmation email to {Email} for appointment {AppointmentId}",
+									user.Email, appointment.Id);
+							}
+						}
+					}
+					else if (string.IsNullOrWhiteSpace(user.Email))
+					{
+						_logger.LogInformation("Email not provided for patient HFID {HFID}. Skipping email notification.", user.HfId);
+					}
+				}
+				else
+				{
+					_logger.LogInformation("No consent forms provided for appointment. Skipping consent form link generation.");
+				}
+
+				// Invalidate cache after successful creation
+				_cacheService.InvalidateClinicStatistics(clinicId);
+
+				// ==================== BUILD RESPONSE ====================
+
+				var consentFormsInfo = consentFormLinks.Any()
+					? $"\n\nConsent Forms to Complete:\n{string.Join("\n", consentFormLinks.Select((link, index) => $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"))}"
+					: "";
+
+				var appointmentDateFormatted = appointmentDate.ToString("dd-MM-yyyy");
+				var appointmentTimeFormatted = appointmentTime.ToString(@"hh\:mm");
+
+				var userNotificationMessage = $"{clinic?.ClinicName} has scheduled an appointment for you on {appointmentDateFormatted} at {appointmentTimeFormatted}. Please arrive on time.{consentFormsInfo}";
+
+				// ✅ BUILD RESPONSE WITH CHILD INFO
+				var response = new
+				{
+					// Patient/Member Information
+					PatientName = patient.PatientName,
+					HFID = patient.HFID,
+					ProfilePhoto = user.ProfilePhoto,
+					IsNewPatient = isPatientNewlyCreated,
+					Email = string.IsNullOrWhiteSpace(user.Email) ? "Not provided" : user.Email,
+					PhoneNumber = user.PhoneNumber,
+					IsEmailVerified = user.IsEmailVerified,
+					IsPhoneVerified = user.IsPhoneVerified,
+
+					// ✅ Child Information (if child exists - new or existing)
+					ChildCreated = isChildCreated,
+					IsExistingChild = isExistingChild,
+					ChildInfo = childUser != null ? new
+					{
+						ChildName = $"{childUser.FirstName} {childUser.LastName}",
+						ChildHFID = childUser.HfId,
+						ChildGender = childUser.Gender,
+						ChildDOB = childUser.DOB,
+						Relation = childUser.Relation,
+						IsNewChild = isChildCreated,
+						IsExistingChild = isExistingChild
+					} : null,
+
+					// ✅ Visit Information
+					VisitCreatedFor = childUser != null ? "Child" : "Member",
+					VisitHFID = visitForHfid,
+
+					// Appointment Details
+					AppointmentDate = appointmentDateFormatted,
+					AppointmentTime = appointmentTimeFormatted,
+					Treatment = appointment.Treatment,
+					AppointmentStatus = appointment.Status,
+					ClinicId = clinicId,
+					ClinicName = clinic?.ClinicName,
+
+					// Consent Forms
+					ConsentFormsSent = consentForms.Select(f => f.Title).ToList(),
+					ConsentFormLinks = consentFormLinks.Select(link => new
+					{
+						ConsentFormId = link.ConsentFormId,
+						ConsentFormName = link.ConsentFormName,
+						ConsentFormLink = link.ConsentFormLink
+					}).ToList(),
+
+					// Email Status
+					EmailSent = !string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any() && clinicId != 36,
+					SentToEmail = string.IsNullOrWhiteSpace(user.Email) ? null : user.Email,
+
+					// Notification Context
+					NotificationContext = new
+					{
+						AppointmentId = appointment.Id,
+						PatientName = childUser != null ? $"{childUser.FirstName} {childUser.LastName}" : patient.PatientName,
+						HFID = visitForHfid,
+						PhoneNumber = user.PhoneNumber,
+						AppointmentDate = appointmentDateFormatted,
+						AppointmentTime = appointmentTimeFormatted,
+						Status = "Scheduled",
+						ConsentFormsCount = consentFormLinks.Count,
+						ConsentFormNames = string.Join(", ", consentFormLinks.Select(f => f.ConsentFormName)),
+						ClinicName = clinic?.ClinicName,
+						EmailStatus = !string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any() && clinicId != 36
+							? "Sent"
+							: string.IsNullOrWhiteSpace(user.Email)
+								? "No email provided"
+								: consentFormLinks.Count == 0
+									? "No consent forms provided"
+									: clinicId == 36
+										? "Email blocked for clinic 36"
+										: "No forms to send",
+						IsNewPatient = isPatientNewlyCreated,
+						ChildCreated = isChildCreated,
+						IsExistingChild = isExistingChild
+					},
+
+					NotificationMessage = $"Appointment scheduled for {(childUser != null ? $"{childUser.FirstName} {childUser.LastName}" : patient.PatientName)} on {appointmentDateFormatted} at {appointmentTimeFormatted}." +
+										(consentFormLinks.Any() ? $" {consentFormLinks.Count} consent form(s) sent." : "") +
+										(isChildCreated ? $" New child account created: {childUser?.HfId}" : "") +
+										(isExistingChild ? $" Existing child used: {childUser?.HfId}" : ""),
+					UserNotificationMessage = userNotificationMessage
+				};
+
+				_logger.LogInformation(
+					"Follow-up appointment created successfully. HFID: {HFID}, ClinicId: {ClinicId}, IsNewPatient: {IsNewPatient}, ChildCreated: {ChildCreated}, IsExistingChild: {IsExistingChild}, VisitFor: {VisitFor}, ConsentFormsCount: {Count}",
+					user.HfId, clinicId, isPatientNewlyCreated, isChildCreated, isExistingChild, visitForHfid, consentFormLinks.Count);
+
+				// ✅ Dynamic success message
+				string successMessage;
+
+				if (clinicId == 36)
+				{
+					successMessage = "Member created";
+				}
+				else
+				{
+					successMessage = "Patient created";
+				}
 
 
-                // Validate consent forms (only if provided)
-                var consentForms = new List<ClinicConsentForm>(); // Initialize with proper type
-                if (dto.ConsentFormTitles != null && dto.ConsentFormTitles.Any())
-                {
-                    consentForms = await _clinicVisitRepository.GetConsentFormsByTitlesAsync(dto.ConsentFormTitles);
-                    if (consentForms.Count != dto.ConsentFormTitles.Count)
-                    {
-                        var missing = dto.ConsentFormTitles.Except(consentForms.Select(f => f.Title)).ToList();
-                        _logger.LogWarning("Invalid consent form titles: {Missing}", string.Join(", ", missing));
-                        return BadRequest(ApiResponseFactory.Fail($"Invalid consent form titles: {string.Join(", ", missing)}"));
-                    }
-                }
 
-                // Create clinic visit record
-                var visit = new ClinicVisit
-                {
-                    ClinicPatientId = patient.Id,
-                    ClinicId = clinicId,
-                    AppointmentDate = appointmentDate.Date,
-                    AppointmentTime = appointmentTime,
-                    ConsentFormsSent = consentForms.Any()
-                        ? consentForms.Select(f => new ClinicVisitConsentForm
-                        {
-                            ConsentFormId = f.Id
-                        }).ToList()
-                        : new List<ClinicVisitConsentForm>()
-                };
-                await _clinicVisitRepository.SaveVisitAsync(visit);
-
-                // Create appointment record
-                var appointment = new ClinicAppointment
-                {
-                    VisitorUsername = fullName,
-                    VisitorPhoneNumber = phone,
-                    AppointmentDate = appointmentDate.Date,
-                    AppointmentTime = appointmentTime,
-                    ClinicId = clinicId,
-                    Status = "Scheduled"
-                };
-                await _appointmentRepository.SaveAppointmentAsync(appointment);
-
-                // Create Google Calendar Event
-                var clinic = await _userRepository.GetClinicByIdAsync(clinicId);
-                var googleEventId = await _googleCalendarService.CreateAppointmentAsync(
-                    clinicId,
-                    fullName,
-                    clinic?.ClinicName ?? "Clinic",
-                    appointmentDate.Date,
-                    appointmentTime,
-                    phone
-                );
-
-                if (!string.IsNullOrEmpty(googleEventId))
-                {
-                    appointment.GoogleCalendarEventId = googleEventId;
-                    await _userRepository.SaveChangesAsync();
-                    _logger.LogInformation("Google Calendar event created successfully. EventId: {EventId}", googleEventId);
-                }
-
-                // Commit transaction before sending emails
-                await transaction.CommitAsync();
-                committed = true;
-
-                // ==================== GENERATE CONSENT FORM LINKS ====================
-
-                var consentFormLinks = new List<ConsentFormLinkInfo>();
-
-                if (dto.ConsentFormTitles != null && dto.ConsentFormTitles.Any() && visit.ConsentFormsSent.Any())
-                {
-                    var baseUrl = GetBaseUrl();
-
-                    for (int i = 0; i < visit.ConsentFormsSent.Count; i++)
-                    {
-                        var consentFormEntry = visit.ConsentFormsSent.ElementAt(i);
-                        var consentFormTitle = dto.ConsentFormTitles[i];
-                        var encodedConsentName = Uri.EscapeDataString(consentFormTitle);
-
-                        string formUrl = DetermineConsentFormUrl(consentFormTitle);
-                        var consentFormLink = $"{baseUrl}/{formUrl}?ConsentId={consentFormEntry.Id}&ConsentName={encodedConsentName}&hfid={patient.HFID}";
-
-                        consentFormLinks.Add(new ConsentFormLinkInfo
-                        {
-                            ConsentFormId = consentFormEntry.Id,
-                            ConsentFormName = consentFormTitle,
-                            ConsentFormLink = consentFormLink
-                        });
-                    }
-
-                    //// ==================== SEND EMAIL NOTIFICATION ====================
-
-                    //// Only send email if email is provided
-                    //if (!string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any())
-                    //{
-                    //    try
-                    //    {
-                    //        var emailTemplate = _emailTemplateService.GenerateAppointmentConfirmationWithConsentFormsEmailTemplate(
-                    //            user.FirstName!,
-                    //            consentFormLinks,
-                    //            clinic?.ClinicName ?? "Clinic",
-                    //            appointmentDate.ToString("dd-MM-yyyy"),
-                    //            appointmentTime.ToString(@"hh\:mm")
-                    //        );
-
-                    //        await _emailService.SendEmailAsync(
-                    //            user.Email,
-                    //            $"Appointment Confirmation & Consent Forms - {clinic?.ClinicName}",
-                    //            emailTemplate
-                    //        );
-
-                    //        _logger.LogInformation(
-                    //            "Appointment confirmation email sent successfully to {Email} with {Count} consent forms",
-                    //            user.Email, consentFormLinks.Count);
-                    //    }
-                    //    catch (Exception emailEx)
-                    //    {
-                    //        _logger.LogError(emailEx,
-                    //            "Failed to send appointment confirmation email to {Email} for appointment {AppointmentId}",
-                    //            user.Email, appointment.Id);
-                    //        // Don't fail the entire operation if email fails
-                    //    }
-                    //}
-                    //else if (string.IsNullOrWhiteSpace(user.Email))
-                    //{
-                    //    _logger.LogInformation("Email not provided for patient HFID {HFID}. Skipping email notification.", user.HfId);
-                    //}
-                    // ==================== SEND EMAIL NOTIFICATION ====================
-
-                    // Only send email if email is provided and clinicId is not 36
-                    if (!string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any())
-                    {
-                        // Block email sending for clinic ID 36
-                        if (clinicId == 36)
-                        {
-                            _logger.LogInformation(
-                                "Email sending blocked for Clinic ID 36. Email notification skipped for {Email}",
-                                user.Email);
-                        }
-                        else
-                        {
-                            try
-                            {
-                                var emailTemplate = _emailTemplateService.GenerateAppointmentConfirmationWithConsentFormsEmailTemplate(
-                                    user.FirstName!,
-                                    consentFormLinks,
-                                    clinic?.ClinicName ?? "Clinic",
-                                    appointmentDate.ToString("dd-MM-yyyy"),
-                                    appointmentTime.ToString(@"hh\:mm")
-                                );
-
-                                await _emailService.SendEmailAsync(
-                                    user.Email,
-                                    $"Appointment Confirmation & Consent Forms - {clinic?.ClinicName}",
-                                    emailTemplate
-                                );
-
-                                _logger.LogInformation(
-                                    "Appointment confirmation email sent successfully to {Email} with {Count} consent forms",
-                                    user.Email, consentFormLinks.Count);
-                            }
-                            catch (Exception emailEx)
-                            {
-                                _logger.LogError(emailEx,
-                                    "Failed to send appointment confirmation email to {Email} for appointment {AppointmentId}",
-                                    user.Email, appointment.Id);
-                                // Don't fail the entire operation if email fails
-                            }
-                        }
-                    }
-                    else if (string.IsNullOrWhiteSpace(user.Email))
-                    {
-                        _logger.LogInformation("Email not provided for patient HFID {HFID}. Skipping email notification.", user.HfId);
-                    }
-                }
-                else
-                {
-                    _logger.LogInformation("No consent forms provided for appointment. Skipping consent form link generation.");
-                }
-
-                // Invalidate cache after successful creation
-                _cacheService.InvalidateClinicStatistics(clinicId);
-
-                // ==================== BUILD RESPONSE ====================
-
-                var consentFormsInfo = consentFormLinks.Any()
-                    ? $"\n\nConsent Forms to Complete:\n{string.Join("\n", consentFormLinks.Select((link, index) => $"{index + 1}. {link.ConsentFormName}: {link.ConsentFormLink}"))}"
-                    : "";
-
-                var appointmentDateFormatted = appointmentDate.ToString("dd-MM-yyyy");
-                var appointmentTimeFormatted = appointmentTime.ToString(@"hh\:mm");
-
-                var userNotificationMessage = $"{clinic?.ClinicName} has scheduled an appointment for you on {appointmentDateFormatted} at {appointmentTimeFormatted}. Please arrive on time.{consentFormsInfo}";
-
-                var response = new
-                {
-                    // Patient Information
-                    PatientName = patient.PatientName,
-                    HFID = patient.HFID,
-                    ProfilePhoto = user.ProfilePhoto,
-                    IsNewPatient = isPatientNewlyCreated,
-                    Email = string.IsNullOrWhiteSpace(user.Email) ? "Not provided" : user.Email,
-                    PhoneNumber = user.PhoneNumber,
-                    IsEmailVerified = user.IsEmailVerified,
-                    IsPhoneVerified = user.IsPhoneVerified,
-
-                    // Appointment Details
-                    AppointmentDate = appointmentDateFormatted,
-                    AppointmentTime = appointmentTimeFormatted,
-                    Treatment = appointment.Treatment,
-                    AppointmentStatus = appointment.Status,
-                    ClinicId = clinicId,
-                    ClinicName = clinic?.ClinicName,
-
-                    // Consent Forms
-                    ConsentFormsSent = consentForms.Select(f => f.Title).ToList(),
-                    ConsentFormLinks = consentFormLinks.Select(link => new
-                    {
-                        ConsentFormId = link.ConsentFormId,
-                        ConsentFormName = link.ConsentFormName,
-                        ConsentFormLink = link.ConsentFormLink
-                    }).ToList(),
-
-                    // Email Status
-                    EmailSent = !string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any(),
-                    SentToEmail = string.IsNullOrWhiteSpace(user.Email) ? null : user.Email,
-
-                    // Notification Context
-                    NotificationContext = new
-                    {
-                        AppointmentId = appointment.Id,
-                        PatientName = patient.PatientName,
-                        HFID = patient.HFID,
-                        PhoneNumber = user.PhoneNumber,
-                        AppointmentDate = appointmentDateFormatted,
-                        AppointmentTime = appointmentTimeFormatted,
-                        Status = "Scheduled",
-                        ConsentFormsCount = consentFormLinks.Count,
-                        ConsentFormNames = string.Join(", ", consentFormLinks.Select(f => f.ConsentFormName)),
-                        ClinicName = clinic?.ClinicName,
-                        EmailStatus = !string.IsNullOrWhiteSpace(user.Email) && consentFormLinks.Any()
-                            ? "Sent"
-                            : string.IsNullOrWhiteSpace(user.Email)
-                                ? "No email provided"
-                                : consentFormLinks.Count == 0
-                                    ? "No consent forms provided"
-                                    : "No forms to send",
-                        IsNewPatient = isPatientNewlyCreated
-                    },
-
-                    NotificationMessage = $"Appointment scheduled for {patient.PatientName} on {appointmentDateFormatted} at {appointmentTimeFormatted}." +
-                                        (consentFormLinks.Any() ? $" {consentFormLinks.Count} consent form(s) sent." : ""),
-                    UserNotificationMessage = userNotificationMessage
-                };
-
-                _logger.LogInformation(
-                    "Follow-up appointment created successfully. HFID: {HFID}, ClinicId: {ClinicId}, IsNewPatient: {IsNewPatient}, ConsentFormsCount: {Count}",
-                    user.HfId, clinicId, isPatientNewlyCreated, consentFormLinks.Count);
-
-                var successMessage = isPatientNewlyCreated
-                    ? "Registration successfully."
-                    : "Appointment created successfully.";
-
-                return Ok(ApiResponseFactory.Success(response, successMessage));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error while creating follow-up appointment for ClinicId {ClinicId}", clinicId);
-                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while processing the appointment."));
-            }
-            finally
-            {
-                if (!committed && transaction.GetDbTransaction().Connection != null)
-                {
-                    await transaction.RollbackAsync();
-                    _logger.LogWarning("Transaction rolled back for ClinicId {ClinicId}", clinicId);
-                }
-            }
-        }
+				return Ok(ApiResponseFactory.Success(response, successMessage));
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error while creating follow-up appointment for ClinicId {ClinicId}", clinicId);
+				return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while processing the appointment."));
+			}
+			finally
+			{
+				if (!committed && transaction.GetDbTransaction().Connection != null)
+				{
+					await transaction.RollbackAsync();
+					_logger.LogWarning("Transaction rolled back for ClinicId {ClinicId}", clinicId);
+				}
+			}
+		}
 
 
 
 
-        // Check existing patient and book follow up appointment
-        [HttpPost("clinics/{clinicId}/appointments/follow-up")]
+		// Check existing patient and book follow up appointment
+		[HttpPost("clinics/{clinicId}/appointments/follow-up")]
         [Authorize]
         public async Task<IActionResult> BookFollowUpAppointmentForExistingPatient(
             [FromBody] FollowUpAppointmentDto dto,

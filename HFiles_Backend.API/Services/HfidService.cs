@@ -73,14 +73,91 @@ namespace HFiles_Backend.API.Services
             // Return the final result
             return hfid;
         }
+		/// <summary>
+		/// Generates a unique HFID for a child user, linked to their parent's HFID.
+		/// The format is: HFCH{DOB_MMddyy}{NamePart}{ParentRef}
+		/// Example: HFCH031015EMM1234 (where 1234 is from parent's HFID)
+		/// This creates a clear parent-child relationship while maintaining uniqueness.
+		/// </summary>
+		/// <param name="parentHfid">Parent's HFID for reference linking</param>
+		/// <param name="childFirstName">Child's first name</param>
+		/// <param name="childLastName">Child's last name</param>
+		/// <param name="childDob">Child's date of birth</param>
+		/// <returns>Generated child HFID string</returns>
+		/// <exception cref="ArgumentException">Thrown when any input is invalid</exception>
+		public string GenerateChildHfid(string parentHfid, string childFirstName, string childLastName, DateTime childDob)
+		{
+			// Log the incoming parameters
+			_logger.LogInformation(
+				"Generating Child HFID for {ChildFirstName} {ChildLastName} with DOB: {ChildDOB}, Parent HFID: {ParentHfid}",
+				childFirstName, childLastName, childDob, parentHfid);
 
-        /// <summary>
-        /// Removes spaces, dots, and other common special characters from a name string.
-        /// Preserves alphabetic characters only.
-        /// </summary>
-        /// <param name="input">The input string to clean</param>
-        /// <returns>Cleaned string with only alphabetic characters</returns>
-        private static string RemoveSpacesAndSpecialChars(string input)
+			// Validate parent HFID
+			if (string.IsNullOrWhiteSpace(parentHfid))
+				throw new ArgumentException("Parent HFID cannot be null or empty");
+
+			// Validate child first name
+			if (string.IsNullOrWhiteSpace(childFirstName))
+				throw new ArgumentException("Child first name cannot be null or empty");
+
+			// Validate child last name
+			if (string.IsNullOrWhiteSpace(childLastName))
+				throw new ArgumentException("Child last name cannot be null or empty");
+
+			// Ensure child DOB is not in the future
+			if (childDob > DateTime.Today)
+				throw new ArgumentException("Child date of birth cannot be in the future");
+
+			// Validate child is actually a child (under 18)
+			var age = DateTime.Today.Year - childDob.Year;
+			if (childDob > DateTime.Today.AddYears(-age)) age--;
+			if (age >= 18)
+				throw new ArgumentException("Child must be under 18 years old");
+
+			// Remove all spaces and special characters from names
+			string cleanChildFirstName = RemoveSpacesAndSpecialChars(childFirstName.Trim());
+			string cleanChildLastName = RemoveSpacesAndSpecialChars(childLastName.Trim());
+
+			// Combine cleaned names
+			string childFullName = cleanChildFirstName + cleanChildLastName;
+
+			// Validate that we have some characters to work with after cleaning
+			if (string.IsNullOrWhiteSpace(childFullName))
+				throw new ArgumentException("Child names must contain at least one valid character");
+
+			// Extract up to 3 characters from uppercase combined name for uniqueness
+			string childNamePart = childFullName.ToUpper().Substring(0, Math.Min(3, childFullName.Length));
+
+			// Format child date of birth as MMddyy string
+			string childDobPart = childDob.ToString("MMddyy");
+
+			// Extract last 4 characters from parent HFID as reference
+			// This creates a link between parent and child HFIDs
+			string parentRef = parentHfid.Length >= 4
+				? parentHfid.Substring(parentHfid.Length - 4)
+				: parentHfid.PadLeft(4, '0');
+
+			// Construct the final child HFID string
+			// Format: HFCH{DOB_MMddyy}{NamePart}{ParentRef}
+			string childHfid = $"HFCH{childDobPart}{childNamePart}{parentRef}";
+
+			// Log the generated child HFID
+			_logger.LogInformation(
+				"Generated Child HFID: {ChildHfid} from cleaned names: {FirstName} + {LastName}, linked to parent: {ParentHfid}",
+				childHfid, cleanChildFirstName, cleanChildLastName, parentHfid);
+
+			// Return the final result
+			return childHfid;
+		}
+
+
+		/// <summary>
+		/// Removes spaces, dots, and other common special characters from a name string.
+		/// Preserves alphabetic characters only.
+		/// </summary>
+		/// <param name="input">The input string to clean</param>
+		/// <returns>Cleaned string with only alphabetic characters</returns>
+		private static string RemoveSpacesAndSpecialChars(string input)
         {
             if (string.IsNullOrWhiteSpace(input))
                 return string.Empty;

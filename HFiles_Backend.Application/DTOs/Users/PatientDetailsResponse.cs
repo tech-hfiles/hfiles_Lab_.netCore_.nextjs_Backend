@@ -15,5 +15,7 @@
         public decimal AmountDue { get; set; } = 0;
         public string? Email { get; set; }
         public string? CountryCallingCode { get; set; }
+        
+        public string? UserReference { get; set; }
     }
 }

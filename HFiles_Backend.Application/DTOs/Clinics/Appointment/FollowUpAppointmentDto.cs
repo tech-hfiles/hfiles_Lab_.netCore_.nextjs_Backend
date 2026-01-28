@@ -46,10 +46,16 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Appointment
         public string? Gender { get; set; }
         public string? Relation { get; set; }
 
-        /// <summary>
-        /// Validates that either HFID is provided OR all new patient fields are provided
-        /// </summary>
-        public bool IsValid(out List<string> errors)
+		public bool IsAddChild { get; set; } = false;
+		public string? ChildFirstName { get; set; }
+		public string? ChildLastName { get; set; }
+		public string? ChildDOB { get; set; }
+		public string? ChildGender { get; set; }
+
+		/// <summary>
+		/// Validates that either HFID is provided OR all new patient fields are provided
+		/// </summary>
+		public bool IsValid(out List<string> errors)
         {
             errors = new List<string>();
 

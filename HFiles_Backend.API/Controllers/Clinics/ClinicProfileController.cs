@@ -188,8 +188,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
                 State = user.State,
                 AmountDue = amountDue,  // NEW: Include amount due from last receipt
                 Email = user.Email,
-                CountryCallingCode = user.CountryCallingCode
-            };
+                CountryCallingCode = user.CountryCallingCode,
+				UserReference = user.UserReference.ToString(),
+			};
 
             _logger.LogInformation("Fetched patient details for HFID {HfId} with AmountDue: {AmountDue}",
                 hfId, amountDue);

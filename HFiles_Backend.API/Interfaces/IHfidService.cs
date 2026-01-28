@@ -14,6 +14,10 @@
         /// <param name="lastName">The user's last name.</param>
         /// <param name="dob">The user's date of birth.</param>
         /// <returns>A unique HFID string formatted from input parameters and timestamp data.</returns>
+        /// 
+        
         string GenerateHfid(string firstName, string lastName, DateTime dob);
-    }
+		string GenerateChildHfid(string parentHfid, string childFirstName, string childLastName, DateTime childDob);
+
+	}
 }

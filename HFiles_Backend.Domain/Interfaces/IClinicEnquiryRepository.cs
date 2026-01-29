@@ -1,4 +1,5 @@
 ﻿using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Enums;
 
 public interface IClinicEnquiryRepository
 {
@@ -16,6 +17,17 @@ public interface IClinicEnquiryRepository
 
 	// Get today's appointments for a clinic
 	Task<List<ClinicEnquiry>> GetTodayAppointmentsAsync(int clinicId, DateTime today);
+	// ✅ NEW - Get filtered and paginated enquiries (optimized)
+	Task<(List<ClinicEnquiry> enquiries, int totalCount)> GetFilteredEnquiriesAsync(
+		int clinicId,
+		List<EnquiryStatus>? status,
+		PaymentStatus? paymentStatus,
+		int? coachId,
+		string? search,
+		DateTime? startDate,
+		DateTime? endDate,
+		int page,
+		int pageSize);
 
 	// Assign a single coach to an enquiry
 	Task AssignCoachAsync(int enquiryId, int coachId);

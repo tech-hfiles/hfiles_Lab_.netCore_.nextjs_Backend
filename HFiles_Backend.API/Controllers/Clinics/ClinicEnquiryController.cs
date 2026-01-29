@@ -45,146 +45,78 @@ public class ClinicEnquiryController : ControllerBase
 	// =====================================================
 	[HttpGet("{clinicId}")]
 	public async Task<IActionResult> GetAll(
-		int clinicId,
-		[FromQuery] int page = 1,
-		[FromQuery] int pageSize = 10,
-		[FromQuery] List<EnquiryStatus>? status = null,  // ✅ Removed Name attribute - accepts both status and status[]
-		[FromQuery] PaymentStatus? paymentStatus = null,
-		[FromQuery] int? coachId = null,
-		[FromQuery] string? search = null,
-		[FromQuery] DateTime? startDate = null,
-		[FromQuery] DateTime? endDate = null
-	)
+	int clinicId,
+	[FromQuery] int page = 1,
+	[FromQuery] int pageSize = 10,
+	[FromQuery] List<EnquiryStatus>? status = null,
+	[FromQuery] PaymentStatus? paymentStatus = null,
+	[FromQuery] int? coachId = null,
+	[FromQuery] string? search = null,
+	[FromQuery] DateTime? startDate = null,
+	[FromQuery] DateTime? endDate = null)
 	{
 		HttpContext.Items["Log-Category"] = "Clinic Enquiry";
+
 		try
 		{
 			bool isAuthorized = await _clinicAuthorizationService
 				.IsClinicAuthorized(clinicId, User);
+
 			if (!isAuthorized)
 			{
 				_logger.LogWarning("Unauthorized enquiry list access for ClinicId {ClinicId}", clinicId);
 				return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view enquiries."));
 			}
+
 			if (page < 1) page = 1;
 			if (pageSize < 1) pageSize = 10;
 
-			// Fetch with coach data
-			var enquiries = await _repo.GetAllAsync(clinicId);
+			// ✅ Get filtered and paginated data from database
+			var (enquiries, totalRecords) = await _repo.GetFilteredEnquiriesAsync(
+				clinicId, status, paymentStatus, coachId, search,
+				startDate, endDate, page, pageSize
+			);
 
-			// Filtering
-			var filteredEnquiries = enquiries
-				.Where(e => e.Status != EnquiryStatus.Member);
-
-			// ✅ Modified: Multiselect status filter
-			if (status != null && status.Any())
+			// ✅ Map to DTO (only 10 records)
+			var pagedData = enquiries.Select(e => new
 			{
-				filteredEnquiries = filteredEnquiries
-					.Where(e => status.Contains(e.Status));
-			}
-
-			if (paymentStatus != null)
-			{
-				filteredEnquiries = filteredEnquiries
-					.Where(e => e.Payment == paymentStatus.Value);
-			}
-
-			// Filter by coach if coachId is provided
-			if (coachId != null)
-			{
-				filteredEnquiries = filteredEnquiries
-					.Where(e => e.AssignedCoaches.Any(ac => ac.CoachId == coachId.Value));
-			}
-
-			// Date range filtering
-			if (startDate.HasValue)
-			{
-				filteredEnquiries = filteredEnquiries
-					.Where(e => e.EpochTime > 0 &&
-						DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).DateTime.Date >= startDate.Value.Date);
-			}
-
-			if (endDate.HasValue)
-			{
-				filteredEnquiries = filteredEnquiries
-					.Where(e => e.EpochTime > 0 &&
-						DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).DateTime.Date <= endDate.Value.Date);
-			}
-
-			// Search by name (FirstName + LastName)
-			if (!string.IsNullOrWhiteSpace(search))
-			{
-				var keyword = search.Trim().ToLower();
-				filteredEnquiries = filteredEnquiries.Where(e =>
-					// First name starts with
-					(!string.IsNullOrWhiteSpace(e.Firstname) &&
-					 e.Firstname.Trim().ToLower().StartsWith(keyword))
-					||
-					// Last name starts with
-					(!string.IsNullOrWhiteSpace(e.Lastname) &&
-					 e.Lastname.Trim().ToLower().StartsWith(keyword))
-					||
-					// Full name starts with (e.g. "mona pa")
-					(!string.IsNullOrWhiteSpace(e.Firstname) &&
-					 !string.IsNullOrWhiteSpace(e.Lastname) &&
-					 ($"{e.Firstname} {e.Lastname}")
-						.Trim()
-						.ToLower()
-						.StartsWith(keyword))
-				);
-			}
-
-			// Count after filter
-			int totalRecords = filteredEnquiries.Count();
-
-			// Pagination
-			var today = DateTime.Today;
-			var pagedData = filteredEnquiries
-				.OrderByDescending(e => e.FollowUpDate.HasValue && e.FollowUpDate.Value.Date == today)
-				.ThenByDescending(e => e.FollowUpDate)
-				.Skip((page - 1) * pageSize)
-				.Take(pageSize)
-				.Select(e => new
-				{
-					e.Id,
-					e.Firstname,
-					e.Lastname,
-					e.Email,
-					e.Contact,
-					e.DateOfBirth,
-					e.Source,
-					e.FollowUpDate,
-					e.FitnessGoal,
-					e.Status,
-					e.Payment,
-					e.AppointmentDate,
-					e.AppointmentTime,
-					e.FirstCall,
-					e.SecondCall,
-					e.Remark,
-					e.EpochTime,
-					PricingPackage = e.PricingPackageId == null
-						? null
-						: new
-						{
-							e.PricingPackage.Id,
-							e.PricingPackage.ProgramCategory,
-							e.PricingPackage.ProgramName,
-							e.PricingPackage.DurationMonths,
-							e.PricingPackage.PriceInr
-						},
-					// Map assigned coaches - following the correct navigation path
-					AssignedCoaches = e.AssignedCoaches.Select(ac => new
+				e.Id,
+				e.Firstname,
+				e.Lastname,
+				e.Email,
+				e.Contact,
+				e.DateOfBirth,
+				e.Source,
+				e.FollowUpDate,
+				e.FitnessGoal,
+				e.Status,
+				e.Payment,
+				e.AppointmentDate,
+				e.AppointmentTime,
+				e.FirstCall,
+				e.SecondCall,
+				e.Remark,
+				e.EpochTime,
+				PricingPackage = e.PricingPackageId == null
+					? null
+					: new
 					{
-						MappingId = ac.Id,
-						ClinicMemberId = ac.CoachId,
-						CoachType = ac.ClinicMember?.Coach,
-						CoachName = $"{ac.ClinicMember?.User?.FirstName} {ac.ClinicMember?.User?.LastName}".Trim(),
-						Email = ac.ClinicMember?.User?.Email,
-						Contact = ac.ClinicMember?.User?.PhoneNumber
-					}).ToList()
-				})
-				.ToList();
+						e.PricingPackage.Id,
+						e.PricingPackage.ProgramCategory,
+						e.PricingPackage.ProgramName,
+						e.PricingPackage.DurationMonths,
+						e.PricingPackage.PriceInr
+					},
+				AssignedCoaches = e.AssignedCoaches.Select(ac => new
+				{
+					MappingId = ac.Id,
+					ClinicMemberId = ac.CoachId,
+					CoachType = ac.ClinicMember?.Coach,
+					CoachName = $"{ac.ClinicMember?.User?.FirstName} {ac.ClinicMember?.User?.LastName}".Trim(),
+					Email = ac.ClinicMember?.User?.Email,
+					Contact = ac.ClinicMember?.User?.PhoneNumber
+				}).ToList()
+			}).ToList();
 
 			var result = new
 			{
@@ -203,7 +135,6 @@ public class ClinicEnquiryController : ControllerBase
 			return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
 		}
 	}
-
 
 	// =====================================================
 	// GET : Enquiry Detail

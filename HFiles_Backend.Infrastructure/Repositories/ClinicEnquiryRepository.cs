@@ -1,4 +1,5 @@
 ﻿using HFiles_Backend.Domain.Entities.Clinics;
+using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -56,6 +57,76 @@ namespace HFiles_Backend.Infrastructure.Repositories
 				.Include(e => e.PricingPackage) // ✅ ADD THIS LINE
 
 				.ToListAsync();
+		}
+
+
+		public async Task<(List<ClinicEnquiry> enquiries, int totalCount)> GetFilteredEnquiriesAsync(
+	int clinicId,
+	List<EnquiryStatus>? status,
+	PaymentStatus? paymentStatus,
+	int? coachId,
+	string? search,
+	DateTime? startDate,
+	DateTime? endDate,
+	int page,
+	int pageSize)
+		{
+			var query = _context.clinicEnquiry
+				.Where(e => e.ClinicId == clinicId && e.Status != EnquiryStatus.Member)
+				.AsQueryable();
+
+			// ✅ Apply filters in SQL (not in memory)
+			if (status != null && status.Any())
+				query = query.Where(e => status.Contains(e.Status));
+
+			if (paymentStatus.HasValue)
+				query = query.Where(e => e.Payment == paymentStatus.Value);
+
+			if (coachId.HasValue)
+				query = query.Where(e => e.AssignedCoaches.Any(ac => ac.CoachId == coachId.Value));
+
+			// Date filters
+			if (startDate.HasValue)
+			{
+				query = query.Where(e => e.EpochTime > 0 &&
+					DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).DateTime.Date >= startDate.Value.Date);
+			}
+
+			if (endDate.HasValue)
+			{
+				query = query.Where(e => e.EpochTime > 0 &&
+					DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).DateTime.Date <= endDate.Value.Date);
+			}
+
+			// Search filter
+			if (!string.IsNullOrWhiteSpace(search))
+			{
+				var keyword = search.Trim().ToLower();
+				query = query.Where(e =>
+					(e.Firstname != null && e.Firstname.ToLower().StartsWith(keyword)) ||
+					(e.Lastname != null && e.Lastname.ToLower().StartsWith(keyword)) ||
+					(e.Firstname != null && e.Lastname != null &&
+					 (e.Firstname + " " + e.Lastname).ToLower().StartsWith(keyword))
+				);
+			}
+
+			// ✅ Get count BEFORE loading data
+			var totalCount = await query.CountAsync();
+
+			// ✅ Load ONLY the records for current page
+			var today = DateTime.Today;
+			var enquiries = await query
+				.Include(e => e.PricingPackage)
+				.Include(e => e.AssignedCoaches)
+					.ThenInclude(ac => ac.ClinicMember)
+						.ThenInclude(cm => cm.User)
+				.OrderByDescending(e => e.FollowUpDate.HasValue && e.FollowUpDate.Value.Date == today)
+				.ThenByDescending(e => e.FollowUpDate)
+				.Skip((page - 1) * pageSize)
+				.Take(pageSize)
+				.ToListAsync();
+
+			return (enquiries, totalCount);
 		}
 
 		// =====================================================

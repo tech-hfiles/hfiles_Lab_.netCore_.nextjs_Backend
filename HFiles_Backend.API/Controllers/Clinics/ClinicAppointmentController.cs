@@ -2402,343 +2402,530 @@ namespace HFiles_Backend.API.Controllers.Clinics
             }
         }
 
+        [HttpGet("clinics/{clinicId}/Arthrose_patients")]
+        [Authorize]
+        public async Task<IActionResult> GetArthrosePatient(
+      [FromRoute] int clinicId,
+      [FromServices] ClinicRepository clinicRepository,
+      [FromServices] ClinicPatientRecordRepository recordRepository,
+      [FromServices] IUserRepository userRepository,
+      [FromQuery] string? startDate,
+      [FromQuery] string? endDate,
+      [FromQuery] string? paymentStatus,
+      [FromQuery(Name = "packageName[]")] List<string>? packageName,
+      [FromQuery(Name = "coachName[]")] List<string>? coachName,
+      [FromQuery] string? searchQuery,
+      [FromQuery(Name = "paymentMethod[]")] List<string>? paymentMethod,
+      [FromQuery] int page = 1,
+      [FromQuery] int pageSize = 6)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Patient Overview";
+
+            if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))
+                return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can view patients."));
+
+            if (page < 1 || pageSize < 1 || pageSize > 50)
+                return BadRequest(ApiResponseFactory.Fail("Invalid pagination parameters."));
+
+            try
+            {
+                // -------------------- DATE FILTER --------------------
+                DateTime? start = null;
+                DateTime? end = null;
+
+                // ✅ FIX: Properly assign sd and ed variables
+                if (!string.IsNullOrEmpty(startDate))
+                {
+                    if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var sd))
+                        return BadRequest(ApiResponseFactory.Fail("Invalid startDate format."));
+                    start = sd;
+                }
+
+                if (!string.IsNullOrEmpty(endDate))
+                {
+                    if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var ed))
+                        return BadRequest(ApiResponseFactory.Fail("Invalid endDate format."));
+                    end = ed;
+                }
+
+                // -------------------- PAYMENT FILTER --------------------
+                PaymentStatusFilter? paymentFilter = paymentStatus?.ToLower() switch
+                {
+                    "paid" => PaymentStatusFilter.Paid,
+                    "unpaid" => PaymentStatusFilter.Unpaid,
+                    "all" => PaymentStatusFilter.All,
+                    null => null,
+                    _ => throw new Exception("Invalid paymentStatus")
+                };
+
+                // -------------------- FETCH BASE DATA --------------------
+                var patients = await clinicRepository.GetClinicPatientsWithVisitsAsync(clinicId);
+                if (!patients.Any())
+                    return Ok(ApiResponseFactory.Success(new { TotalPatients = 0, Patients = new List<PatientDto>() }));
+
+                var patientIds = patients.Select(p => p.Id).ToList();
+                var hfids = patients.Where(p => !string.IsNullOrEmpty(p.HFID)).Select(p => p.HFID!).Distinct().ToList();
+
+                // -------------------- BULK DB CALLS --------------------
+                // ✅ FIX: Added clinicId parameter to all three method calls
+                var amountDueMap = await recordRepository.GetAmountPaidByPatientIdsAsync(patientIds, clinicId);
+                var paymentModeMap = await recordRepository.GetLatestPaymentModesByPatientIdsAsync(patientIds, clinicId);
+                var packageMap = await recordRepository.GetLatestPackagesByPatientIdsAsync(patientIds, clinicId);
+                var coachMap = await recordRepository.GetLatestCoachesByPatientIdsAsync(patientIds, clinicId);
+
+                // ✅ FIX: Use GetUsersByHFIDsAsync method (needs to be implemented in IUserRepository)
+                var users = await userRepository.GetUsersByHFIDsAsync(hfids);
+                var userMap = users.ToDictionary(x => x.HfId, x => x);
+
+                // -------------------- FILTER PATIENTS --------------------
+                var filteredPatients = new List<ClinicPatient>();
+
+                foreach (var patient in patients)
+                {
+                    var lastVisit = patient.Visits.OrderByDescending(v => v.AppointmentDate).FirstOrDefault();
+                    if (lastVisit == null) continue;
+
+                    if ((start.HasValue && lastVisit.AppointmentDate < start) ||
+                        (end.HasValue && lastVisit.AppointmentDate > end))
+                        continue;
+
+                    amountDueMap.TryGetValue(patient.Id, out var amountDue);
+
+                    if (paymentFilter == PaymentStatusFilter.Paid && amountDue >= 1) continue;
+                    if (paymentFilter == PaymentStatusFilter.Unpaid && amountDue < 1) continue;
+
+                    paymentModeMap.TryGetValue(patient.Id, out var paymentMode);
+                    if (paymentMethod?.Any() == true &&
+                        (string.IsNullOrEmpty(paymentMode) ||
+                         !paymentMethod.Any(m => m.Equals(paymentMode, StringComparison.OrdinalIgnoreCase))))
+                        continue;
+
+                    packageMap.TryGetValue(patient.Id, out var pkg);
+                    if (packageName?.Any() == true &&
+                        (string.IsNullOrEmpty(pkg) ||
+                         !packageName.Any(p => pkg.Contains(p, StringComparison.OrdinalIgnoreCase))))
+                        continue;
+
+                    coachMap.TryGetValue(patient.Id, out var coach);
+                    if (coachName?.Any() == true &&
+                        (string.IsNullOrEmpty(coach) ||
+                         !coachName.Any(c => coach.Contains(c, StringComparison.OrdinalIgnoreCase))))
+                        continue;
+
+                    if (!string.IsNullOrWhiteSpace(searchQuery))
+                    {
+                        var q = searchQuery.ToLower();
+                        userMap.TryGetValue(patient.HFID ?? "", out var user);
+
+                        bool match =
+                            patient.PatientName?.ToLower().Contains(q) == true ||
+                            patient.VisitorPhoneNumber?.Contains(q) == true ||
+                            user?.PhoneNumber?.Contains(q) == true;
+
+                        if (!match) continue;
+                    }
+
+                    filteredPatients.Add(patient);
+                }
+
+                // -------------------- PAGINATION --------------------
+                var totalCount = filteredPatients.Count;
+                var pagedPatients = filteredPatients
+                    .OrderByDescending(p => p.Visits.Max(v => v.AppointmentDate))
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+
+                // -------------------- BUILD RESPONSE --------------------
+                var responsePatients = new List<PatientDto>();
+
+                foreach (var patient in pagedPatients)
+                {
+                    var lastVisit = patient.Visits.OrderByDescending(v => v.AppointmentDate).First();
+
+                    amountDueMap.TryGetValue(patient.Id, out var amountDue);
+                    paymentModeMap.TryGetValue(patient.Id, out var paymentMode);
+                    packageMap.TryGetValue(patient.Id, out var pkg);
+                    coachMap.TryGetValue(patient.Id, out var coach);
+                    userMap.TryGetValue(patient.HFID ?? "", out var user);
+
+                    responsePatients.Add(new PatientDto
+                    {
+                        PatientId = patient.Id,
+                        PatientName = patient.PatientName,
+                        HFID = patient.HFID,
+                        ProfilePhoto = user?.ProfilePhoto ?? "Not a registered user",
+                        VisitorPhoneNumber = patient.VisitorPhoneNumber ?? user?.PhoneNumber,
+                        LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
+                        PaymentMethod = paymentMode,
+                        PaymentStatus = amountDue < 1 ? "Paid" : "Pending",
+                        AmountDue = amountDue,
+                        PackageName = pkg ?? "-",
+                        CoachName = coach,
+                        Visits = patient.Visits.Select(v => new VisitDto
+                        {
+                            VisitId = v.Id,
+                            AppointmentDate = v.AppointmentDate.ToString("dd-MM-yyyy"),
+                            AppointmentTime = v.AppointmentTime.ToString(@"hh\:mm"),
+                            ConsentFormsSent = v.ConsentFormsSent.Select(c => c.ConsentForm.Title).ToList()
+                        }).ToList()
+                    });
+                }
+
+                return Ok(ApiResponseFactory.Success(new
+                {
+                    TotalPatients = totalCount,
+                    Page = page,
+                    PageSize = pageSize,
+                    TotalPages = (int)Math.Ceiling((double)totalCount / pageSize),
+                    Patients = responsePatients
+                }));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Clinic patient fetch failed");
+                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred."));
+            }
+        }
 
 
 
 
-		[HttpGet("clinics/{clinicId}/patients")]
-		[Authorize]
-		public async Task<IActionResult> GetClinicPatients(
-[FromRoute] int clinicId,
-[FromServices] ClinicRepository clinicRepository,
-[FromServices] ClinicPatientRecordRepository recordRepository,
-[FromServices] IUserRepository userRepository,
-[FromQuery] string? startDate,
-[FromQuery] string? endDate,
-[FromQuery] string? paymentStatus,
-[FromQuery(Name = "packageName[]")] List<string>? packageName,
-[FromQuery(Name = "coachName[]")] List<string>? coachName,
-[FromQuery] string? searchQuery,  // ✅ ADD THIS
-[FromQuery(Name = "paymentMethod[]")] List<string>? paymentMethod, 
-[FromQuery] int page = 1,
-[FromQuery] int pageSize = 6)
-		{
-			HttpContext.Items["Log-Category"] = "Clinic Patient Overview";
+        [HttpGet("clinics/{clinicId}/High5_patients")]
+        [Authorize]
+        public async Task<IActionResult> GetClinicPatients(
+              [FromRoute] int clinicId,
+              [FromServices] ClinicRepository clinicRepository,
+              [FromServices] ClinicPatientRecordRepository recordRepository,
+              [FromServices] IUserRepository userRepository,
+              [FromQuery] string? startDate,
+              [FromQuery] string? endDate,
+              [FromQuery] string? paymentStatus,
+              [FromQuery(Name = "packageName[]")] List<string>? packageName,
+              [FromQuery(Name = "coachName[]")] List<string>? coachName,
+              [FromQuery] string? searchQuery,  // ✅ ADD THIS
+              [FromQuery(Name = "paymentMethod[]")] List<string>? paymentMethod,
+              [FromQuery] int page = 1,
+              [FromQuery] int pageSize = 6)
+        {
+            HttpContext.Items["Log-Category"] = "Clinic Patient Overview";
 
-			if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))
-			{
-				_logger.LogWarning("Unauthorized patient view attempt for Clinic ID {ClinicId}", clinicId);
-				return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can view patients."));
-			}
+            if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))
+            {
+                _logger.LogWarning("Unauthorized patient view attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("Only main or branch clinics can view patients."));
+            }
 
-			// Validate pagination parameters
-			if (page < 1)
-				return BadRequest(ApiResponseFactory.Fail("Page must be greater than 0."));
-			if (pageSize < 1 || pageSize > 50)
-				return BadRequest(ApiResponseFactory.Fail("PageSize must be between 1 and 50."));
+            // Validate pagination parameters
+            if (page < 1)
+                return BadRequest(ApiResponseFactory.Fail("Page must be greater than 0."));
+            if (pageSize < 1 || pageSize > 50)
+                return BadRequest(ApiResponseFactory.Fail("PageSize must be between 1 and 50."));
 
-			try
-			{
-				DateTime? start = null;
-				DateTime? end = null;
-				PaymentStatusFilter? paymentFilter = null;
+            try
+            {
+                DateTime? start = null;
+                DateTime? end = null;
+                PaymentStatusFilter? paymentFilter = null;
 
-				// Parse date filters
-				if (!string.IsNullOrEmpty(startDate))
-				{
-					if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
-						return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
-					start = parsed;
-				}
+                // Parse date filters
+                if (!string.IsNullOrEmpty(startDate))
+                {
+                    if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
+                        return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
+                    start = parsed;
+                }
 
-				if (!string.IsNullOrEmpty(endDate))
-				{
-					if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
-						return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
-					end = parsed;
-				}
+                if (!string.IsNullOrEmpty(endDate))
+                {
+                    if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsed))
+                        return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
+                    end = parsed;
+                }
 
-				// Parse payment status filter
-				if (!string.IsNullOrEmpty(paymentStatus))
-				{
-					paymentFilter = paymentStatus.ToLowerInvariant() switch
-					{
-						"paid" => PaymentStatusFilter.Paid,
-						"unpaid" => PaymentStatusFilter.Unpaid,
-						"all" => PaymentStatusFilter.All,
-						_ => (PaymentStatusFilter?)null
-					};
-					if (!paymentFilter.HasValue)
-						return BadRequest(ApiResponseFactory.Fail("Invalid paymentStatus. Expected 'paid', 'unpaid', or 'all'."));
-				}
+                // Parse payment status filter
+                if (!string.IsNullOrEmpty(paymentStatus))
+                {
+                    paymentFilter = paymentStatus.ToLowerInvariant() switch
+                    {
+                        "paid" => PaymentStatusFilter.Paid,
+                        "unpaid" => PaymentStatusFilter.Unpaid,
+                        "all" => PaymentStatusFilter.All,
+                        _ => (PaymentStatusFilter?)null
+                    };
+                    if (!paymentFilter.HasValue)
+                        return BadRequest(ApiResponseFactory.Fail("Invalid paymentStatus. Expected 'paid', 'unpaid', or 'all'."));
+                }
 
-				var patients = await clinicRepository.GetClinicPatientsWithVisitsAsync(clinicId);
+                var patients = await clinicRepository.GetClinicPatientsWithVisitsAsync(clinicId);
 
-				// ✅ Pre-filter patients with all filters
-				var allMatchingPatients = new List<ClinicPatient>();
+                // ✅ Pre-filter patients with all filters
+                var allMatchingPatients = new List<ClinicPatient>();
 
-				foreach (var patient in patients)
-				{
-					var lastVisit = patient.Visits.OrderByDescending(v => v.AppointmentDate).FirstOrDefault();
-					if (lastVisit == null) continue;
+                foreach (var patient in patients)
+                {
+                    var lastVisit = patient.Visits.OrderByDescending(v => v.AppointmentDate).FirstOrDefault();
+                    if (lastVisit == null) continue;
 
-					// Date filter
-					if ((start.HasValue && lastVisit.AppointmentDate.Date < start.Value.Date) ||
-						(end.HasValue && lastVisit.AppointmentDate.Date > end.Value.Date))
-						continue;
+                    // Date filter
+                    if ((start.HasValue && lastVisit.AppointmentDate.Date < start.Value.Date) ||
+                        (end.HasValue && lastVisit.AppointmentDate.Date > end.Value.Date))
+                        continue;
 
-					// Payment status filter
-					decimal amountDue = 0;
+                    // Payment status filter
+                    decimal amountDue = 0;
 
-					if (!string.IsNullOrWhiteSpace(patient.HFID))
-					{
-						amountDue = await _clinicPatientRecordRepository
-							.GetTotalAmountDueByHfIdAsync(patient.HFID);
-					}
+                    if (!string.IsNullOrWhiteSpace(patient.HFID))
+                    {
+                        amountDue = await _clinicPatientRecordRepository
+                            .GetTotalAmountDueByHfIdAsync(patient.HFID);
+                    }
 
-					bool paymentMatch = true;
+                    bool paymentMatch = true;
 
-					if (paymentFilter.HasValue)
-					{
-						paymentMatch = paymentFilter.Value switch
-						{
-							PaymentStatusFilter.Paid => amountDue < 1,
-							PaymentStatusFilter.Unpaid => amountDue >= 1,
-							PaymentStatusFilter.All => true,
-							_ => true
-						};
-					}
+                    if (paymentFilter.HasValue)
+                    {
+                        paymentMatch = paymentFilter.Value switch
+                        {
+                            PaymentStatusFilter.Paid => amountDue < 1,
+                            PaymentStatusFilter.Unpaid => amountDue >= 1,
+                            PaymentStatusFilter.All => true,
+                            _ => true
+                        };
+                    }
 
-					if (!paymentMatch) continue;
+                    if (!paymentMatch) continue;
 
-					// ✅ Payment Method filter - UPDATED TO HANDLE ARRAYS
-					if (paymentMethod != null && paymentMethod.Any())
-					{
-						var paymentMode = await recordRepository
-	                .GetLatestPaymentModeFromReceiptAsync(patient.Id);
+                    // ✅ Payment Method filter - UPDATED TO HANDLE ARRAYS
+                    if (paymentMethod != null && paymentMethod.Any())
+                    {
+                        var paymentMode = await recordRepository
+                       .GetLatestPaymentModeFromReceiptAsync(patient.Id);
 
-						bool methodMatch = paymentMethod.Any(method =>
-							!string.IsNullOrEmpty(paymentMode) &&
-							paymentMode.Equals(method, StringComparison.OrdinalIgnoreCase)
-						);
+                        bool methodMatch = paymentMethod.Any(method =>
+                            !string.IsNullOrEmpty(paymentMode) &&
+                            paymentMode.Equals(method, StringComparison.OrdinalIgnoreCase)
+                        );
 
-						if (!methodMatch)
-							continue;
+                        if (!methodMatch)
+                            continue;
 
-					}
+                    }
 
-					// ✅ Package Name filter
-					if (packageName != null && packageName.Any())
-					{
-						var patientPackage = await recordRepository.GetLatestPackageNameByPatientIdAsync(patient.Id);
+                    // ✅ Package Name filter
+                    if (packageName != null && packageName.Any())
+                    {
+                        var patientPackage = await recordRepository.GetLatestPackageNameByPatientIdAsync(patient.Id);
 
-						// Check if patient's package matches ANY of the selected packages
-						bool packageMatch = packageName.Any(pkg =>
-							!string.IsNullOrEmpty(patientPackage) &&
-							patientPackage.Contains(pkg, StringComparison.OrdinalIgnoreCase)
-						);
+                        // Check if patient's package matches ANY of the selected packages
+                        bool packageMatch = packageName.Any(pkg =>
+                            !string.IsNullOrEmpty(patientPackage) &&
+                            patientPackage.Contains(pkg, StringComparison.OrdinalIgnoreCase)
+                        );
 
-						if (!packageMatch)
-							continue;
-					}
+                        if (!packageMatch)
+                            continue;
+                    }
 
-					// ✅ Coach Name filter
-					if (coachName != null && coachName.Any())
-					{
-						var patientCoach = await recordRepository.GetCouchnameLatestPackageNameByPatientIdAsync(patient.Id);
+                    // ✅ Coach Name filter
+                    if (coachName != null && coachName.Any())
+                    {
+                        var patientCoach = await recordRepository.GetCouchnameLatestPackageNameByPatientIdAsync(patient.Id);
 
-						// Check if patient's coach matches ANY of the selected coaches
-						bool coachMatch = coachName.Any(coach =>
-							!string.IsNullOrEmpty(patientCoach) &&
-							patientCoach.Contains(coach, StringComparison.OrdinalIgnoreCase)
-						);
+                        // Check if patient's coach matches ANY of the selected coaches
+                        bool coachMatch = coachName.Any(coach =>
+                            !string.IsNullOrEmpty(patientCoach) &&
+                            patientCoach.Contains(coach, StringComparison.OrdinalIgnoreCase)
+                        );
 
-						if (!coachMatch)
-							continue;
-					}
-					// ✅ NEW: Search Query filter (Name and Phone Number)
-					if (!string.IsNullOrWhiteSpace(searchQuery))
-					{
-						var query = searchQuery.Trim().ToLowerInvariant();
-						bool searchMatch = false;
+                        if (!coachMatch)
+                            continue;
+                    }
+                    // ✅ NEW: Search Query filter (Name and Phone Number)
+                    if (!string.IsNullOrWhiteSpace(searchQuery))
+                    {
+                        var query = searchQuery.Trim().ToLowerInvariant();
+                        bool searchMatch = false;
 
-						// Search in patient name
-						if (!string.IsNullOrEmpty(patient.PatientName) &&
-							patient.PatientName.ToLowerInvariant().Contains(query))
-						{
-							searchMatch = true;
-						}
+                        // Search in patient name
+                        if (!string.IsNullOrEmpty(patient.PatientName) &&
+                            patient.PatientName.ToLowerInvariant().Contains(query))
+                        {
+                            searchMatch = true;
+                        }
 
-						// Search in visitor phone number
-						if (!searchMatch && !string.IsNullOrEmpty(patient.VisitorPhoneNumber) &&
-							patient.VisitorPhoneNumber.Contains(query))
-						{
-							searchMatch = true;
-						}
+                        // Search in visitor phone number
+                        if (!searchMatch && !string.IsNullOrEmpty(patient.VisitorPhoneNumber) &&
+                            patient.VisitorPhoneNumber.Contains(query))
+                        {
+                            searchMatch = true;
+                        }
 
-						// Check user's phone number if HFID exists
-						if (!searchMatch && !string.IsNullOrEmpty(patient.HFID))
-						{
-							var user = await userRepository.GetUserByHFIDAsync(patient.HFID);
-							if (user != null && !string.IsNullOrEmpty(user.PhoneNumber) &&
-								user.PhoneNumber.Contains(query))
-							{
-								searchMatch = true;
-							}
-						}
+                        // Check user's phone number if HFID exists
+                        if (!searchMatch && !string.IsNullOrEmpty(patient.HFID))
+                        {
+                            var user = await userRepository.GetUserByHFIDAsync(patient.HFID);
+                            if (user != null && !string.IsNullOrEmpty(user.PhoneNumber) &&
+                                user.PhoneNumber.Contains(query))
+                            {
+                                searchMatch = true;
+                            }
+                        }
 
-						if (!searchMatch)
-							continue;
-					}
+                        if (!searchMatch)
+                            continue;
+                    }
 
-					allMatchingPatients.Add(patient);
-				}
-
-
-				// Apply pagination
-				int totalCount = allMatchingPatients.Count;
-				var orderedPatients = allMatchingPatients
-					.OrderByDescending(p => p.Visits.Max(v => v.AppointmentDate))
-					.ToList();
-
-				var pagedPatients = orderedPatients
-					.Skip((page - 1) * pageSize)
-					.Take(pageSize)
-					.ToList();
-
-				int totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
-
-				if (!pagedPatients.Any())
-				{
-					var emptyResponse = new
-					{
-						TotalPatients = totalCount,
-						Page = page,
-						PageSize = pageSize,
-						TotalPages = totalPages,
-						Patients = new List<PatientDto>()
-					};
-					return Ok(ApiResponseFactory.Success(emptyResponse, "No patients found matching the criteria."));
-				}
-
-				// Build HFID → ProfilePhoto map
-				var uniqueHfids = pagedPatients
-					.Where(p => !string.IsNullOrWhiteSpace(p.HFID))
-					.Select(p => p.HFID)
-					.Distinct()
-					.ToList();
-
-				var userMap = new Dictionary<string, string>();
-				foreach (var hfid in uniqueHfids)
-				{
-					var user = await userRepository.GetUserByHFIDAsync(hfid);
-					userMap[hfid] = user?.ProfilePhoto ?? "Not a registered user";
-				}
-
-				var filteredPatients = new List<PatientDto>();
-
-				foreach (var patient in pagedPatients)
-				{
-					var lastVisit = patient.Visits.OrderByDescending(v => v.AppointmentDate).FirstOrDefault();
-
-					var treatmentRecords = await recordRepository.GetTreatmentRecordsAsync(clinicId, patient.Id, lastVisit!.Id);
-
-					var treatmentNames = treatmentRecords
-						.SelectMany(r =>
-						{
-							try
-							{
-								var payload = JsonConvert.DeserializeObject<TreatmentRecordPayload>(r.JsonData);
-								return payload?.Treatments.Select(t => t.Name) ?? Enumerable.Empty<string>();
-							}
-							catch
-							{
-								_logger.LogWarning("Failed to parse treatment JSON for PatientId={PatientId}, VisitId={VisitId}", patient.Id, lastVisit.Id);
-								return Enumerable.Empty<string>();
-							}
-						})
-						.Distinct()
-						.ToList();
-
-					var profilePhoto = !string.IsNullOrEmpty(patient.HFID) && userMap.TryGetValue(patient.HFID, out var photo)
-						? photo
-						: "Not a registered user";
-
-					var phoneNumber = patient.VisitorPhoneNumber;
-					if (string.IsNullOrEmpty(phoneNumber) && !string.IsNullOrEmpty(patient.HFID))
-					{
-						var user = await userRepository.GetUserByHFIDAsync(patient.HFID);
-						phoneNumber = user?.PhoneNumber;
-					}
-
-					// Get amount due
-					decimal amountDue = 0;
-					if (!string.IsNullOrWhiteSpace(patient.HFID))
-					{
-						amountDue = await _clinicPatientRecordRepository.GetTotalAmountDueByHfIdAsync(patient.HFID);
-					}
-
-					// Get package and coach
-					var packageNameValue = await recordRepository.GetLatestPackageNameByPatientIdAsync(patient.Id);
-					var coachNameValue = await recordRepository.GetCouchnameLatestPackageNameByPatientIdAsync(patient.Id);
-					var paymentMode = await recordRepository.GetLatestPaymentModeFromReceiptAsync(patient.Id);
-
-					var dto = new PatientDto
-					{
-						PatientId = patient.Id,
-						PatientName = patient.PatientName,
-						HFID = patient.HFID,
-						ProfilePhoto = profilePhoto,
-						VisitorPhoneNumber = phoneNumber,
-						LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
-						PaymentMethod = paymentMode,
-						PaymentStatus = string.IsNullOrEmpty(paymentMode) ? "Pending" : "Paid",
-						TreatmentNames = treatmentNames.Any()
-										? string.Join(", ", treatmentNames)
-										: "-",
-						AmountDue = amountDue,
-						PackageName = packageNameValue ?? "-",
-						CoachName = coachNameValue,
-						Visits = patient.Visits
-							.Select(v => new VisitDto
-							{
-								VisitId = v.Id,
-								AppointmentDate = v.AppointmentDate.ToString("dd-MM-yyyy"),
-								AppointmentTime = v.AppointmentTime.ToString(@"hh\:mm"),
-								ConsentFormsSent = v.ConsentFormsSent.Select(cf => cf.ConsentForm.Title).ToList()
-							})
-							.OrderByDescending(v => v.AppointmentDate)
-							.ToList()
-					};
-
-					filteredPatients.Add(dto);
-				}
-
-				var response = new
-				{
-					TotalPatients = totalCount,
-					Page = page,
-					PageSize = pageSize,
-					TotalPages = totalPages,
-					Patients = filteredPatients
-				};
-
-				return Ok(ApiResponseFactory.Success(response, "Paginated clinic patient data retrieved successfully."));
-			}
-			catch (Exception ex)
-			{
-				_logger.LogError(ex, "Error while fetching patient data for Clinic ID {ClinicId}", clinicId);
-				return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while retrieving patient data."));
-			}
-		}
+                    allMatchingPatients.Add(patient);
+                }
 
 
+                // Apply pagination
+                int totalCount = allMatchingPatients.Count;
+                var orderedPatients = allMatchingPatients
+                    .OrderByDescending(p => p.Visits.Max(v => v.AppointmentDate))
+                    .ToList();
+
+                var pagedPatients = orderedPatients
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+
+                int totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
+
+                if (!pagedPatients.Any())
+                {
+                    var emptyResponse = new
+                    {
+                        TotalPatients = totalCount,
+                        Page = page,
+                        PageSize = pageSize,
+                        TotalPages = totalPages,
+                        Patients = new List<PatientDto>()
+                    };
+                    return Ok(ApiResponseFactory.Success(emptyResponse, "No patients found matching the criteria."));
+                }
+
+                // Build HFID → ProfilePhoto map
+                var uniqueHfids = pagedPatients
+                    .Where(p => !string.IsNullOrWhiteSpace(p.HFID))
+                    .Select(p => p.HFID)
+                    .Distinct()
+                    .ToList();
+
+                var userMap = new Dictionary<string, string>();
+                foreach (var hfid in uniqueHfids)
+                {
+                    var user = await userRepository.GetUserByHFIDAsync(hfid);
+                    userMap[hfid] = user?.ProfilePhoto ?? "Not a registered user";
+                }
+
+                var filteredPatients = new List<PatientDto>();
+
+                foreach (var patient in pagedPatients)
+                {
+                    var lastVisit = patient.Visits.OrderByDescending(v => v.AppointmentDate).FirstOrDefault();
+
+                    var treatmentRecords = await recordRepository.GetTreatmentRecordsAsync(clinicId, patient.Id, lastVisit!.Id);
+
+                    var treatmentNames = treatmentRecords
+                        .SelectMany(r =>
+                        {
+                            try
+                            {
+                                var payload = JsonConvert.DeserializeObject<TreatmentRecordPayload>(r.JsonData);
+                                return payload?.Treatments.Select(t => t.Name) ?? Enumerable.Empty<string>();
+                            }
+                            catch
+                            {
+                                _logger.LogWarning("Failed to parse treatment JSON for PatientId={PatientId}, VisitId={VisitId}", patient.Id, lastVisit.Id);
+                                return Enumerable.Empty<string>();
+                            }
+                        })
+                        .Distinct()
+                        .ToList();
+
+                    var profilePhoto = !string.IsNullOrEmpty(patient.HFID) && userMap.TryGetValue(patient.HFID, out var photo)
+                        ? photo
+                        : "Not a registered user";
+
+                    var phoneNumber = patient.VisitorPhoneNumber;
+                    if (string.IsNullOrEmpty(phoneNumber) && !string.IsNullOrEmpty(patient.HFID))
+                    {
+                        var user = await userRepository.GetUserByHFIDAsync(patient.HFID);
+                        phoneNumber = user?.PhoneNumber;
+                    }
+
+                    // Get amount due
+                    decimal amountDue = 0;
+                    if (!string.IsNullOrWhiteSpace(patient.HFID))
+                    {
+                        amountDue = await _clinicPatientRecordRepository.GetTotalAmountDueByHfIdAsync(patient.HFID);
+                    }
+
+                    // Get package and coach
+                    var packageNameValue = await recordRepository.GetLatestPackageNameByPatientIdAsync(patient.Id);
+                    var coachNameValue = await recordRepository.GetCouchnameLatestPackageNameByPatientIdAsync(patient.Id);
+                    var paymentMode = await recordRepository.GetLatestPaymentModeFromReceiptAsync(patient.Id);
+
+                    var dto = new PatientDto
+                    {
+                        PatientId = patient.Id,
+                        PatientName = patient.PatientName,
+                        HFID = patient.HFID,
+                        ProfilePhoto = profilePhoto,
+                        VisitorPhoneNumber = phoneNumber,
+                        LastVisitDate = lastVisit.AppointmentDate.ToString("dd-MM-yyyy"),
+                        PaymentMethod = paymentMode,
+                        PaymentStatus = string.IsNullOrEmpty(paymentMode) ? "Pending" : "Paid",
+                        TreatmentNames = treatmentNames.Any()
+                                        ? string.Join(", ", treatmentNames)
+                                        : "-",
+                        AmountDue = amountDue,
+                        PackageName = packageNameValue ?? "-",
+                        CoachName = coachNameValue,
+                        Visits = patient.Visits
+                            .Select(v => new VisitDto
+                            {
+                                VisitId = v.Id,
+                                AppointmentDate = v.AppointmentDate.ToString("dd-MM-yyyy"),
+                                AppointmentTime = v.AppointmentTime.ToString(@"hh\:mm"),
+                                ConsentFormsSent = v.ConsentFormsSent.Select(cf => cf.ConsentForm.Title).ToList()
+                            })
+                            .OrderByDescending(v => v.AppointmentDate)
+                            .ToList()
+                    };
+
+                    filteredPatients.Add(dto);
+                }
+
+                var response = new
+                {
+                    TotalPatients = totalCount,
+                    Page = page,
+                    PageSize = pageSize,
+                    TotalPages = totalPages,
+                    Patients = filteredPatients
+                };
+
+                return Ok(ApiResponseFactory.Success(response, "Paginated clinic patient data retrieved successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while fetching patient data for Clinic ID {ClinicId}", clinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error occurred while retrieving patient data."));
+            }
+        }
 
 
 
 
-		// Calendar View
-		[HttpGet("clinic/{clinicId}/calendar-url")]
+
+
+
+
+        // Calendar View
+        [HttpGet("clinic/{clinicId}/calendar-url")]
         [Authorize]
         public async Task<IActionResult> GetClinicCalendarUrl([FromRoute] int clinicId)
         {

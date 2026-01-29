@@ -57,6 +57,24 @@ namespace HFiles_Backend.Domain.Interfaces
     int patientId,
     int clinicVisitId
 );
+
+        Task<Dictionary<int, decimal>> GetAmountPaidByPatientIdsAsync(
+    List<int> patientIds,
+    int clinicId);
+
+        Task<Dictionary<int, string>> GetLatestPaymentModesByPatientIdsAsync(
+            List<int> patientIds,
+            int clinicId);
+
+        Task<Dictionary<int, string>> GetLatestPackagesByPatientIdsAsync(
+            List<int> patientIds,
+            int clinicId);
+
+        Task<Dictionary<int, string>> GetLatestCoachesByPatientIdsAsync(
+            List<int> patientIds,
+            int clinicId);
     }
+
+
 
 }

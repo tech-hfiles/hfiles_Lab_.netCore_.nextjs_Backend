@@ -5,6 +5,7 @@ using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using MySqlConnector;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Buffers.Text;
@@ -1230,6 +1231,234 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     && r.ClinicVisitId == clinicVisitId
                     && (int)r.Type == 5) // ✅ Cast enum to int
                 .ToListAsync();
+        }
+
+        // ---------------- AMOUNT PAID ----------------
+        public async Task<Dictionary<int, decimal>> GetAmountPaidByPatientIdsAsync(
+          List<int> patientIds,
+          int clinicId)
+        {
+            if (patientIds == null || patientIds.Count == 0)
+                return new Dictionary<int, decimal>();
+
+            var result = new Dictionary<int, decimal>();
+            var ids = string.Join(",", patientIds);
+
+            var sql = $@"
+        SELECT 
+            PatientId,
+            IFNULL(
+                SUM(
+                    CAST(
+                        JSON_UNQUOTE(
+                            JSON_EXTRACT(JsonData, '$.receipt.amountPaid')
+                        ) AS DECIMAL(10,2)
+                    )
+                ), 0
+            ) AS AmountPaid
+        FROM clinicpatientrecords
+        WHERE ClinicId = @clinicId
+          AND Type = @type
+          AND PatientId IN ({ids})
+        GROUP BY PatientId";
+
+            using var command = _context.Database.GetDbConnection().CreateCommand();
+            command.CommandText = sql;
+            command.Parameters.Add(new MySqlParameter("@clinicId", clinicId));
+            command.Parameters.Add(new MySqlParameter("@type", (int)RecordType.Receipt));
+
+            await _context.Database.OpenConnectionAsync();
+            try
+            {
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var patientId = reader.GetInt32(0);
+                    var amountPaid = reader.GetDecimal(1);
+                    result[patientId] = amountPaid;
+                }
+            }
+            finally
+            {
+                await _context.Database.CloseConnectionAsync();
+            }
+
+            return result;
+        }
+
+
+        // ---------------- PAYMENT MODE ----------------
+        public async Task<Dictionary<int, string>> GetLatestPaymentModesByPatientIdsAsync(
+       List<int> patientIds,
+       int clinicId)
+        {
+            if (patientIds == null || patientIds.Count == 0)
+                return new Dictionary<int, string>();
+
+            var result = new Dictionary<int, string>();
+            var ids = string.Join(",", patientIds);
+
+            var sql = $@"
+        SELECT 
+            c1.PatientId,
+            JSON_UNQUOTE(
+                JSON_EXTRACT(c1.JsonData, '$.receipt.paymentMode')
+            ) AS PaymentMode
+        FROM clinicpatientrecords c1
+        WHERE c1.ClinicId = @clinicId
+          AND c1.Type = @type
+          AND c1.PatientId IN ({ids})
+          AND c1.EpochTime = (
+              SELECT MAX(c2.EpochTime)
+              FROM clinicpatientrecords c2
+              WHERE c2.PatientId = c1.PatientId
+                AND c2.Type = @type
+          )";
+
+            using var command = _context.Database.GetDbConnection().CreateCommand();
+            command.CommandText = sql;
+            command.Parameters.Add(new MySqlParameter("@clinicId", clinicId));
+            command.Parameters.Add(new MySqlParameter("@type", (int)RecordType.Receipt));
+
+            await _context.Database.OpenConnectionAsync();
+            try
+            {
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var patientId = reader.GetInt32(0);
+                    if (!reader.IsDBNull(1))
+                    {
+                        var paymentMode = reader.GetString(1);
+                        if (!string.IsNullOrEmpty(paymentMode))
+                        {
+                            result[patientId] = paymentMode;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                await _context.Database.CloseConnectionAsync();
+            }
+
+            return result;
+        }
+
+
+        // ---------------- PACKAGE NAME ----------------
+        public async Task<Dictionary<int, string>> GetLatestPackagesByPatientIdsAsync(
+            List<int> patientIds,
+            int clinicId)
+        {
+            if (patientIds == null || patientIds.Count == 0)
+                return new Dictionary<int, string>();
+
+            var result = new Dictionary<int, string>();
+            var ids = string.Join(",", patientIds);
+
+            var sql = $@"
+        SELECT 
+            c1.PatientId,
+            JSON_UNQUOTE(
+                JSON_EXTRACT(c1.JsonData, '$.package.name')
+            ) AS PackageName
+        FROM clinicpatientrecords c1
+        WHERE c1.Type = @type
+          AND c1.PatientId IN ({ids})
+          AND c1.EpochTime = (
+              SELECT MAX(c2.EpochTime)
+              FROM clinicpatientrecords c2
+              WHERE c2.PatientId = c1.PatientId
+                AND c2.Type = @type
+          )";
+
+            using var command = _context.Database.GetDbConnection().CreateCommand();
+            command.CommandText = sql;
+            command.Parameters.Add(new MySqlParameter("@type", (int)RecordType.Treatment));
+
+            await _context.Database.OpenConnectionAsync();
+            try
+            {
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var patientId = reader.GetInt32(0);
+                    if (!reader.IsDBNull(1))
+                    {
+                        var packageName = reader.GetString(1);
+                        if (!string.IsNullOrEmpty(packageName))
+                        {
+                            result[patientId] = packageName;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                await _context.Database.CloseConnectionAsync();
+            }
+
+            return result;
+        }
+
+
+
+
+        // ---------------- COACH NAME (MISSING FIX) ----------------
+        public async Task<Dictionary<int, string>> GetLatestCoachesByPatientIdsAsync(
+            List<int> patientIds,
+            int clinicId)
+        {
+            if (patientIds == null || patientIds.Count == 0)
+                return new Dictionary<int, string>();
+
+            var result = new Dictionary<int, string>();
+            var ids = string.Join(",", patientIds);
+
+            var sql = $@"
+        SELECT 
+            c1.PatientId,
+            JSON_UNQUOTE(
+                JSON_EXTRACT(c1.JsonData, '$.package.coachName')
+            ) AS CoachName
+        FROM clinicpatientrecords c1
+        WHERE c1.Type = @type
+          AND c1.PatientId IN ({ids})
+          AND c1.EpochTime = (
+              SELECT MAX(c2.EpochTime)
+              FROM clinicpatientrecords c2
+              WHERE c2.PatientId = c1.PatientId
+                AND c2.Type = @type
+          )";
+
+            using var command = _context.Database.GetDbConnection().CreateCommand();
+            command.CommandText = sql;
+            command.Parameters.Add(new MySqlParameter("@type", (int)RecordType.Treatment));
+
+            await _context.Database.OpenConnectionAsync();
+            try
+            {
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var patientId = reader.GetInt32(0);
+                    if (!reader.IsDBNull(1))
+                    {
+                        var coachName = reader.GetString(1);
+                        if (!string.IsNullOrEmpty(coachName))
+                        {
+                            result[patientId] = coachName;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                await _context.Database.CloseConnectionAsync();
+            }
+
+            return result;
         }
     }
 }

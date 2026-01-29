@@ -2,11 +2,13 @@
 using HFiles_Backend.Application.DTOs.Clinics.Profile;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Entities.Users;
+using HFiles_Backend.Domain.Enums;
 using HFiles_Backend.Domain.Interfaces;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using MySqlConnector;
 using System.Security.Claims;
 
 
@@ -389,8 +391,6 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 await _context.SaveChangesAsync();
             }
         }
-
-
 
     }
 }

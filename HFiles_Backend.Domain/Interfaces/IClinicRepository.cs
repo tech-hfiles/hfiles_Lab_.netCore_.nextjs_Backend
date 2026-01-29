@@ -54,5 +54,6 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<High5FormImages?> GetHigh5FormImageByIdAsync(int id);
         Task<ClinicPatient?> GetPatientByIdAsync(int patientId);
         Task DeleteHigh5FormImageAsync(int imageId);
+        
     }
 }

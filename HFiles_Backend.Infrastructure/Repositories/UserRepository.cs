@@ -725,5 +725,21 @@ namespace HFiles_Backend.Infrastructure.Repositories
             }
         }
 
+
+        /// <summary>
+        /// Gets users by a list of HFIDs in bulk - optimized for performance
+        /// </summary>
+        public async Task<List<User>> GetUsersByHFIDsAsync(List<string> hfids)
+        {
+            if (hfids == null || !hfids.Any())
+                return new List<User>();
+
+            return await _context.Users
+                .AsNoTracking()
+                .Where(u => hfids.Contains(u.HfId))
+                .ToListAsync();
+        }
+
+
     }
 }

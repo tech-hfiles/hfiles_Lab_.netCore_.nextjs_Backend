@@ -9813,183 +9813,331 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-		/// Upload documents and attach to a receipt (Clinic ID 36 only)
+        /// Upload documents and attach to a receipt (Clinic ID 36 only)
 
-		[HttpPost("clinic/receipt/documents/upload")]
-		[Authorize]
-		public async Task<IActionResult> UploadReceiptDocuments([FromForm] ReceiptDocumentUploadRequest request)
-		{
-			HttpContext.Items["Log-Category"] = "Receipt Document Upload";
+        [HttpPost("clinic/receipt/documents/upload")]
+        [Authorize]
+        public async Task<IActionResult> UploadReceiptDocuments([FromForm] ReceiptDocumentUploadRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Receipt Document Upload";
 
-			// Validate clinic ID is 36 (High5 Performance)
-			//if (request.ClinicId != 36)
-			//{
-			//	_logger.LogWarning("Receipt document upload attempted for non-High5 clinic: {ClinicId}", request.ClinicId);
-			//	return BadRequest(ApiResponseFactory.Fail("Receipt document attachment is only available for High5 Performance clinic."));
-			//}
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed for receipt document upload. Errors: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
 
-			if (!ModelState.IsValid)
-			{
-				var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
-				_logger.LogWarning("Validation failed for receipt document upload. Errors: {@Errors}", errors);
-				return BadRequest(ApiResponseFactory.Fail(errors));
-			}
+            // Authorization check
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized receipt document upload attempt for Clinic ID {ClinicId}", request.ClinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to upload documents for this clinic."));
+            }
 
-			// Authorization check
-			bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
-			if (!isAuthorized)
-			{
-				_logger.LogWarning("Unauthorized receipt document upload attempt for Clinic ID {ClinicId}", request.ClinicId);
-				return Unauthorized(ApiResponseFactory.Fail("You are not authorized to upload documents for this clinic."));
-			}
+            // Validate file types and sizes
+            var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx" };
+            foreach (var file in request.Documents)
+            {
+                var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+                var fileSize = file.Length;
 
-			// Validate file types and sizes
-			var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx" };
-			foreach (var file in request.Documents)
-			{
-				var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
-				var fileSize = file.Length;
-
-				if (fileSize > 50 * 1024 * 1024) // 50MB limit
-				{
-					return BadRequest(ApiResponseFactory.Fail($"File {file.FileName} exceeds the 50MB limit."));
-				}
-
-				if (!allowedExtensions.Contains(extension))
-				{
-					_logger.LogWarning("Invalid file type attempted: {FileName} with extension: {Extension}",
-						file.FileName, extension);
-					return BadRequest(ApiResponseFactory.Fail(
-						$"Unsupported file type for {file.FileName}. Only PDF, JPG, JPEG, PNG, DOC, and DOCX files are allowed."));
-				}
-			}
-
-			// Verify visit exists
-			var visit = await _clinicVisitRepository.GetByIdAsync(request.VisitId);
-			if (visit == null || visit.ClinicId != request.ClinicId)
-			{
-				return NotFound(ApiResponseFactory.Fail("Clinic visit not found."));
-			}
-
-			// Verify patient exists
-			var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(request.PatientId);
-			if (clinicPatient == null)
-			{
-				return NotFound(ApiResponseFactory.Fail("Patient not found."));
-			}
-
-			await using var transaction = await _clinicRepository.BeginTransactionAsync();
-			bool committed = false;
-
-			try
-			{
-				var uploadedUrls = new List<string>();
-
-				// Upload each document to S3
-				foreach (var file in request.Documents)
-				{
-					var fileName = $"receipt_{request.ReceiptNumber}_{request.ClinicId}_{request.PatientId}_{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
-					var tempPath = Path.Combine(Path.GetTempPath(), fileName);
-
-					// Save to temp file
-					using (var stream = new FileStream(tempPath, FileMode.Create))
-					{
-						await file.CopyToAsync(stream);
-					}
-
-					// Upload to S3
-					var s3Url = await _s3StorageService.UploadFileToS3(tempPath, $"clinic/receipts/{fileName}");
-
-					if (s3Url != null)
-					{
-						uploadedUrls.Add(s3Url);
-					}
-
-					// Delete temp file
-					System.IO.File.Delete(tempPath);
-				}
-
-				if (!uploadedUrls.Any())
-				{
-					return StatusCode(500, ApiResponseFactory.Fail("Failed to upload files to S3."));
-				}
-
-				// Check if receipt document record already exists
-				var existingRecord = await _clinicPatientRecordRepository
-					.GetReceiptDocumentByReceiptNumberAsync(request.ClinicId, request.ReceiptNumber);
-
-				if (existingRecord != null)
-				{
-					// Append new URLs to existing record
-					var existingUrls = System.Text.Json.JsonSerializer.Deserialize<List<string>>(existingRecord.JsonData) ?? new List<string>();
-					existingUrls.AddRange(uploadedUrls);
-					existingRecord.JsonData = System.Text.Json.JsonSerializer.Serialize(existingUrls);
-					existingRecord.EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-
-					await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
-
-                    _logger.LogInformation("Updated existing receipt document record for Receipt {ReceiptNumber}", request.ReceiptNumber);
-                }
-                else
+                if (fileSize > 50 * 1024 * 1024) // 50MB limit
                 {
-                    // Create new record
-                    var record = new ClinicPatientRecord
+                    return BadRequest(ApiResponseFactory.Fail($"File {file.FileName} exceeds the 50MB limit."));
+                }
+
+                if (!allowedExtensions.Contains(extension))
+                {
+                    _logger.LogWarning("Invalid file type attempted: {FileName} with extension: {Extension}",
+                        file.FileName, extension);
+                    return BadRequest(ApiResponseFactory.Fail(
+                        $"Unsupported file type for {file.FileName}. Only PDF, JPG, JPEG, PNG, DOC, and DOCX files are allowed."));
+                }
+            }
+
+            // Verify visit exists
+            var visit = await _clinicVisitRepository.GetByIdAsync(request.VisitId);
+            if (visit == null || visit.ClinicId != request.ClinicId)
+            {
+                return NotFound(ApiResponseFactory.Fail("Clinic visit not found."));
+            }
+
+            // Verify patient exists
+            var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(request.PatientId);
+            if (clinicPatient == null)
+            {
+                return NotFound(ApiResponseFactory.Fail("Patient not found."));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var allUploadedUrls = new List<string>();
+
+                // Upload each document to S3 and create separate database record for each upload
+                foreach (var file in request.Documents)
+                {
+                    var fileName = $"receipt_{request.ReceiptNumber}_{request.ClinicId}_{request.PatientId}_{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+                    var tempPath = Path.Combine(Path.GetTempPath(), fileName);
+
+                    // Save to temp file
+                    using (var stream = new FileStream(tempPath, FileMode.Create))
                     {
-                        ClinicId = request.ClinicId,
-                        PatientId = request.PatientId,
-                        ClinicVisitId = request.VisitId,
-                        Type = RecordType.ReceiptDocuments,
-                        UniqueRecordId = request.ReceiptNumber,
-                        JsonData = System.Text.Json.JsonSerializer.Serialize(uploadedUrls),
-                        SendToPatient = false,
-                        EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-                    };
+                        await file.CopyToAsync(stream);
+                    }
 
-					await _clinicPatientRecordRepository.SaveAsync(record);
+                    // Upload to S3
+                    var s3Url = await _s3StorageService.UploadFileToS3(tempPath, $"clinic/receipts/{fileName}");
 
-					_logger.LogInformation("Created new receipt document record for Receipt {ReceiptNumber}", request.ReceiptNumber);
-				}
+                    if (s3Url != null)
+                    {
+                        // Create a new database record for each uploaded file
+                        var uploadedUrls = new List<string> { s3Url };
 
-				await transaction.CommitAsync();
-				committed = true;
+                        var record = new ClinicPatientRecord
+                        {
+                            ClinicId = request.ClinicId,
+                            PatientId = request.PatientId,
+                            ClinicVisitId = request.VisitId,
+                            Type = RecordType.ReceiptDocuments,
+                            UniqueRecordId = request.ReceiptNumber,
+                            JsonData = System.Text.Json.JsonSerializer.Serialize(uploadedUrls),
+                            SendToPatient = false,
+                            EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                        };
 
-				// Invalidate cache
-				_cacheService.InvalidateClinicStatistics(request.ClinicId);
+                        await _clinicPatientRecordRepository.SaveAsync(record);
+                        allUploadedUrls.Add(s3Url);
 
-				var response = new ReceiptDocumentUploadResponse
-				{
-					ReceiptNumber = request.ReceiptNumber,
-					ClinicId = request.ClinicId,
-					PatientId = request.PatientId,
-					VisitId = request.VisitId,
-					TotalDocumentsUploaded = uploadedUrls.Count,
-					DocumentUrls = uploadedUrls,
-					Message = $"Successfully uploaded {uploadedUrls.Count} document(s) for receipt {request.ReceiptNumber}."
-				};
+                        _logger.LogInformation("Created new receipt document record for Receipt {ReceiptNumber}, File {FileName}",
+                            request.ReceiptNumber, file.FileName);
+                    }
 
-				_logger.LogInformation(
-					"Uploaded {Count} documents for Receipt {ReceiptNumber}, Clinic {ClinicId}, Patient {PatientId}, Visit {VisitId}",
-					uploadedUrls.Count, request.ReceiptNumber, request.ClinicId, request.PatientId, request.VisitId);
+                    // Delete temp file
+                    System.IO.File.Delete(tempPath);
+                }
 
-				return Ok(ApiResponseFactory.Success(response, response.Message));
-			}
-			catch (Exception ex)
-			{
-				_logger.LogError(ex, "Error uploading receipt documents for Receipt {ReceiptNumber}, Clinic {ClinicId}",
-					request.ReceiptNumber, request.ClinicId);
-				return StatusCode(500, ApiResponseFactory.Fail("An error occurred while uploading documents."));
-			}
-			finally
-			{
-				if (!committed && transaction.GetDbTransaction().Connection != null)
-					await transaction.RollbackAsync();
-			}
-		}
+                if (!allUploadedUrls.Any())
+                {
+                    return StatusCode(500, ApiResponseFactory.Fail("Failed to upload files to S3."));
+                }
+
+                await transaction.CommitAsync();
+                committed = true;
+
+                // Invalidate cache
+                _cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+                var response = new ReceiptDocumentUploadResponse
+                {
+                    ReceiptNumber = request.ReceiptNumber,
+                    ClinicId = request.ClinicId,
+                    PatientId = request.PatientId,
+                    VisitId = request.VisitId,
+                    TotalDocumentsUploaded = allUploadedUrls.Count,
+                    DocumentUrls = allUploadedUrls,
+                    Message = $"Successfully uploaded {allUploadedUrls.Count} document(s) for receipt {request.ReceiptNumber}."
+                };
+
+                _logger.LogInformation(
+                    "Uploaded {Count} documents for Receipt {ReceiptNumber}, Clinic {ClinicId}, Patient {PatientId}, Visit {VisitId}",
+                    allUploadedUrls.Count, request.ReceiptNumber, request.ClinicId, request.PatientId, request.VisitId);
+
+                return Ok(ApiResponseFactory.Success(response, response.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error uploading receipt documents for Receipt {ReceiptNumber}, Clinic {ClinicId}",
+                    request.ReceiptNumber, request.ClinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while uploading documents."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
 
 
-		/// Get all receipt documents for a specific visit (Clinic ID 36 only)
+        //[HttpPost("clinic/receipt/documents/upload")]
+        //[Authorize]
+        //public async Task<IActionResult> UploadReceiptDocuments([FromForm] ReceiptDocumentUploadRequest request)
+        //{
+        //	HttpContext.Items["Log-Category"] = "Receipt Document Upload";
 
-		[HttpGet("clinic/{clinicId}/patient/{patientId}/visit/{visitId}/receipt-documents")]
+        //	// Validate clinic ID is 36 (High5 Performance)
+        //	//if (request.ClinicId != 36)
+        //	//{
+        //	//	_logger.LogWarning("Receipt document upload attempted for non-High5 clinic: {ClinicId}", request.ClinicId);
+        //	//	return BadRequest(ApiResponseFactory.Fail("Receipt document attachment is only available for High5 Performance clinic."));
+        //	//}
+
+        //	if (!ModelState.IsValid)
+        //	{
+        //		var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+        //		_logger.LogWarning("Validation failed for receipt document upload. Errors: {@Errors}", errors);
+        //		return BadRequest(ApiResponseFactory.Fail(errors));
+        //	}
+
+        //	// Authorization check
+        //	bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+        //	if (!isAuthorized)
+        //	{
+        //		_logger.LogWarning("Unauthorized receipt document upload attempt for Clinic ID {ClinicId}", request.ClinicId);
+        //		return Unauthorized(ApiResponseFactory.Fail("You are not authorized to upload documents for this clinic."));
+        //	}
+
+        //	// Validate file types and sizes
+        //	var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx" };
+        //	foreach (var file in request.Documents)
+        //	{
+        //		var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+        //		var fileSize = file.Length;
+
+        //		if (fileSize > 50 * 1024 * 1024) // 50MB limit
+        //		{
+        //			return BadRequest(ApiResponseFactory.Fail($"File {file.FileName} exceeds the 50MB limit."));
+        //		}
+
+        //		if (!allowedExtensions.Contains(extension))
+        //		{
+        //			_logger.LogWarning("Invalid file type attempted: {FileName} with extension: {Extension}",
+        //				file.FileName, extension);
+        //			return BadRequest(ApiResponseFactory.Fail(
+        //				$"Unsupported file type for {file.FileName}. Only PDF, JPG, JPEG, PNG, DOC, and DOCX files are allowed."));
+        //		}
+        //	}
+
+        //	// Verify visit exists
+        //	var visit = await _clinicVisitRepository.GetByIdAsync(request.VisitId);
+        //	if (visit == null || visit.ClinicId != request.ClinicId)
+        //	{
+        //		return NotFound(ApiResponseFactory.Fail("Clinic visit not found."));
+        //	}
+
+        //	// Verify patient exists
+        //	var clinicPatient = await _clinicPatientRecordRepository.GetByIdAsync(request.PatientId);
+        //	if (clinicPatient == null)
+        //	{
+        //		return NotFound(ApiResponseFactory.Fail("Patient not found."));
+        //	}
+
+        //	await using var transaction = await _clinicRepository.BeginTransactionAsync();
+        //	bool committed = false;
+
+        //	try
+        //	{
+        //		var uploadedUrls = new List<string>();
+
+        //		// Upload each document to S3
+        //		foreach (var file in request.Documents)
+        //		{
+        //			var fileName = $"receipt_{request.ReceiptNumber}_{request.ClinicId}_{request.PatientId}_{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+        //			var tempPath = Path.Combine(Path.GetTempPath(), fileName);
+
+        //			// Save to temp file
+        //			using (var stream = new FileStream(tempPath, FileMode.Create))
+        //			{
+        //				await file.CopyToAsync(stream);
+        //			}
+
+        //			// Upload to S3
+        //			var s3Url = await _s3StorageService.UploadFileToS3(tempPath, $"clinic/receipts/{fileName}");
+
+        //			if (s3Url != null)
+        //			{
+        //				uploadedUrls.Add(s3Url);
+        //			}
+
+        //			// Delete temp file
+        //			System.IO.File.Delete(tempPath);
+        //		}
+
+        //		if (!uploadedUrls.Any())
+        //		{
+        //			return StatusCode(500, ApiResponseFactory.Fail("Failed to upload files to S3."));
+        //		}
+
+        //		// Check if receipt document record already exists
+        //		var existingRecord = await _clinicPatientRecordRepository
+        //			.GetReceiptDocumentByReceiptNumberAsync(request.ClinicId, request.ReceiptNumber);
+
+        //		if (existingRecord != null)
+        //		{
+        //			// Append new URLs to existing record
+        //			var existingUrls = System.Text.Json.JsonSerializer.Deserialize<List<string>>(existingRecord.JsonData) ?? new List<string>();
+        //			existingUrls.AddRange(uploadedUrls);
+        //			existingRecord.JsonData = System.Text.Json.JsonSerializer.Serialize(existingUrls);
+        //			existingRecord.EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        //			await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
+
+        //                  _logger.LogInformation("Updated existing receipt document record for Receipt {ReceiptNumber}", request.ReceiptNumber);
+        //              }
+        //              else
+        //              {
+        //                  // Create new record
+        //                  var record = new ClinicPatientRecord
+        //                  {
+        //                      ClinicId = request.ClinicId,
+        //                      PatientId = request.PatientId,
+        //                      ClinicVisitId = request.VisitId,
+        //                      Type = RecordType.ReceiptDocuments,
+        //                      UniqueRecordId = request.ReceiptNumber,
+        //                      JsonData = System.Text.Json.JsonSerializer.Serialize(uploadedUrls),
+        //                      SendToPatient = false,
+        //                      EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        //                  };
+
+        //			await _clinicPatientRecordRepository.SaveAsync(record);
+
+        //			_logger.LogInformation("Created new receipt document record for Receipt {ReceiptNumber}", request.ReceiptNumber);
+        //		}
+
+        //		await transaction.CommitAsync();
+        //		committed = true;
+
+        //		// Invalidate cache
+        //		_cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+        //		var response = new ReceiptDocumentUploadResponse
+        //		{
+        //			ReceiptNumber = request.ReceiptNumber,
+        //			ClinicId = request.ClinicId,
+        //			PatientId = request.PatientId,
+        //			VisitId = request.VisitId,
+        //			TotalDocumentsUploaded = uploadedUrls.Count,
+        //			DocumentUrls = uploadedUrls,
+        //			Message = $"Successfully uploaded {uploadedUrls.Count} document(s) for receipt {request.ReceiptNumber}."
+        //		};
+
+        //		_logger.LogInformation(
+        //			"Uploaded {Count} documents for Receipt {ReceiptNumber}, Clinic {ClinicId}, Patient {PatientId}, Visit {VisitId}",
+        //			uploadedUrls.Count, request.ReceiptNumber, request.ClinicId, request.PatientId, request.VisitId);
+
+        //		return Ok(ApiResponseFactory.Success(response, response.Message));
+        //	}
+        //	catch (Exception ex)
+        //	{
+        //		_logger.LogError(ex, "Error uploading receipt documents for Receipt {ReceiptNumber}, Clinic {ClinicId}",
+        //			request.ReceiptNumber, request.ClinicId);
+        //		return StatusCode(500, ApiResponseFactory.Fail("An error occurred while uploading documents."));
+        //	}
+        //	finally
+        //	{
+        //		if (!committed && transaction.GetDbTransaction().Connection != null)
+        //			await transaction.RollbackAsync();
+        //	}
+        //}
+
+
+        /// Get all receipt documents for a specific visit (Clinic ID 36 only)
+
+        [HttpGet("clinic/{clinicId}/patient/{patientId}/visit/{visitId}/receipt-documents")]
 		[Authorize]
 		public async Task<IActionResult> GetReceiptDocuments(
 			[FromRoute] int clinicId,

@@ -1308,13 +1308,17 @@ namespace HFiles_Backend.API.Controllers.Clinics
 		/// and new patient registration (via patient details)
 		[HttpPost("clinics/{clinicId}/follow-up")]
 		[Authorize]
-        public async Task<IActionResult> CreateFollowUpAppointment(
+		public async Task<IActionResult> CreateFollowUpAppointment(
 	[FromBody] FollowUpAppointmentDto dto,
 	[FromRoute] int clinicId)
 		{
 			bool isNotificationAllowed = clinicId != 36;
 
 			HttpContext.Items["Log-Category"] = "Clinic Appointment";
+
+			// ✅ DEFAULT DATE when DOB not provided for clinic 36
+			const string DEFAULT_DOB = "15-02-2004";
+			DateTime defaultDobDate = DateTime.ParseExact(DEFAULT_DOB, "dd-MM-yyyy", CultureInfo.InvariantCulture);
 
 			// Basic model validation
 			if (!ModelState.IsValid)
@@ -1536,24 +1540,29 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					{
 						_logger.LogInformation("Processing child for parent HFID: {HFID}", user.HfId);
 
-						// ✅ Parse child DOB only if provided
-						DateTime? parsedChildDob = null;
+						// ✅ Parse child DOB only if provided, otherwise use default
+						DateTime parsedChildDob;
 						if (!string.IsNullOrWhiteSpace(dto.ChildDOB))
 						{
-							if (!DateTime.TryParseExact(dto.ChildDOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime tempDob))
+							if (!DateTime.TryParseExact(dto.ChildDOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsedChildDob))
 							{
 								_logger.LogWarning("Invalid child DOB format: {DOB}", dto.ChildDOB);
 								return BadRequest(ApiResponseFactory.Fail("Invalid child DOB format. Please use dd-MM-yyyy."));
 							}
-							parsedChildDob = tempDob;
+						}
+						else
+						{
+							// ✅ Use default DOB
+							parsedChildDob = defaultDobDate;
+							_logger.LogInformation("Child DOB not provided. Using default DOB: {DefaultDOB}", DEFAULT_DOB);
 						}
 
-						// ✅ Generate child HFID (use current date if DOB not provided)
+						// ✅ Generate child HFID
 						var childHfid = _hfidService.GenerateChildHfid(
 							user.HfId!,
 							dto.ChildFirstName!,
 							dto.ChildLastName!,
-							parsedChildDob ?? DateTime.Today
+							parsedChildDob
 						);
 
 						// ✅ CHECK IF CHILD ALREADY EXISTS
@@ -1603,12 +1612,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
 								};
 							}
 
+							// ✅ Store DOB as string
+							string childDobString = string.IsNullOrWhiteSpace(dto.ChildDOB) ? DEFAULT_DOB : dto.ChildDOB;
+
 							// Create child user entity
 							childUser = new User
 							{
 								FirstName = dto.ChildFirstName!,
 								LastName = dto.ChildLastName!,
-								DOB = dto.ChildDOB ?? string.Empty, // ✅ Optional DOB
+								DOB = childDobString, // ✅ Use default if not provided
 								Gender = dto.ChildGender ?? string.Empty, // ✅ Optional Gender
 								CountryCallingCode = user.CountryCallingCode,
 								PhoneNumber = user.PhoneNumber,
@@ -1642,8 +1654,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 							isChildCreated = true;
 
 							_logger.LogInformation(
-								"Child user created successfully. UserId: {UserId}, HFID: {HFID}, Parent: {ParentHFID}",
-								childUser.Id, childUser.HfId, user.HfId);
+								"Child user created successfully. UserId: {UserId}, HFID: {HFID}, Parent: {ParentHFID}, DOB: {DOB}",
+								childUser.Id, childUser.HfId, user.HfId, childDobString);
 						}
 					}
 				}
@@ -1653,20 +1665,19 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					_logger.LogInformation("Processing new patient registration: {FirstName} {LastName}", dto.FirstName, dto.LastName);
 
 					// ✅ RELAXED: DOB validation only required if NOT adding child for clinic 36
-					DateTime? parsedDob = null;
+					DateTime parsedDob;
 					if (!(dto.IsAddChild && clinicId == 36))
 					{
 						// Normal flow - DOB required
-						if (!DateTime.TryParseExact(dto.DOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime tempDob))
+						if (!DateTime.TryParseExact(dto.DOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsedDob))
 						{
 							_logger.LogWarning("Invalid DOB format for new patient: {DOB}", dto.DOB);
 							return BadRequest(ApiResponseFactory.Fail("Invalid DOB format. Please use dd-MM-yyyy."));
 						}
-						parsedDob = tempDob;
 
 						// Calculate and validate age
-						var age = DateTime.Today.Year - parsedDob.Value.Year;
-						if (parsedDob.Value > DateTime.Today.AddYears(-age)) age--;
+						var age = DateTime.Today.Year - parsedDob.Year;
+						if (parsedDob > DateTime.Today.AddYears(-age)) age--;
 						if (age < 0 || age > 150)
 						{
 							_logger.LogWarning("Unrealistic age calculated from DOB: {Age} years", age);
@@ -1676,10 +1687,16 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					else if (!string.IsNullOrWhiteSpace(dto.DOB))
 					{
 						// Optional DOB provided - validate format
-						if (DateTime.TryParseExact(dto.DOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime tempDob))
+						if (!DateTime.TryParseExact(dto.DOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsedDob))
 						{
-							parsedDob = tempDob;
+							parsedDob = defaultDobDate;
 						}
+					}
+					else
+					{
+						// ✅ Use default DOB
+						parsedDob = defaultDobDate;
+						_logger.LogInformation("Member DOB not provided. Using default DOB: {DefaultDOB}", DEFAULT_DOB);
 					}
 
 					// ✅ Check if phone number already exists
@@ -1735,20 +1752,23 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					// ✅ CREATE NEW USER ONLY IF NOT FOUND BY PHONE/EMAIL
 					if (user == null)
 					{
-						// ✅ Generate HFID (use current date if DOB not provided)
+						// ✅ Generate HFID
 						var hfid = _hfidService.GenerateHfid(
 							dto.FirstName!,
 							dto.LastName!,
-							parsedDob ?? DateTime.Today
+							parsedDob
 						);
 						var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+						// ✅ Store DOB as string
+						string memberDobString = string.IsNullOrWhiteSpace(dto.DOB) ? DEFAULT_DOB : dto.DOB;
 
 						// Create new user entity
 						user = new User
 						{
 							FirstName = dto.FirstName!,
 							LastName = dto.LastName!,
-							DOB = dto.DOB ?? string.Empty, // ✅ Optional DOB
+							DOB = memberDobString, // ✅ Use default if not provided
 							CountryCallingCode = dto.CountryCode!,
 							PhoneNumber = dto.PhoneNumber!,
 							Email = string.IsNullOrWhiteSpace(dto.Email) ? string.Empty : dto.Email,
@@ -1780,8 +1800,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						isPatientNewlyCreated = true;
 
 						_logger.LogInformation(
-							"New patient created successfully. UserId: {UserId}, HFID: {HFID}, Email: {Email}",
-							user.Id, user.HfId, string.IsNullOrWhiteSpace(user.Email) ? "Not provided" : user.Email);
+							"New patient created successfully. UserId: {UserId}, HFID: {HFID}, Email: {Email}, DOB: {DOB}",
+							user.Id, user.HfId, string.IsNullOrWhiteSpace(user.Email) ? "Not provided" : user.Email, memberDobString);
 					}
 
 					// ✅ CREATE OR USE EXISTING CHILD USER (Only for Clinic ID 36 and when IsAddChild is true)
@@ -1789,24 +1809,29 @@ namespace HFiles_Backend.API.Controllers.Clinics
 					{
 						_logger.LogInformation("Processing child for parent: {HFID}", user.HfId);
 
-						// ✅ Parse child DOB only if provided
-						DateTime? parsedChildDob = null;
+						// ✅ Parse child DOB only if provided, otherwise use default
+						DateTime parsedChildDob;
 						if (!string.IsNullOrWhiteSpace(dto.ChildDOB))
 						{
-							if (!DateTime.TryParseExact(dto.ChildDOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime tempDob))
+							if (!DateTime.TryParseExact(dto.ChildDOB, "dd-MM-yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsedChildDob))
 							{
 								_logger.LogWarning("Invalid child DOB format: {DOB}", dto.ChildDOB);
 								return BadRequest(ApiResponseFactory.Fail("Invalid child DOB format. Please use dd-MM-yyyy."));
 							}
-							parsedChildDob = tempDob;
+						}
+						else
+						{
+							// ✅ Use default DOB
+							parsedChildDob = defaultDobDate;
+							_logger.LogInformation("Child DOB not provided. Using default DOB: {DefaultDOB}", DEFAULT_DOB);
 						}
 
-						// ✅ Generate child HFID (use current date if DOB not provided)
+						// ✅ Generate child HFID
 						var childHfid = _hfidService.GenerateChildHfid(
 							user.HfId!,
 							dto.ChildFirstName!,
 							dto.ChildLastName!,
-							parsedChildDob ?? DateTime.Today
+							parsedChildDob
 						);
 						var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
@@ -1855,12 +1880,15 @@ namespace HFiles_Backend.API.Controllers.Clinics
 								};
 							}
 
+							// ✅ Store DOB as string
+							string childDobString = string.IsNullOrWhiteSpace(dto.ChildDOB) ? DEFAULT_DOB : dto.ChildDOB;
+
 							// Create child user entity
 							childUser = new User
 							{
 								FirstName = dto.ChildFirstName!,
 								LastName = dto.ChildLastName!,
-								DOB = dto.ChildDOB ?? string.Empty, // ✅ Optional DOB
+								DOB = childDobString, // ✅ Use default if not provided
 								Gender = dto.ChildGender ?? string.Empty, // ✅ Optional Gender
 								CountryCallingCode = user.CountryCallingCode,
 								PhoneNumber = user.PhoneNumber,
@@ -1894,8 +1922,8 @@ namespace HFiles_Backend.API.Controllers.Clinics
 							isChildCreated = true;
 
 							_logger.LogInformation(
-								"Child user created successfully. UserId: {UserId}, HFID: {HFID}, Parent: {ParentHFID}",
-								childUser.Id, childUser.HfId, user.HfId);
+								"Child user created successfully. UserId: {UserId}, HFID: {HFID}, Parent: {ParentHFID}, DOB: {DOB}",
+								childUser.Id, childUser.HfId, user.HfId, childDobString);
 						}
 					}
 				}

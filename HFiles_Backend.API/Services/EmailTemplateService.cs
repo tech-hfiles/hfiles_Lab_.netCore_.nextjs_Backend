@@ -155,7 +155,7 @@ namespace HFiles_Backend.API.Services
                     
                     <p>Dear <strong>{patientFirstName}</strong>,</p>
                     
-                    <p>You have received multiple consent forms from <strong>{clinicName}</strong> that require your attention.</p>
+                    <p>You have received consent forms from <strong>{clinicName}</strong> that require your attention.</p>
                     
                     <div style='background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;'>
                         <h3 style='margin-top: 0; color: #0331B5;'>Consent Forms to Complete:</h3>
@@ -184,8 +184,7 @@ namespace HFiles_Backend.API.Services
                     
                     <p style='font-size: 14px; color: #666;'>
                         Best regards,<br/>
-                        The HFiles Team<br/>
-                        <a href='mailto:contact@hfiles.in' style='color: #0331B5;'>contact@hfiles.in</a>
+                        {clinicName}<br/>
                     </p>
                     
                     <p style='font-size: 12px; color: #999; text-align: center; margin-top: 20px;'>
@@ -259,8 +258,7 @@ namespace HFiles_Backend.API.Services
                 
                 <p style='font-size: 14px; color: #666;'>
                     Best regards,<br/>
-                    The HFiles Team<br/>
-                    <a href='mailto:contact@hfiles.in' style='color: #0331B5;'>contact@hfiles.in</a>
+                    {clinicName}<br/>
                 </p>
                 
                 <p style='font-size: 12px; color: #999; text-align: center; margin-top: 20px;'>
@@ -329,8 +327,7 @@ namespace HFiles_Backend.API.Services
                     
                     <p style='font-size: 14px; color: #666;'>
                         Best regards,<br/>
-                        The HFiles Team<br/>
-                        <a href='mailto:contact@hfiles.in' style='color: #0331B5;'>contact@hfiles.in</a>
+                        {clinicName}<br/>
                     </p>
                     
                     <p style='font-size: 12px; color: #999; text-align: center; margin-top: 20px;'>
@@ -496,7 +493,7 @@ namespace HFiles_Backend.API.Services
             
             <p>Dear <strong>{patientFirstName}</strong>,</p>
             
-            <p><strong>{clinicName}</strong> has uploaded {uploadedDocuments.Count} document(s) to your HFiles account.</p>
+            <p><strong>{clinicName}</strong> has uploaded {uploadedDocuments.Count} document to your HFiles account.</p>
             
             <div style='background-color: #e8f5e8; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745;'>
                 <h3 style='margin-top: 0; color: #155724;'>Appointment Details:</h3>
@@ -528,8 +525,7 @@ namespace HFiles_Backend.API.Services
             
             <p style='font-size: 14px; color: #666;'>
                 Best regards,<br/>
-                The HFiles Team<br/>
-                <a href='mailto:contact@hfiles.in' style='color: #0331B5;'>contact@hfiles.in</a>
+                {clinicName}<br/>
             </p>
             
             <p style='font-size: 12px; color: #999; text-align: center; margin-top: 20px;'>
@@ -1007,10 +1003,10 @@ int clinicId = 0)
 		}
 
         public string GenerateDocumentEmailTemplate(
-    string patientName,
-    string clinicName,
-    dynamic documentInfoList,
-    string? customMessage = null)
+     string patientName,
+     string clinicName,
+     dynamic documentInfoList,
+     string? customMessage = null)
         {
             var documentRows = "";
             int index = 1;
@@ -1087,6 +1083,17 @@ int clinicId = 0)
                             
                             <p style='font-size: 14px; color: #666; line-height: 1.6; margin: 20px 0 0 0;'>
                                 If you have any questions about these documents, please contact {clinicName} directly.
+                            </p>
+                            
+                            <hr style='margin: 30px 0; border: none; border-top: 1px solid #eee;' />
+            
+                            <p style='font-size: 14px; color: #666;'>
+                                Best regards,<br/>
+                                {clinicName}<br/>
+                            </p>
+            
+                            <p style='font-size: 12px; color: #999; text-align: center; margin-top: 20px;'>
+                                This is an automated message. Please do not reply to this email.
                             </p>
                         </td>
                     </tr>

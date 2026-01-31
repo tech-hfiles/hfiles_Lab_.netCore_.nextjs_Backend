@@ -922,51 +922,98 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				bool emailSent = false;
 				string? emailSentTo = null;
 
-				//if (!string.IsNullOrWhiteSpace(user?.Email))
-				//{
-				//	try
-				//	{
-				//		var patientFirstName = user.FirstName ?? "Patient";
+                //if (!string.IsNullOrWhiteSpace(user?.Email))
+                //{
+                //	try
+                //	{
+                //		var patientFirstName = user.FirstName ?? "Patient";
 
-				//		var emailTemplate = _emailTemplateService.GeneratePatientDocumentsUploadedEmailTemplate(
-				//			patientFirstName,
-				//			patientDocumentInfoList,
-				//			clinicName,
-				//			appointmentDate,
-				//			appointmentTime
-				//		);
+                //		var emailTemplate = _emailTemplateService.GeneratePatientDocumentsUploadedEmailTemplate(
+                //			patientFirstName,
+                //			patientDocumentInfoList,
+                //			clinicName,
+                //			appointmentDate,
+                //			appointmentTime
+                //		);
 
-				//		// Send email without attachments (view buttons in email instead)
-				//		await _emailService.SendEmailAsync(
-				//			user.Email,
-				//			$"Documents Uploaded - {clinicName}",
-				//			emailTemplate
-				//		);
+                //		// Send email without attachments (view buttons in email instead)
+                //		await _emailService.SendEmailAsync(
+                //			user.Email,
+                //			$"Documents Uploaded - {clinicName}",
+                //			emailTemplate
+                //		);
 
-				//		emailSent = true;
-				//		emailSentTo = user.Email;
+                //		emailSent = true;
+                //		emailSentTo = user.Email;
 
-				//		_logger.LogInformation(
-				//			"Document upload email sent successfully to {Email} with {Count} documents",
-				//			user.Email, uploadedDocumentDetails.Count);
-				//	}
-				//	catch (Exception emailEx)
-				//	{
-				//		_logger.LogError(emailEx,
-				//			"Failed to send document upload email to {Email} for Patient {PatientId}",
-				//			user.Email, request.PatientId);
-				//		// Don't fail the entire operation if email fails
-				//	}
-				//}
-				//else
-				//{
-				//	_logger.LogInformation(
-				//		"Email not provided for Patient {PatientName} (HFID: {HFID}). Skipping email notification.",
-				//		patientName, clinicPatient?.HFID);
-				//}
+                //		_logger.LogInformation(
+                //			"Document upload email sent successfully to {Email} with {Count} documents",
+                //			user.Email, uploadedDocumentDetails.Count);
+                //	}
+                //	catch (Exception emailEx)
+                //	{
+                //		_logger.LogError(emailEx,
+                //			"Failed to send document upload email to {Email} for Patient {PatientId}",
+                //			user.Email, request.PatientId);
+                //		// Don't fail the entire operation if email fails
+                //	}
+                //}
+                //else
+                //{
+                //	_logger.LogInformation(
+                //		"Email not provided for Patient {PatientName} (HFID: {HFID}). Skipping email notification.",
+                //		patientName, clinicPatient?.HFID);
+                //}
 
-				// Response + Notification
-				var response = new
+                if (request.ClinicId != 36 && !string.IsNullOrWhiteSpace(user?.Email))
+                {
+                    try
+                    {
+                        var patientFirstName = user.FirstName ?? "Patient";
+
+                        var emailTemplate = _emailTemplateService.GeneratePatientDocumentsUploadedEmailTemplate(
+                            patientFirstName,
+                            patientDocumentInfoList,
+                            clinicName,
+                            appointmentDate,
+                            appointmentTime
+                        );
+
+                        // Send email without attachments (view buttons in email instead)
+                        await _emailService.SendEmailAsync(
+                            user.Email,
+                            $"Documents Uploaded - {clinicName}",
+                            emailTemplate
+                        );
+
+                        emailSent = true;
+                        emailSentTo = user.Email;
+
+                        _logger.LogInformation(
+                            "Document upload email sent successfully to {Email} with {Count} documents",
+                            user.Email, uploadedDocumentDetails.Count);
+                    }
+                    catch (Exception emailEx)
+                    {
+                        _logger.LogError(
+                            emailEx,
+                            "Failed to send document upload email to {Email} for Patient {PatientId}",
+                            user.Email, request.PatientId);
+                        // Don't fail the entire operation if email fails
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        request.ClinicId == 36
+                            ? "Email notification skipped for ClinicId 36 (Patient: {PatientName}, HFID: {HFID})."
+                            : "Email not provided for Patient {PatientName} (HFID: {HFID}). Skipping email notification.",
+                        patientName, clinicPatient?.HFID);
+                }
+
+
+                // Response + Notification
+                var response = new
 				{
 					PatientName = patientName,
 					PatientHFID = clinicPatient?.HFID,
@@ -1169,30 +1216,64 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
                 //if (!string.IsNullOrWhiteSpace(user.Email))
                 //{
-                //    try
-                //    {
-                //        var emailTemplate = _emailTemplateService.GeneratePatientDocumentsUploadedEmailTemplate(
-                //            user.FirstName ?? "Patient",
-                //            patientDocumentInfoList,
-                //            clinicName,
-                //            appointmentDate,
-                //            appointmentTime
-                //        );
+                //	try
+                //	{
+                //		var emailTemplate = _emailTemplateService.GeneratePatientDocumentsUploadedEmailTemplate(
+                //			user.FirstName ?? "Patient",
+                //			patientDocumentInfoList,
+                //			clinicName,
+                //			appointmentDate,
+                //			appointmentTime
+                //		);
 
-                //        await _emailService.SendEmailAsync(
-                //            user.Email,
-                //            $"New Lab Images Shared - {clinicName}",
-                //            emailTemplate
-                //        );
+                //		await _emailService.SendEmailAsync(
+                //			user.Email,
+                //			$"New Lab Images Shared - {clinicName}",
+                //			emailTemplate
+                //		);
 
-                //        emailSent = true;
-                //        emailSentTo = user.Email;
-                //    }
-                //    catch (Exception ex)
-                //    {
-                //        _logger.LogError(ex, "Failed to send images email to {Email}", user.Email);
-                //    }
+                //		emailSent = true;
+                //		emailSentTo = user.Email;
+                //	}
+                //	catch (Exception ex)
+                //	{
+                //		_logger.LogError(ex, "Failed to send images email to {Email}", user.Email);
+                //	}
                 //}
+                if (request.ClinicId != 36 && !string.IsNullOrWhiteSpace(user.Email))
+                {
+                    try
+                    {
+                        var emailTemplate = _emailTemplateService.GeneratePatientDocumentsUploadedEmailTemplate(
+                            user.FirstName ?? "Patient",
+                            patientDocumentInfoList,
+                            clinicName,
+                            appointmentDate,
+                            appointmentTime
+                        );
+
+                        await _emailService.SendEmailAsync(
+                            user.Email,
+                            $"New Lab Images Shared - {clinicName}",
+                            emailTemplate
+                        );
+
+                        emailSent = true;
+                        emailSentTo = user.Email;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send images email to {Email}", user.Email);
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        request.ClinicId == 36
+                            ? "Email skipped for ClinicId 36 while sharing lab images."
+                            : "Email not provided. Skipping lab image email.");
+                }
+
 
                 var response = new
                 {

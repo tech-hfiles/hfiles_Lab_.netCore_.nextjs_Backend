@@ -28,9 +28,10 @@ namespace HFiles_Backend.Domain.Interfaces
 
         Task<bool> DeleteAsync(int uniqueRecordId);
 
-        // ✅ ADD THIS - Returns ClinicPatientRecord (Record entity)
-
-        Task<ClinicPatientRecord?> GetRecordByIdAsync(int recordId);
+		// ✅ ADD THIS - Returns ClinicPatientRecord (Record entity)
+		Task<Dictionary<int, string>> GetLatestConsultantDoctorsByPatientIdsAsync(List<int> patientIds, int clinicId);
+		Task<Dictionary<int, string>> GetLatestTreatmentNamesByPatientIdsAsync(List<int> patientIds, int clinicId);
+		Task<ClinicPatientRecord?> GetRecordByIdAsync(int recordId);
         Task<ClinicPatientRecord> GetRecordByUniqueRecordIdAsync(string uniqueRecordId);
         // Task<decimal> GetLastReceiptAmountDueByHfIdAsync(string hfId);
         Task<decimal> GetTotalAmountDueByHfIdAsync(string hfId);

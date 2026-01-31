@@ -1669,8 +1669,9 @@ namespace HFiles_Backend.API.Controllers.Clinics
             "consent form",
             "images",  // ✅ ADDED THIS
             "membership plan",     
-			"physiotherapy form"
-        };
+			"physiotherapy form",
+			"symptom diary"
+		};
 
                 var invalidCategories = categoryFilters.Except(validCategories).ToList();
                 if (invalidCategories.Any())

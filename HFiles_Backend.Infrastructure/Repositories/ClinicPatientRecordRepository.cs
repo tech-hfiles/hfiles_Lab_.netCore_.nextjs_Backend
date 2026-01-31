@@ -1256,7 +1256,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     )
                 ), 0
             ) AS AmountPaid
-        FROM clinicpatientrecords
+        FROM uat_user.clinicpatientrecords
         WHERE ClinicId = @clinicId
           AND Type = @type
           AND PatientId IN ({ids})
@@ -1304,7 +1304,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
             JSON_UNQUOTE(
                 JSON_EXTRACT(c1.JsonData, '$.receipt.paymentMode')
             ) AS PaymentMode
-        FROM clinicpatientrecords c1
+        FROM uat_user.clinicpatientrecords c1
         WHERE c1.ClinicId = @clinicId
           AND c1.Type = @type
           AND c1.PatientId IN ({ids})
@@ -1363,7 +1363,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
             JSON_UNQUOTE(
                 JSON_EXTRACT(c1.JsonData, '$.package.name')
             ) AS PackageName
-        FROM clinicpatientrecords c1
+        FROM uat_user.clinicpatientrecords c1
         WHERE c1.Type = @type
           AND c1.PatientId IN ({ids})
           AND c1.EpochTime = (
@@ -1403,10 +1403,67 @@ namespace HFiles_Backend.Infrastructure.Repositories
         }
 
 
+		// ---------------- CONSULTANT DOCTOR ----------------
+		public async Task<Dictionary<int, string>> GetLatestConsultantDoctorsByPatientIdsAsync(
+			List<int> patientIds,
+			int clinicId)
+		{
+			if (patientIds == null || patientIds.Count == 0)
+				return new Dictionary<int, string>();
 
+			var result = new Dictionary<int, string>();
+			var ids = string.Join(",", patientIds);
 
-        // ---------------- COACH NAME (MISSING FIX) ----------------
-        public async Task<Dictionary<int, string>> GetLatestCoachesByPatientIdsAsync(
+			var sql = $@"
+        SELECT 
+            c1.PatientId,
+            JSON_UNQUOTE(
+                JSON_EXTRACT(c1.JsonData, '$.patient.doctor')  -- ✅ CHANGED: doctor instead of consultantDoctor
+            ) AS ConsultantDoctor
+        FROM uat_user.clinicpatientrecords c1
+        WHERE c1.ClinicId = @clinicId
+          AND c1.Type = @type
+          AND c1.PatientId IN ({ids})
+          AND c1.EpochTime = (
+              SELECT MAX(c2.EpochTime)
+              FROM clinicpatientrecords c2
+              WHERE c2.PatientId = c1.PatientId
+                AND c2.ClinicId = @clinicId
+                AND c2.Type = @type
+          )";
+
+			using var command = _context.Database.GetDbConnection().CreateCommand();
+			command.CommandText = sql;
+			command.Parameters.Add(new MySqlParameter("@clinicId", clinicId));
+			command.Parameters.Add(new MySqlParameter("@type", (int)RecordType.Treatment));
+
+			await _context.Database.OpenConnectionAsync();
+			try
+			{
+				using var reader = await command.ExecuteReaderAsync();
+				while (await reader.ReadAsync())
+				{
+					var patientId = reader.GetInt32(0);
+					if (!reader.IsDBNull(1))
+					{
+						var consultantDoctor = reader.GetString(1);
+						if (!string.IsNullOrEmpty(consultantDoctor))
+						{
+							result[patientId] = consultantDoctor;
+						}
+					}
+				}
+			}
+			finally
+			{
+				await _context.Database.CloseConnectionAsync();
+			}
+
+			return result;
+		}
+
+		// ---------------- COACH NAME (MISSING FIX) ----------------
+		public async Task<Dictionary<int, string>> GetLatestCoachesByPatientIdsAsync(
             List<int> patientIds,
             int clinicId)
         {
@@ -1422,7 +1479,7 @@ namespace HFiles_Backend.Infrastructure.Repositories
             JSON_UNQUOTE(
                 JSON_EXTRACT(c1.JsonData, '$.package.coachName')
             ) AS CoachName
-        FROM clinicpatientrecords c1
+        FROM uat_user.clinicpatientrecords c1
         WHERE c1.Type = @type
           AND c1.PatientId IN ({ids})
           AND c1.EpochTime = (
@@ -1460,5 +1517,90 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
             return result;
         }
-    }
+
+		// ---------------- TREATMENT NAMES ----------------
+		public async Task<Dictionary<int, string>> GetLatestTreatmentNamesByPatientIdsAsync(
+			List<int> patientIds,
+			int clinicId)
+		{
+			if (patientIds == null || patientIds.Count == 0)
+				return new Dictionary<int, string>();
+
+			var result = new Dictionary<int, string>();
+
+			// Process in batches to avoid query size issues
+			var batchSize = 100;
+			for (int i = 0; i < patientIds.Count; i += batchSize)
+			{
+				var batch = patientIds.Skip(i).Take(batchSize).ToList();
+				var ids = string.Join(",", batch);
+
+				var sql = $@"
+            SELECT 
+                extracted.PatientId,
+                GROUP_CONCAT(
+                    JSON_UNQUOTE(JSON_EXTRACT(extracted.treatment_item, '$.name'))
+                    ORDER BY extracted.idx
+                    SEPARATOR ', '
+                ) AS TreatmentNames
+            FROM (
+                SELECT 
+                    c1.PatientId,
+                    c1.JsonData,
+                    numbers.idx,
+                    JSON_EXTRACT(c1.JsonData, CONCAT('$.treatments[', numbers.idx, ']')) AS treatment_item,
+                    c1.EpochTime
+                FROM uat_user.clinicpatientrecords c1
+                CROSS JOIN (
+                    SELECT 0 AS idx UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL 
+                    SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL 
+                    SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9
+                ) AS numbers
+                WHERE c1.ClinicId = @clinicId
+                  AND c1.Type = @type
+                  AND c1.PatientId IN ({ids})
+                  AND c1.EpochTime = (
+                      SELECT MAX(c2.EpochTime)
+                      FROM uat_user.clinicpatientrecords c2
+                      WHERE c2.PatientId = c1.PatientId
+                        AND c2.ClinicId = @clinicId
+                        AND c2.Type = @type
+                  )
+                  AND JSON_EXTRACT(c1.JsonData, CONCAT('$.treatments[', numbers.idx, ']')) IS NOT NULL
+            ) AS extracted
+            WHERE JSON_UNQUOTE(JSON_EXTRACT(extracted.treatment_item, '$.name')) IS NOT NULL
+              AND JSON_UNQUOTE(JSON_EXTRACT(extracted.treatment_item, '$.name')) != ''
+            GROUP BY extracted.PatientId";
+
+				using var command = _context.Database.GetDbConnection().CreateCommand();
+				command.CommandText = sql;
+				command.Parameters.Add(new MySqlParameter("@clinicId", clinicId));
+				command.Parameters.Add(new MySqlParameter("@type", (int)RecordType.Treatment));
+
+				await _context.Database.OpenConnectionAsync();
+				try
+				{
+					using var reader = await command.ExecuteReaderAsync();
+					while (await reader.ReadAsync())
+					{
+						var patientId = reader.GetInt32(0);
+						if (!reader.IsDBNull(1))
+						{
+							var treatmentNames = reader.GetString(1);
+							if (!string.IsNullOrEmpty(treatmentNames))
+							{
+								result[patientId] = treatmentNames;
+							}
+						}
+					}
+				}
+				finally
+				{
+					await _context.Database.CloseConnectionAsync();
+				}
+			}
+
+			return result;
+		}
+	}
 }

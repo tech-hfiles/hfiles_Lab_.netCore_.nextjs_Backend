@@ -18,6 +18,8 @@ namespace HFiles_Backend.Application.DTOs.Clinics.Appointment
         public string? LastVisitDate { get; set; }
         public string? PaymentMethod { get; set; }
         public string? TreatmentNames { get; set; }
+
+        public string? ConsultantDoctor { get; set; }
         public string? PaymentStatus { get; set; }
         public decimal AmountDue { get; set; }  // ✅ NEW: Total amount due
 		public string? CoachName { get; set; }  

@@ -1,11 +1,20 @@
 ﻿using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Enums;
+public class DailyCountDto
+{
+	public DateTime Date { get; set; }
+	public int Count { get; set; }
+}
 
 public interface IClinicEnquiryRepository
 {
 	// Get all enquiries for a clinic - CHANGED to IEnumerable for flexibility
 	Task<IEnumerable<ClinicEnquiry>> GetAllAsync(int clinicId);
 
+	Task<List<DailyCountDto>> GetDailyEnquiryCountsAsync(
+		int clinicId,
+		DateTime startDate,
+		DateTime endDate);
 	// Get a specific enquiry by Id
 	Task<ClinicEnquiry?> GetByIdAsync(int id);
 

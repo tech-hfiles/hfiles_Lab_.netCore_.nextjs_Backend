@@ -7,7 +7,9 @@ namespace HFiles_Backend.Domain.Interfaces
     public interface IUserRepository
     {
         Task<Dictionary<int, User>> GetAllUsersAsync();
-        Task<User?> GetByIdAsync(int id);
+		Task<List<User>> GetUsersByHFIDsAsyncs(List<string> hfids);
+
+		Task<User?> GetByIdAsync(int id);
         Task<User?> GetVerifiedUserByEmailAsync(string email);
         Task<string?> GetFullNameBySuperAdminIdAsync(int superAdminId);
         Task<User?> GetUserByHFIDAsync(string hfid);

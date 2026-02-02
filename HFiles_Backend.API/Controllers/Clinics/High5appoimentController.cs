@@ -862,64 +862,11 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				var startDate = new DateTime(year, month, 1);
 				var endDate = startDate.AddMonths(1).AddDays(-1);
 
-				// Get High5Appointments
-				var high5Result = await _appointmentService.GetAppointmentsByClinicIdWithUserAsync(clinicId);
-				var high5Daily = high5Result
-					.Where(h => h.PackageDate.Date >= startDate && h.PackageDate.Date <= endDate)
-					.GroupBy(h => h.PackageDate.Date)
-					.Select(g => new
-					{
-						Date = g.Key,
-						Count = g.Count()
-					});
+				// ✅ Execute sequentially instead of in parallel
+				var high5Daily = await _appointmentService.GetDailyAppointmentCountsAsync(clinicId, startDate, endDate);
+				var enquiryDaily = await _enquiryRepo.GetDailyEnquiryCountsAsync(clinicId, startDate, endDate);
 
-				// Get Enquiries
-				var enquiriesResult = await _enquiryRepo.GetAllAsync(clinicId);
-
-				// Create a list of dates for counting
-				var enquiryDates = new List<DateTime>();
-
-				foreach (var e in enquiriesResult)
-				{
-					if (e.Status == EnquiryStatus.Member) continue;
-
-					// Add AppointmentDate if exists and within range (Trial)
-					if (e.AppointmentDate.HasValue &&
-						e.AppointmentDate.Value.Date >= startDate &&
-						e.AppointmentDate.Value.Date <= endDate)
-					{
-						enquiryDates.Add(e.AppointmentDate.Value.Date);
-					}
-
-					// Add FollowUpDate if exists, within range, and different from AppointmentDate (FollowUp)
-					if (e.FollowUpDate.HasValue &&
-						e.FollowUpDate.Value.Date >= startDate &&
-						e.FollowUpDate.Value.Date <= endDate &&
-						(!e.AppointmentDate.HasValue || e.FollowUpDate.Value.Date != e.AppointmentDate.Value.Date))
-					{
-						enquiryDates.Add(e.FollowUpDate.Value.Date);
-					}
-
-					// Epoch fallback - ONLY if NO AppointmentDate AND NO FollowUpDate exist at all
-					if (!e.AppointmentDate.HasValue && !e.FollowUpDate.HasValue)
-					{
-						var epochDate = DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).Date;
-						if (epochDate >= startDate && epochDate <= endDate)
-						{
-							enquiryDates.Add(epochDate);
-						}
-					}
-				}
-
-				var enquiryDaily = enquiryDates
-					.GroupBy(d => d)
-					.Select(g => new
-					{
-						Date = g.Key,
-						Count = g.Count()
-					});
-
-				// Merge High5 + Enquiry counts
+				// Merge the results
 				var mergedDaily = high5Daily
 					.Concat(enquiryDaily)
 					.GroupBy(d => d.Date)
@@ -939,8 +886,6 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				return StatusCode(500, ApiResponseFactory.Fail(ex.Message));
 			}
 		}
-
-
 		// ⭐ NEW: Get appointments for a specific date (reuse existing with single date)
 		[HttpGet("clinic/{clinicId}/appointments-by-date")]
 		public async Task<IActionResult> GetAppointmentsByDate(

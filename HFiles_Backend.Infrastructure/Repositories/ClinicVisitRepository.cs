@@ -100,7 +100,15 @@ namespace HFiles_Backend.Infrastructure.Repositories
                     v.AppointmentDate.Date == appointmentDate.Date &&
                      v.AppointmentTime == appointmentTime);
         }
-        public async Task<ClinicVisit?> GetVisitByDetailsAsync(int clinicPatientId, DateTime appointmentDate, TimeSpan appointmentTime, int clinicId)
+		public async Task<List<ClinicVisit>> GetVisitsByClinicAndDatesAsync(int clinicId, List<DateTime> dates)
+		{
+			return await _context.ClinicVisits
+				.AsNoTracking()
+				.Include(v => v.Patient)
+				.Where(v => v.ClinicId == clinicId && dates.Contains(v.AppointmentDate.Date))
+				.ToListAsync();
+		}
+		public async Task<ClinicVisit?> GetVisitByDetailsAsync(int clinicPatientId, DateTime appointmentDate, TimeSpan appointmentTime, int clinicId)
         {
             return await _context.ClinicVisits
                 .Include(v => v.Patient)

@@ -25,7 +25,22 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 throw;
             }
         }
-        public async Task<ClinicAppointment?> GetAppointmentByIdAsync(int appointmentId, int clinicId)
+		public async Task<List<ClinicAppointment>> GetAppointmentsByClinicIdWithDateRangeAsync(
+	int clinicId,
+	DateTime startDate,
+	DateTime endDate)
+		{
+			return await _context.ClinicAppointments
+				.AsNoTracking()
+				.Where(a =>
+					a.ClinicId == clinicId &&
+					a.AppointmentDate.Date >= startDate.Date &&
+					a.AppointmentDate.Date <= endDate.Date)
+				.OrderBy(a => a.AppointmentDate)
+				.ThenBy(a => a.AppointmentTime)
+				.ToListAsync();
+		}
+		public async Task<ClinicAppointment?> GetAppointmentByIdAsync(int appointmentId, int clinicId)
         {
             return await _context.ClinicAppointments
                 .FirstOrDefaultAsync(a => a.Id == appointmentId && a.ClinicId == clinicId);

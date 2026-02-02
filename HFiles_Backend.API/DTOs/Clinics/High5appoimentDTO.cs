@@ -6,6 +6,11 @@ using HFiles_Backend.Domain.Enums;
 
 namespace HFiles_Backend.Domain.DTOs.Clinics
 {
+	public class DailyCountDto
+	{
+		public DateTime Date { get; set; }
+		public int Count { get; set; }
+	}
 	public class High5AppointmentDto
 	{
 		public int? Id { get; set; }

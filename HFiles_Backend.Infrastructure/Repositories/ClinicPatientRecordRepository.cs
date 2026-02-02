@@ -1602,5 +1602,15 @@ namespace HFiles_Backend.Infrastructure.Repositories
 
 			return result;
 		}
+		public async Task<List<ClinicPatientRecord>> GetTreatmentRecordsByVisitIdsAsync(List<int> visitIds)
+		{
+			if (visitIds == null || !visitIds.Any())
+				return new List<ClinicPatientRecord>();
+
+			return await _context.ClinicPatientRecords
+				.AsNoTracking()
+				.Where(r => visitIds.Contains(r.ClinicVisitId) && r.Type == RecordType.Treatment)
+				.ToListAsync();
+		}
 	}
 }

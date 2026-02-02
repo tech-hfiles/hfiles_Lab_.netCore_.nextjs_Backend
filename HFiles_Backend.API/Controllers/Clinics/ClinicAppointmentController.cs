@@ -494,10 +494,218 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
+        [HttpGet("clinic/{clinicId:int}/{month:int}/{year:int}")]
+		[Authorize]
+		public async Task<IActionResult> GetAppointmentsByClinicId(
+	[FromRoute] int clinicId,
+	[FromRoute] int month,
+	[FromRoute] int year,
+	[FromQuery] string? startDate,
+	[FromQuery] string? endDate)
+		{
+			HttpContext.Items["Log-Category"] = "Clinic Appointment";
+
+			if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))
+			{
+				_logger.LogWarning("Unauthorized access attempt for Clinic ID {ClinicId}", clinicId);
+				return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view appointments for this clinic."));
+			}
+
+			// ✅ Validate month and year
+			if (month < 1 || month > 12)
+				return BadRequest(ApiResponseFactory.Fail("Month must be between 1 and 12."));
+
+			if (year < 2000 || year > 2100)
+				return BadRequest(ApiResponseFactory.Fail("Year must be between 2000 and 2100."));
+
+			// ✅ Parse date filters for appointments
+			DateTime appointmentStart;
+			DateTime appointmentEnd;
+
+			if (!string.IsNullOrEmpty(startDate))
+			{
+				if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out appointmentStart))
+					return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
+			}
+			else
+			{
+				// ✅ Default: TODAY ONLY
+				appointmentStart = DateTime.Today;
+			}
+
+			if (!string.IsNullOrEmpty(endDate))
+			{
+				if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out appointmentEnd))
+					return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
+			}
+			else
+			{
+				// ✅ Default: TODAY ONLY
+				appointmentEnd = DateTime.Today;
+			}
+
+			// ✅ Calculate month range for daily counts
+			DateTime monthStart = new DateTime(year, month, 1);
+			DateTime monthEnd = monthStart.AddMonths(1).AddDays(-1);
+
+			// ✅ Fetch filtered appointments based on startDate/endDate (or today)
+			var filteredAppointments = await _appointmentRepository
+				.GetAppointmentsByClinicIdWithDateRangeAsync(clinicId, appointmentStart, appointmentEnd);
+
+			// ✅ Fetch ALL appointments for the month (for daily counts)
+			var monthAppointments = await _appointmentRepository
+				.GetAppointmentsByClinicIdWithDateRangeAsync(clinicId, monthStart, monthEnd);
+
+			if (!filteredAppointments.Any())
+			{
+				_logger.LogInformation("No appointments found for Clinic ID {ClinicId}", clinicId);
+				return Ok(ApiResponseFactory.Success(new
+				{
+					Appointments = new List<object>(),
+					TotalAppointmentsToday = 0,
+					MissedAppointmentsToday = 0,
+					CompletedAppointmentsToday = 0,
+					DailyCounts = monthAppointments
+						.GroupBy(a => a.AppointmentDate.Date)
+						.OrderBy(g => g.Key)
+						.Select(g => new
+						{
+							Date = g.Key.ToString("dd-MM-yyyy"),
+							TotalAppointments = g.Count()
+						})
+						.ToList()
+				}, "No appointments found."));
+			}
+
+			var today = DateTime.Today;
+
+			// ✅ Get appointment keys for batch queries
+			var appointmentKeys = filteredAppointments
+				.Select(a => new { a.ClinicId, Date = a.AppointmentDate.Date, a.AppointmentTime })
+				.Distinct()
+				.ToList();
+
+			// ✅ Batch fetch visits for the filtered date range
+			var visits = await _clinicVisitRepository.GetVisitsByClinicAndDatesAsync(
+				clinicId,
+				appointmentKeys.Select(k => k.Date).Distinct().ToList()
+			);
+
+			var visitLookup = visits.ToDictionary(
+				v => new { v.ClinicId, Date = v.AppointmentDate.Date, v.AppointmentTime },
+				v => v
+			);
+
+			// ✅ Extract unique HFIDs and batch fetch users
+			var uniqueHfids = visits
+				.Where(v => v.Patient != null && !string.IsNullOrWhiteSpace(v.Patient.HFID))
+				.Select(v => v.Patient.HFID)
+				.Distinct()
+				.ToList();
+
+			var users = await _userRepository.GetUsersByHFIDsAsync(uniqueHfids);
+			var userMap = users.ToDictionary(u => u.HfId, u => u.ProfilePhoto ?? "Not a registered user");
+
+			// ✅ Batch fetch treatment records
+			var visitIds = visits.Select(v => v.Id).ToList();
+			var records = await _clinicPatientRecordRepository.GetTreatmentRecordsByVisitIdsAsync(visitIds);
+
+			// ✅ Use ToLookup to handle multiple records per visit
+			var recordLookup = records.ToLookup(r => r.ClinicVisitId);
+
+			// ✅ Build response
+			var response = filteredAppointments.Select(a =>
+			{
+				var key = new { a.ClinicId, Date = a.AppointmentDate.Date, a.AppointmentTime };
+
+				var visit = visitLookup.TryGetValue(key, out var v) ? v : null;
+				var hfid = visit?.Patient?.HFID ?? "Not a registered user";
+				var profilePhoto = userMap.TryGetValue(hfid, out var photo) ? photo : "Not a registered user";
+
+				string treatmentName = a.Treatment ?? "-";
+
+				// ✅ Handle multiple treatment records per visit
+				if (visit != null && recordLookup.Contains(visit.Id))
+				{
+					var visitRecords = recordLookup[visit.Id].ToList();
+					var allTreatmentNames = new List<string>();
+
+					foreach (var record in visitRecords)
+					{
+						try
+						{
+							var json = JsonConvert.DeserializeObject<dynamic>(record.JsonData);
+							var treatments = json?.treatments;
+							if (treatments != null)
+							{
+								foreach (var t in treatments)
+								{
+									if (t.name != null)
+									{
+										var name = (string)t.name;
+										if (!allTreatmentNames.Contains(name))
+											allTreatmentNames.Add(name);
+									}
+								}
+							}
+						}
+						catch
+						{
+							_logger.LogWarning("Failed to parse treatment JSON for record ID {RecordId}", record.Id);
+						}
+					}
+
+					if (allTreatmentNames.Any())
+						treatmentName = string.Join(", ", allTreatmentNames);
+				}
+
+				return new
+				{
+					a.Id,
+					a.ClinicId,
+					a.VisitorUsername,
+					a.VisitorPhoneNumber,
+					AppointmentDate = a.AppointmentDate.ToString("dd-MM-yyyy"),
+					AppointmentTime = a.AppointmentTime.ToString(@"hh\:mm"),
+					Treatment = treatmentName,
+					a.Status,
+					HFID = hfid,
+					ProfilePhoto = profilePhoto
+				};
+			}).ToList();
+
+			// ✅ Daily counts for the ENTIRE MONTH (from month/year route params)
+			var dailyCounts = monthAppointments
+				.GroupBy(a => a.AppointmentDate.Date)
+				.OrderBy(g => g.Key)
+				.Select(g => new
+				{
+					Date = g.Key.ToString("dd-MM-yyyy"),
+					TotalAppointments = g.Count()
+				})
+				.ToList();
+
+			int totalAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today);
+			int missedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Absent");
+			int completedAppointmentsToday = filteredAppointments.Count(a => a.AppointmentDate.Date == today && a.Status == "Completed");
+
+			_logger.LogInformation("Fetched {Count} appointments for Clinic ID {ClinicId} in {Month}/{Year}",
+				response.Count, clinicId, month, year);
+
+			return Ok(ApiResponseFactory.Success(new
+			{
+				Appointments = response,
+				TotalAppointmentsToday = totalAppointmentsToday,
+				MissedAppointmentsToday = missedAppointmentsToday,
+				CompletedAppointmentsToday = completedAppointmentsToday,
+				DailyCounts = dailyCounts
+			}, "Appointments fetched successfully."));
+		}
 
 
-        // Update Appointments
-        [HttpPut("clinic/{clinicId:int}/appointment/{appointmentId:int}/status")]
+
+		// Update Appointments
+		[HttpPut("clinic/{clinicId:int}/appointment/{appointmentId:int}/status")]
         [Authorize]
         public async Task<IActionResult> UpdateAppointmentStatus(
           [FromRoute] int clinicId,
@@ -2907,7 +3115,7 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				var doctorMap = await recordRepository.GetLatestConsultantDoctorsByPatientIdsAsync(patientIds, clinicId);
 				var treatmentNamesMap = await recordRepository.GetLatestTreatmentNamesByPatientIdsAsync(patientIds, clinicId);
 
-				var users = await userRepository.GetUsersByHFIDsAsync(hfids);
+				var users = await userRepository.GetUsersByHFIDsAsyncs(hfids);
 				var userMap = users.ToDictionary(x => x.HfId, x => x);
 
 				// -------------------- FILTER PATIENTS --------------------

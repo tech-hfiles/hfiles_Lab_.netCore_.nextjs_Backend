@@ -57,11 +57,18 @@ namespace HFiles_Backend.Infrastructure.Repositories
                 throw;
             }
         }
+		public async Task<List<User>> GetUsersByHFIDsAsyncs(List<string> hfids)
+		{
+			return await _context.Users
+				.AsNoTracking()
+				.Where(u => hfids.Contains(u.HfId))
+				.ToListAsync();
+		}
 
-        /// <summary>
-        /// Retrieves a verified user by email address.
-        /// </summary>
-        public async Task<User?> GetVerifiedUserByEmailAsync(string email)
+		/// <summary>
+		/// Retrieves a verified user by email address.
+		/// </summary>
+		public async Task<User?> GetVerifiedUserByEmailAsync(string email)
         {
             try
             {

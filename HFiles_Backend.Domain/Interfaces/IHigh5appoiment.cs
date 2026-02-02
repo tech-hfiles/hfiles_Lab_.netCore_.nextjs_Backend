@@ -3,9 +3,12 @@ using System.Threading.Tasks;
 using HFiles_Backend.Domain.Entities.Clinics;
 using HFiles_Backend.Domain.Entities.Users;
 using HFiles_Backend.Domain.Enums;
+using HFiles_Backend.Domain.Entities; // ✅ ADD THIS
 
 namespace HFiles_Backend.Domain.Interfaces.Clinics
 {
+
+
 	public class PatientPackageHistoryDto
 	{
 		public string UniqueRecordId { get; set; }
@@ -55,6 +58,10 @@ namespace HFiles_Backend.Domain.Interfaces.Clinics
 		Task<bool> UpdateAppointmentAsync(High5Appointment appointment);
 
 		Task<List<High5Appointment>> GetAppointmentsByClinicIdWithUserAsync(int clinicId);
+		Task<List<DailyCountDto>> GetDailyAppointmentCountsAsync(
+	int clinicId,
+	DateTime startDate,
+	DateTime endDate);
 		Task<bool> IsDuplicateAppointmentAsync(int excludeId, int userId, int? packageId, DateTime date);
 
 		Task<List<PackageAppointmentDetailDto>> GetAppointmentsByRecordIdAsync(string uniqueRecordId);

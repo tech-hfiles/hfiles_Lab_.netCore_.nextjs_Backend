@@ -45,7 +45,78 @@ namespace HFiles_Backend.Infrastructure.Repositories
 				throw;
 			}
 		}
+		public async Task<List<DailyCountDto>> GetDailyEnquiryCountsAsync(
+	int clinicId,
+	DateTime startDate,
+	DateTime endDate)
+		{
+			// ✅ Load filtered enquiries into memory first
+			var enquiries = await _context.clinicEnquiry
+				.AsNoTracking()
+				.Where(e =>
+					e.ClinicId == clinicId &&
+					e.Status != EnquiryStatus.Member &&
+					(
+						(e.AppointmentDate.HasValue &&
+						 e.AppointmentDate.Value >= startDate &&
+						 e.AppointmentDate.Value <= endDate)
+					 ||
+						(e.FollowUpDate.HasValue &&
+						 e.FollowUpDate.Value >= startDate &&
+						 e.FollowUpDate.Value <= endDate)
+					 ||
+						(!e.AppointmentDate.HasValue &&
+						 !e.FollowUpDate.HasValue &&
+						 e.EpochTime > 0)
+					)
+				)
+				.ToListAsync();
 
+			// ✅ Extract dates in memory
+			var dates = new List<DateTime>();
+
+			foreach (var e in enquiries)
+			{
+				// Add AppointmentDate if valid and in range
+				if (e.AppointmentDate.HasValue &&
+					e.AppointmentDate.Value >= startDate &&
+					e.AppointmentDate.Value <= endDate)
+				{
+					dates.Add(e.AppointmentDate.Value.Date);
+				}
+
+				// Add FollowUpDate if valid, in range, and different from AppointmentDate
+				if (e.FollowUpDate.HasValue &&
+					e.FollowUpDate.Value >= startDate &&
+					e.FollowUpDate.Value <= endDate &&
+					(!e.AppointmentDate.HasValue ||
+					 e.FollowUpDate.Value.Date != e.AppointmentDate.Value.Date))
+				{
+					dates.Add(e.FollowUpDate.Value.Date);
+				}
+
+				// Epoch fallback - only if NO dates exist
+				if (!e.AppointmentDate.HasValue && !e.FollowUpDate.HasValue && e.EpochTime > 0)
+				{
+					var epochDate = DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).Date;
+					if (epochDate >= startDate && epochDate <= endDate)
+					{
+						dates.Add(epochDate);
+					}
+				}
+			}
+
+			// ✅ Group and return
+			return dates
+				.GroupBy(d => d)
+				.Select(g => new DailyCountDto
+				{
+					Date = g.Key,
+					Count = g.Count()
+				})
+				.OrderBy(d => d.Date)
+				.ToList();
+		}
 		// In your repository
 		public async Task<IEnumerable<ClinicEnquiry>> GetAllAsync(int clinicId)
 		{

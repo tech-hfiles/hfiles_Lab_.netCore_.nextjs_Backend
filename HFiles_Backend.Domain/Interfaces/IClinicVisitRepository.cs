@@ -19,7 +19,9 @@ namespace HFiles_Backend.Domain.Interfaces
         Task DeleteAsync(ClinicVisit visit);
         Task<ClinicVisitConsentForm?> GetByVisitIdAndConsentFormAsync(int clinicVisitId, int consentFormId);
         Task DeleteAsync(int id);
-        Task DeleteConsentFormAsync(ClinicVisitConsentForm consentForm);
+		Task<List<ClinicVisit>> GetVisitsByClinicAndDatesAsync(int clinicId, List<DateTime> dates);
+
+		Task DeleteConsentFormAsync(ClinicVisitConsentForm consentForm);
 
     }
 }

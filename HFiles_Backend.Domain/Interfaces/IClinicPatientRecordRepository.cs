@@ -20,8 +20,9 @@ namespace HFiles_Backend.Domain.Interfaces
         Task<List<ClinicPatientRecord>> GetUnsentInvoiceRecordsAsync(int clinicId);
         Task<List<ClinicPatientRecord>> GetReceiptRecordsByClinicIdAsync(int clinicId);
         Task<List<ClinicPatientRecord>> GetUnsentReceiptRecordsAsync(int clinicId);
+		Task<List<ClinicPatientRecord>> GetTreatmentRecordsByVisitIdsAsync(List<int> visitIds);
 
-        Task<ClinicPatientRecord?> GetByUniqueRecordIdAsync(int uniqueRecordId);
+		Task<ClinicPatientRecord?> GetByUniqueRecordIdAsync(int uniqueRecordId);
 
         Task<ClinicPatientRecord?> GetByUniqueRecordIdAsync(int clinicId, string uniqueRecordId);
 

@@ -64,6 +64,25 @@ namespace HFiles_Backend.Infrastructure.Repositories
 				.OrderByDescending(a => a.EpochTime)
 				.ToListAsync();
 		}
+		public async Task<List<DailyCountDto>> GetDailyAppointmentCountsAsync(
+int clinicId,
+DateTime startDate,
+DateTime endDate)
+		{
+			return await _context.High5Appointments
+				.AsNoTracking()
+				.Where(h =>
+					h.ClinicId == clinicId &&
+					h.PackageDate >= startDate &&
+					h.PackageDate <= endDate)
+				.GroupBy(h => h.PackageDate.Date)
+				.Select(g => new DailyCountDto
+				{
+					Date = g.Key,
+					Count = g.Count()
+				})
+				.ToListAsync();
+		}
 
 		// NEW METHOD - Add this
 		public async Task<List<High5Appointment>> GetAppointmentsByClinicIdWithUserAsync(int clinicId)

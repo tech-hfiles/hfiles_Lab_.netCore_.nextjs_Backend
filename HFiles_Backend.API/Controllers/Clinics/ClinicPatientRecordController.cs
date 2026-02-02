@@ -13,13 +13,16 @@ using HFiles_Backend.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
 using OfficeOpenXml;
 using PuppeteerSharp;
 using PuppeteerSharp.Media;
 using System.Globalization;
+using System.Linq;
 using System.Text;
+using System.Text.Json;
 using static Google.Apis.Requests.BatchRequest;
 using static HFiles_Backend.API.DTOs.Clinics.ReceiptDocumentDTOs;
 using static System.Net.Mime.MediaTypeNames;
@@ -69,227 +72,522 @@ namespace HFiles_Backend.API.Controllers.Clinics
 		private const string DOCTOR_NAME = "Dr. Varun R Kunte";
 		private readonly TimeSpan APPOINTMENT_TIME = new(10, 0, 0);
 
+        [HttpPost("clinic/patient/records")]
+        [Authorize]
+        public async Task<IActionResult> SavePatientRecord([FromBody] ClinicPatientRecordCreateRequest request)
+        {
+            HttpContext.Items["Log-Category"] = "Patient Record Save";
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed for patient record. Errors: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized record save attempt for Clinic ID {ClinicId}", request.ClinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to save records for this clinic."));
+            }
+
+            await using var transaction = await _clinicRepository.BeginTransactionAsync();
+            bool committed = false;
+
+            try
+            {
+                var parsedType = request.Type;
+                ClinicPatientRecord existingRecord = null;
+
+                // ✅ CHECK: If UniqueRecordId is provided, verify if it exists in database
+                if (!string.IsNullOrWhiteSpace(request.UniqueRecordId))
+                {
+                    existingRecord = await _clinicPatientRecordRepository
+                        .GetByUniqueRecordIdAsync(request.ClinicId, request.UniqueRecordId);
+                }
+
+                // ✅ UPDATE MODE: Only if record actually exists in database
+                if (existingRecord != null)
+                {
+                    // Update existing record with all properties
+                    existingRecord.JsonData = request.JsonData;
+                    existingRecord.PatientId = request.PatientId;
+                    existingRecord.ClinicVisitId = request.ClinicVisitId;
+
+                    if (request.Reference_Id.HasValue)
+                        existingRecord.Reference_Id = request.Reference_Id.Value;
+
+                    if (request.payment_verify.HasValue)
+                        existingRecord.payment_verify = request.payment_verify.Value;
+
+                    if (request.Is_Cansel.HasValue)
+                        existingRecord.Is_Cansel = request.Is_Cansel.Value;
+
+                    if (request.Is_editable.HasValue)
+                        existingRecord.Is_editable = request.Is_editable.Value;
+
+                    await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
+
+                    _logger.LogInformation("Existing record {UniqueRecordId} updated for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
+                        existingRecord.UniqueRecordId, request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+
+                    await transaction.CommitAsync();
+                    committed = true;
+
+                    _cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+                    return Ok(ApiResponseFactory.Success(new
+                    {
+                        UniqueRecordId = existingRecord.UniqueRecordId,
+                        Id = existingRecord.Id
+                    }, "Patient record updated successfully."));
+                }
+                else
+                {
+                    // ✅ CREATE MODE
+                    string uniqueId = string.Empty;
+                    string generatedInvoiceId = string.Empty;
+                    string generatedReceiptId = string.Empty;
+
+                    // ✅ NEW: Check if this is an Invoice/Receipt referencing a parent record with pre-generated IDs
+                    string preGeneratedInvoiceId = null;
+                    string preGeneratedReceiptId = null;
+
+                    if (request.Reference_Id.HasValue && request.Reference_Id.Value > 0)
+                    {
+                        // ✅ FIX: Fetch all records for this visit and find the referenced one
+                        var allRecords = await _clinicPatientRecordRepository.GetByClinicPatientVisitAsync(
+                            request.ClinicId,
+                            request.PatientId,
+                            request.ClinicVisitId);
+
+                        var referencedRecord = allRecords.FirstOrDefault(r => r.Id == request.Reference_Id.Value);
+
+                        if (referencedRecord != null && !string.IsNullOrWhiteSpace(referencedRecord.JsonData))
+                        {
+                            try
+                            {
+                                var refJsonDoc = JsonDocument.Parse(referencedRecord.JsonData);
+
+                                // If creating Invoice and referencing Treatment, extract pre-generated invid
+                                if (parsedType == RecordType.Invoice && referencedRecord.Type == RecordType.Treatment)
+                                {
+                                    if (refJsonDoc.RootElement.TryGetProperty("patient", out var patientObj))
+                                    {
+                                        if (patientObj.TryGetProperty("invid", out var invIdProp))
+                                        {
+                                            preGeneratedInvoiceId = invIdProp.GetString();
+                                            _logger.LogInformation("Found pre-generated Invoice ID {InvoiceId} in Treatment {TreatmentId}",
+                                                preGeneratedInvoiceId, referencedRecord.UniqueRecordId);
+                                        }
+                                    }
+                                }
+
+                                // If creating Receipt and referencing Invoice, extract pre-generated receiptId
+                                if (parsedType == RecordType.Receipt && referencedRecord.Type == RecordType.Invoice)
+                                {
+                                    if (refJsonDoc.RootElement.TryGetProperty("patient", out var patientObj))
+                                    {
+                                        if (patientObj.TryGetProperty("receiptId", out var receiptIdProp))
+                                        {
+                                            preGeneratedReceiptId = receiptIdProp.GetString();
+                                            _logger.LogInformation("Found pre-generated Receipt ID {ReceiptId} in Invoice {InvoiceId}",
+                                                preGeneratedReceiptId, referencedRecord.UniqueRecordId);
+                                        }
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to parse referenced record JSON for ID {RecordId}", request.Reference_Id.Value);
+                            }
+                        }
+                    }
+
+                    // ✅ Use pre-generated ID if available, otherwise generate new
+                    if (parsedType == RecordType.Invoice && !string.IsNullOrWhiteSpace(preGeneratedInvoiceId))
+                    {
+                        uniqueId = preGeneratedInvoiceId;
+                        _logger.LogInformation("Using pre-generated Invoice ID: {InvoiceId}", uniqueId);
+                    }
+                    else if (parsedType == RecordType.Receipt && !string.IsNullOrWhiteSpace(preGeneratedReceiptId))
+                    {
+                        uniqueId = preGeneratedReceiptId;
+                        _logger.LogInformation("Using pre-generated Receipt ID: {ReceiptId}", uniqueId);
+                    }
+                    else
+                    {
+                        // Generate new ID for records that need them
+                        if (parsedType == RecordType.Treatment ||
+                            parsedType == RecordType.Prescription ||
+                            parsedType == RecordType.Invoice ||
+                            parsedType == RecordType.Receipt ||
+                            parsedType == RecordType.MembershipPlan ||
+                            parsedType == RecordType.PhysiotherapyForm)
+                        {
+                            uniqueId = await _uniqueIdGenerator.GenerateUniqueIdAsync(request.ClinicId, parsedType);
+                        }
+                    }
+
+                    // ✅ Generate future IDs for child records (only if not already using pre-generated)
+                    if (parsedType == RecordType.Treatment)
+                    {
+                        generatedInvoiceId = await _uniqueIdGenerator.GenerateUniqueIdAsync(request.ClinicId, RecordType.Invoice);
+                    }
+
+                    if (parsedType == RecordType.Invoice && string.IsNullOrWhiteSpace(preGeneratedInvoiceId))
+                    {
+                        // Only generate receipt ID if this is a NEW invoice (not using pre-generated ID)
+                        generatedReceiptId = await _uniqueIdGenerator.GenerateUniqueIdAsync(request.ClinicId, RecordType.Receipt);
+                    }
+
+                    // ✅ Modify JSON to inject generated IDs
+                    string modifiedJsonData = request.JsonData;
+                    try
+                    {
+                        var jsonDoc = JsonDocument.Parse(request.JsonData);
+                        using var stream = new MemoryStream();
+                        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false }))
+                        {
+                            writer.WriteStartObject();
+
+                            foreach (var property in jsonDoc.RootElement.EnumerateObject())
+                            {
+                                if (property.Name == "patient")
+                                {
+                                    writer.WritePropertyName("patient");
+                                    writer.WriteStartObject();
+
+                                    // ✅ FIXED: Skip properties that we're going to inject to avoid duplicates
+                                    var propertiesToSkip = new HashSet<string>();
+
+                                    if (parsedType == RecordType.Treatment)
+                                    {
+                                        propertiesToSkip.Add("tid");
+                                        propertiesToSkip.Add("invid");
+                                    }
+                                    else if (parsedType == RecordType.Invoice)
+                                    {
+                                        propertiesToSkip.Add("invid");
+                                        propertiesToSkip.Add("receiptId");
+                                    }
+                                    else if (parsedType == RecordType.Receipt)
+                                    {
+                                        propertiesToSkip.Add("receiptId");
+                                    }
+
+                                    // Write all existing patient properties EXCEPT the ones we'll inject
+                                    foreach (var patientProp in property.Value.EnumerateObject())
+                                    {
+                                        if (!propertiesToSkip.Contains(patientProp.Name))
+                                        {
+                                            patientProp.WriteTo(writer);
+                                        }
+                                    }
+
+                                    // NOW inject IDs based on record type (these will be the only values)
+                                    if (parsedType == RecordType.Treatment)
+                                    {
+                                        writer.WriteString("tid", uniqueId);
+                                        writer.WriteString("invid", generatedInvoiceId);
+                                    }
+                                    else if (parsedType == RecordType.Invoice)
+                                    {
+                                        writer.WriteString("invid", uniqueId);
+                                        if (!string.IsNullOrWhiteSpace(generatedReceiptId))
+                                        {
+                                            writer.WriteString("receiptId", generatedReceiptId);
+                                        }
+                                    }
+                                    else if (parsedType == RecordType.Receipt)
+                                    {
+                                        writer.WriteString("receiptId", uniqueId);
+                                    }
+
+                                    writer.WriteEndObject();
+                                }
+                                else
+                                {
+                                    property.WriteTo(writer);
+                                }
+                            }
+
+                            writer.WriteEndObject();
+                        }
+
+                        modifiedJsonData = Encoding.UTF8.GetString(stream.ToArray());
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to modify JSON for new record. Using original JSON.");
+                        modifiedJsonData = request.JsonData;
+                    }
+
+                    var newRecord = new ClinicPatientRecord
+                    {
+                        ClinicId = request.ClinicId,
+                        PatientId = request.PatientId,
+                        ClinicVisitId = request.ClinicVisitId,
+                        Type = parsedType,
+                        JsonData = modifiedJsonData,
+                        UniqueRecordId = uniqueId,
+                        Reference_Id = request.Reference_Id ?? 0,
+                        payment_verify = request.payment_verify ?? false,
+                        Is_Cansel = request.Is_Cansel ?? false,
+                        Is_editable = request.Is_editable ?? null
+                    };
+
+                    await _clinicPatientRecordRepository.SaveAsync(newRecord);
+
+                    _logger.LogInformation("New record {UniqueRecordId} created for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}, GeneratedInvoiceId {InvoiceId}, GeneratedReceiptId {ReceiptId}",
+                        uniqueId, request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType, generatedInvoiceId, generatedReceiptId);
+
+                    await transaction.CommitAsync();
+                    committed = true;
+
+                    _cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+                    return Ok(ApiResponseFactory.Success(new
+                    {
+                        UniqueRecordId = uniqueId,
+                        Id = newRecord.Id,
+                        GeneratedInvoiceId = generatedInvoiceId,
+                        GeneratedReceiptId = generatedReceiptId
+                    }, "Patient record created successfully."));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving/updating record for Clinic ID {ClinicId}", request.ClinicId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while saving the record."));
+            }
+            finally
+            {
+                if (!committed && transaction.GetDbTransaction().Connection != null)
+                    await transaction.RollbackAsync();
+            }
+        }
+
+        //[HttpPost("clinic/patient/records")]
+        //[Authorize]
+        //public async Task<IActionResult> SavePatientRecord([FromBody] ClinicPatientRecordCreateRequest request)
+        //{
+        //	HttpContext.Items["Log-Category"] = "Patient Record Save";
+
+        //	if (!ModelState.IsValid)
+        //	{
+        //		var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+        //		_logger.LogWarning("Validation failed for patient record. Errors: {@Errors}", errors);
+        //		return BadRequest(ApiResponseFactory.Fail(errors));
+        //	}
+
+        //	bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+        //	if (!isAuthorized)
+        //	{
+        //		_logger.LogWarning("Unauthorized record save attempt for Clinic ID {ClinicId}", request.ClinicId);
+        //		return Unauthorized(ApiResponseFactory.Fail("You are not authorized to save records for this clinic."));
+        //	}
+
+        //	await using var transaction = await _clinicRepository.BeginTransactionAsync();
+        //	bool committed = false;
+
+        //	try
+        //	{
+        //		var parsedType = request.Type;
+
+        //		// ✅ FIXED LOGIC: Only check for existing record if UniqueRecordId is provided
+        //		if (!string.IsNullOrWhiteSpace(request.UniqueRecordId))
+        //		{
+        //			// UPDATE MODE: Find record by UniqueRecordId and update it
+        //			var existingRecord = await _clinicPatientRecordRepository
+        //				.GetByUniqueRecordIdAsync(request.ClinicId, request.UniqueRecordId);
+
+        //			if (existingRecord is null)
+        //			{
+        //				_logger.LogWarning("Record with UniqueRecordId {UniqueRecordId} not found for Clinic ID {ClinicId}",
+        //					request.UniqueRecordId, request.ClinicId);
+        //				return NotFound(ApiResponseFactory.Fail($"Record with ID {request.UniqueRecordId} not found."));
+        //			}
+
+        //			// Update existing record with all properties
+        //			existingRecord.JsonData = request.JsonData;
+        //			existingRecord.PatientId = request.PatientId;
+        //			existingRecord.ClinicVisitId = request.ClinicVisitId;
+
+        //			// ✅ ADD THESE PROPERTY UPDATES
+        //			if (request.Reference_Id.HasValue)
+        //				existingRecord.Reference_Id = request.Reference_Id.Value;
+
+        //			if (request.payment_verify.HasValue)
+        //				existingRecord.payment_verify = request.payment_verify.Value;
+
+        //			if (request.Is_Cansel.HasValue)
+        //				existingRecord.Is_Cansel = request.Is_Cansel.Value;
+
+        //			if (request.Is_editable.HasValue)
+        //				existingRecord.Is_editable = request.Is_editable.Value;
+
+        //			await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
+
+        //			_logger.LogInformation("Existing record {UniqueRecordId} updated for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
+        //				existingRecord.UniqueRecordId, request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+
+        //			await transaction.CommitAsync();
+        //			committed = true;
+
+        //			_cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+        //			return Ok(ApiResponseFactory.Success("Patient record updated successfully."));
+        //		}
+        //		else
+        //		{
+        //			// CREATE MODE: Always create new record when UniqueRecordId is not provided
+        //			string uniqueId = string.Empty;
+
+        //			// Generate unique ID for specific types
+        //			if (parsedType == RecordType.Treatment ||
+        //				parsedType == RecordType.Prescription ||
+        //				parsedType == RecordType.Invoice ||
+        //				parsedType == RecordType.Receipt ||
+        //				parsedType == RecordType.MembershipPlan ||
+        //				parsedType == RecordType.PhysiotherapyForm)
+        //			{
+        //				uniqueId = await _uniqueIdGenerator.GenerateUniqueIdAsync(request.ClinicId, parsedType);
+        //			}
+
+        //			// ✅ FIX: Map all properties from request to entity
+        //			var newRecord = new ClinicPatientRecord
+        //			{
+        //				ClinicId = request.ClinicId,
+        //				PatientId = request.PatientId,
+        //				ClinicVisitId = request.ClinicVisitId,
+        //				Type = parsedType,
+        //				JsonData = request.JsonData,
+        //				UniqueRecordId = uniqueId,
+        //				Reference_Id = request.Reference_Id ?? 0,  // Map Reference_Id
+        //				payment_verify = request.payment_verify ?? false,  // Map payment_verify
+        //				Is_Cansel = request.Is_Cansel ?? false,  // Map Is_Cansel
+        //				Is_editable = request.Is_editable ?? null  // Map Is_editable
+        //			};
+
+        //			await _clinicPatientRecordRepository.SaveAsync(newRecord);
+
+        //			_logger.LogInformation("New record {UniqueRecordId} created for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}, Reference_Id {ReferenceId}",
+        //				uniqueId, request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType, request.Reference_Id);
+
+        //			await transaction.CommitAsync();
+        //			committed = true;
+
+        //			_cacheService.InvalidateClinicStatistics(request.ClinicId);
+
+        //			return Ok(ApiResponseFactory.Success("Patient record created successfully."));
+        //		}
+        //	}
+        //	catch (Exception ex)
+        //	{
+        //		_logger.LogError(ex, "Error saving/updating record for Clinic ID {ClinicId}", request.ClinicId);
+        //		return StatusCode(500, ApiResponseFactory.Fail("An error occurred while saving the record."));
+        //	}
+        //	finally
+        //	{
+        //		if (!committed && transaction.GetDbTransaction().Connection != null)
+        //			await transaction.RollbackAsync();
+        //	}
+        //}
+
+        // Stores JSON data
+        //[HttpPost("clinic/patient/records")]
+        //[Authorize]
+        //public async Task<IActionResult> SavePatientRecord([FromBody] ClinicPatientRecordCreateRequest request)
+        //{
+        //    HttpContext.Items["Log-Category"] = "Patient Record Save";
+
+        //    if (!ModelState.IsValid)
+        //    {
+        //        var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+        //        _logger.LogWarning("Validation failed for patient record. Errors: {@Errors}", errors);
+        //        return BadRequest(ApiResponseFactory.Fail(errors));
+        //    }
+
+        //    bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
+        //    if (!isAuthorized)
+        //    {
+        //        _logger.LogWarning("Unauthorized record save attempt for Clinic ID {ClinicId}", request.ClinicId);
+        //        return Unauthorized(ApiResponseFactory.Fail("You are not authorized to save records for this clinic."));
+        //    }
+
+        //    await using var transaction = await _clinicRepository.BeginTransactionAsync();
+        //    bool committed = false;
+
+        //    try
+        //    {
+        //        var parsedType = request.Type;
+
+        //        var existingRecord = await _clinicPatientRecordRepository
+        //            .GetByCompositeKeyAsync(request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+
+        //        if (existingRecord is not null)
+        //        {
+        //            existingRecord.JsonData = request.JsonData;
+        //            await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
+
+        //            _logger.LogInformation("Existing record updated for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
+        //                request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+        //        }
+        //        else
+        //        {
+        //            // Generate unique ID for new records only
+        //            string uniqueId = string.Empty;
+
+        //            // Only generate IDs for these specific types
+        //            if (parsedType == RecordType.Treatment ||
+        //                parsedType == RecordType.Prescription ||
+        //                parsedType == RecordType.Invoice ||
+        //                parsedType == RecordType.Receipt || 
+        //                parsedType == RecordType.MembershipPlan ||  
+        //                parsedType == RecordType.PhysiotherapyForm )
+        //            {
+        //                uniqueId = await _uniqueIdGenerator.GenerateUniqueIdAsync(
+        //                    request.ClinicId, parsedType);
+        //            }
+
+        //            var newRecord = new ClinicPatientRecord
+        //            {
+        //                ClinicId = request.ClinicId,
+        //                PatientId = request.PatientId,
+        //                ClinicVisitId = request.ClinicVisitId,
+        //                Type = parsedType,
+        //                JsonData = request.JsonData,
+        //                UniqueRecordId = uniqueId
+        //            };
+
+        //            await _clinicPatientRecordRepository.SaveAsync(newRecord);
+
+        //            _logger.LogInformation("New record created for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
+        //                request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
+        //        }
 
 
-		[HttpPost("clinic/patient/records")]
-		[Authorize]
-		public async Task<IActionResult> SavePatientRecord([FromBody] ClinicPatientRecordCreateRequest request)
-		{
-			HttpContext.Items["Log-Category"] = "Patient Record Save";
+        //        await transaction.CommitAsync();
+        //        committed = true;
 
-			if (!ModelState.IsValid)
-			{
-				var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
-				_logger.LogWarning("Validation failed for patient record. Errors: {@Errors}", errors);
-				return BadRequest(ApiResponseFactory.Fail(errors));
-			}
+        //        // INVALIDATE CACHE AFTER SUCCESSFUL SAVE - ADD THIS
+        //        _cacheService.InvalidateClinicStatistics(request.ClinicId);
 
-			bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
-			if (!isAuthorized)
-			{
-				_logger.LogWarning("Unauthorized record save attempt for Clinic ID {ClinicId}", request.ClinicId);
-				return Unauthorized(ApiResponseFactory.Fail("You are not authorized to save records for this clinic."));
-			}
-
-			await using var transaction = await _clinicRepository.BeginTransactionAsync();
-			bool committed = false;
-
-			try
-			{
-				var parsedType = request.Type;
-
-				// ✅ FIXED LOGIC: Only check for existing record if UniqueRecordId is provided
-				if (!string.IsNullOrWhiteSpace(request.UniqueRecordId))
-				{
-					// UPDATE MODE: Find record by UniqueRecordId and update it
-					var existingRecord = await _clinicPatientRecordRepository
-						.GetByUniqueRecordIdAsync(request.ClinicId, request.UniqueRecordId);
-
-					if (existingRecord is null)
-					{
-						_logger.LogWarning("Record with UniqueRecordId {UniqueRecordId} not found for Clinic ID {ClinicId}",
-							request.UniqueRecordId, request.ClinicId);
-						return NotFound(ApiResponseFactory.Fail($"Record with ID {request.UniqueRecordId} not found."));
-					}
-
-					// Update existing record with all properties
-					existingRecord.JsonData = request.JsonData;
-					existingRecord.PatientId = request.PatientId;
-					existingRecord.ClinicVisitId = request.ClinicVisitId;
-
-					// ✅ ADD THESE PROPERTY UPDATES
-					if (request.Reference_Id.HasValue)
-						existingRecord.Reference_Id = request.Reference_Id.Value;
-
-					if (request.payment_verify.HasValue)
-						existingRecord.payment_verify = request.payment_verify.Value;
-
-					if (request.Is_Cansel.HasValue)
-						existingRecord.Is_Cansel = request.Is_Cansel.Value;
-
-					if (request.Is_editable.HasValue)
-						existingRecord.Is_editable = request.Is_editable.Value;
-
-					await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
-
-					_logger.LogInformation("Existing record {UniqueRecordId} updated for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
-						existingRecord.UniqueRecordId, request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
-
-					await transaction.CommitAsync();
-					committed = true;
-
-					_cacheService.InvalidateClinicStatistics(request.ClinicId);
-
-					return Ok(ApiResponseFactory.Success("Patient record updated successfully."));
-				}
-				else
-				{
-					// CREATE MODE: Always create new record when UniqueRecordId is not provided
-					string uniqueId = string.Empty;
-
-					// Generate unique ID for specific types
-					if (parsedType == RecordType.Treatment ||
-						parsedType == RecordType.Prescription ||
-						parsedType == RecordType.Invoice ||
-						parsedType == RecordType.Receipt ||
-						parsedType == RecordType.MembershipPlan ||
-						parsedType == RecordType.PhysiotherapyForm)
-					{
-						uniqueId = await _uniqueIdGenerator.GenerateUniqueIdAsync(request.ClinicId, parsedType);
-					}
-
-					// ✅ FIX: Map all properties from request to entity
-					var newRecord = new ClinicPatientRecord
-					{
-						ClinicId = request.ClinicId,
-						PatientId = request.PatientId,
-						ClinicVisitId = request.ClinicVisitId,
-						Type = parsedType,
-						JsonData = request.JsonData,
-						UniqueRecordId = uniqueId,
-						Reference_Id = request.Reference_Id ?? 0,  // Map Reference_Id
-						payment_verify = request.payment_verify ?? false,  // Map payment_verify
-						Is_Cansel = request.Is_Cansel ?? false,  // Map Is_Cansel
-						Is_editable = request.Is_editable ?? null  // Map Is_editable
-					};
-
-					await _clinicPatientRecordRepository.SaveAsync(newRecord);
-
-					_logger.LogInformation("New record {UniqueRecordId} created for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}, Reference_Id {ReferenceId}",
-						uniqueId, request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType, request.Reference_Id);
-
-					await transaction.CommitAsync();
-					committed = true;
-
-					_cacheService.InvalidateClinicStatistics(request.ClinicId);
-
-					return Ok(ApiResponseFactory.Success("Patient record created successfully."));
-				}
-			}
-			catch (Exception ex)
-			{
-				_logger.LogError(ex, "Error saving/updating record for Clinic ID {ClinicId}", request.ClinicId);
-				return StatusCode(500, ApiResponseFactory.Fail("An error occurred while saving the record."));
-			}
-			finally
-			{
-				if (!committed && transaction.GetDbTransaction().Connection != null)
-					await transaction.RollbackAsync();
-			}
-		}
-
-		// Stores JSON data
-		//[HttpPost("clinic/patient/records")]
-		//[Authorize]
-		//public async Task<IActionResult> SavePatientRecord([FromBody] ClinicPatientRecordCreateRequest request)
-		//{
-		//    HttpContext.Items["Log-Category"] = "Patient Record Save";
-
-		//    if (!ModelState.IsValid)
-		//    {
-		//        var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
-		//        _logger.LogWarning("Validation failed for patient record. Errors: {@Errors}", errors);
-		//        return BadRequest(ApiResponseFactory.Fail(errors));
-		//    }
-
-		//    bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(request.ClinicId, User);
-		//    if (!isAuthorized)
-		//    {
-		//        _logger.LogWarning("Unauthorized record save attempt for Clinic ID {ClinicId}", request.ClinicId);
-		//        return Unauthorized(ApiResponseFactory.Fail("You are not authorized to save records for this clinic."));
-		//    }
-
-		//    await using var transaction = await _clinicRepository.BeginTransactionAsync();
-		//    bool committed = false;
-
-		//    try
-		//    {
-		//        var parsedType = request.Type;
-
-		//        var existingRecord = await _clinicPatientRecordRepository
-		//            .GetByCompositeKeyAsync(request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
-
-		//        if (existingRecord is not null)
-		//        {
-		//            existingRecord.JsonData = request.JsonData;
-		//            await _clinicPatientRecordRepository.UpdateAsync(existingRecord);
-
-		//            _logger.LogInformation("Existing record updated for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
-		//                request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
-		//        }
-		//        else
-		//        {
-		//            // Generate unique ID for new records only
-		//            string uniqueId = string.Empty;
-
-		//            // Only generate IDs for these specific types
-		//            if (parsedType == RecordType.Treatment ||
-		//                parsedType == RecordType.Prescription ||
-		//                parsedType == RecordType.Invoice ||
-		//                parsedType == RecordType.Receipt || 
-		//                parsedType == RecordType.MembershipPlan ||  
-		//                parsedType == RecordType.PhysiotherapyForm )
-		//            {
-		//                uniqueId = await _uniqueIdGenerator.GenerateUniqueIdAsync(
-		//                    request.ClinicId, parsedType);
-		//            }
-
-		//            var newRecord = new ClinicPatientRecord
-		//            {
-		//                ClinicId = request.ClinicId,
-		//                PatientId = request.PatientId,
-		//                ClinicVisitId = request.ClinicVisitId,
-		//                Type = parsedType,
-		//                JsonData = request.JsonData,
-		//                UniqueRecordId = uniqueId
-		//            };
-
-		//            await _clinicPatientRecordRepository.SaveAsync(newRecord);
-
-		//            _logger.LogInformation("New record created for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}, Type {Type}",
-		//                request.ClinicId, request.PatientId, request.ClinicVisitId, parsedType);
-		//        }
-
-
-		//        await transaction.CommitAsync();
-		//        committed = true;
-
-		//        // INVALIDATE CACHE AFTER SUCCESSFUL SAVE - ADD THIS
-		//        _cacheService.InvalidateClinicStatistics(request.ClinicId);
-
-		//        return Ok(ApiResponseFactory.Success("Patient record saved successfully."));
-		//    }
-		//    catch (Exception ex)
-		//    {
-		//        _logger.LogError(ex, "Error saving/updating record for Clinic ID {ClinicId}", request.ClinicId);
-		//        return StatusCode(500, ApiResponseFactory.Fail("An error occurred while saving the record."));
-		//    }
-		//    finally
-		//    {
-		//        if (!committed && transaction.GetDbTransaction().Connection != null)
-		//            await transaction.RollbackAsync();
-		//
-		public class UserData
+        //        return Ok(ApiResponseFactory.Success("Patient record saved successfully."));
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Error saving/updating record for Clinic ID {ClinicId}", request.ClinicId);
+        //        return StatusCode(500, ApiResponseFactory.Fail("An error occurred while saving the record."));
+        //    }
+        //    finally
+        //    {
+        //        if (!committed && transaction.GetDbTransaction().Connection != null)
+        //            await transaction.RollbackAsync();
+        //
+        public class UserData
 		{
 			public int id { get; set; }
 			public string Username { get; set; }
@@ -518,80 +816,167 @@ namespace HFiles_Backend.API.Controllers.Clinics
 			}
 		}
 
-		// Fetch JSON Data
-		[HttpGet("clinic/{clinicId}/patient/{patientId}/visit/{clinicVisitId}/records")]
-		[Authorize]
-		public async Task<IActionResult> GetPatientRecordsByVisit(
-			[FromRoute] int clinicId,
-			[FromRoute] int patientId,
-			[FromRoute] int clinicVisitId)
-		{
 
-			HttpContext.Items["Log-Category"] = "Patient Record Fetch";
+        [HttpGet("clinic/{clinicId}/patient/{patientId}/visit/{clinicVisitId}/records")]
+        [Authorize]
+        public async Task<IActionResult> GetPatientRecordsByVisit(
+    [FromRoute] int clinicId,
+    [FromRoute] int patientId,
+    [FromRoute] int clinicVisitId)
+        {
+            HttpContext.Items["Log-Category"] = "Patient Record Fetch";
 
-			if (clinicId <= 0 || patientId <= 0 || clinicVisitId <= 0)
-			{
-				_logger.LogWarning("Invalid IDs. ClinicId: {ClinicId}, PatientId: {PatientId}, VisitId: {VisitId}",
-					clinicId, patientId, clinicVisitId);
-				return BadRequest(ApiResponseFactory.Fail("Clinic ID, Patient ID, and Visit ID must be positive integers."));
-			}
+            if (clinicId <= 0 || patientId <= 0 || clinicVisitId <= 0)
+            {
+                _logger.LogWarning("Invalid IDs. ClinicId: {ClinicId}, PatientId: {PatientId}, VisitId: {VisitId}",
+                    clinicId, patientId, clinicVisitId);
+                return BadRequest(ApiResponseFactory.Fail("Clinic ID, Patient ID, and Visit ID must be positive integers."));
+            }
 
-			bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
-			if (!isAuthorized)
-			{
-				_logger.LogWarning("Unauthorized record fetch attempt for Clinic ID {ClinicId}", clinicId);
-				return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view records for this clinic."));
-			}
+            bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+            if (!isAuthorized)
+            {
+                _logger.LogWarning("Unauthorized record fetch attempt for Clinic ID {ClinicId}", clinicId);
+                return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view records for this clinic."));
+            }
 
-			try
-			{
+            try
+            {
+                var records = await _clinicPatientRecordRepository.GetByClinicPatientVisitAsync(
+                    clinicId, patientId, clinicVisitId);
 
-				var records = await _clinicPatientRecordRepository.GetByClinicPatientVisitAsync(
-					clinicId, patientId, clinicVisitId);
+                var recordsList = records.ToList();
+                var recordsById = recordsList.ToDictionary(r => r.Id, r => r);
 
-				var recordsList = records.ToList(); // Must materialize first
-
-
-
-				var response = recordsList.Select(r =>
-				{	
-
-
-					return new ClinicPatientRecordResponse
-					{
-						Id = r.Id,
-						Type = r.Type,
-						JsonData = r.JsonData,
-						UniqueRecordId = r.UniqueRecordId,
-						EpochTime = r.EpochTime,
-						PaymentVerify = r.payment_verify,
-
+                var response = recordsList.Select(r =>
+                {
+                    var recordResponse = new ClinicPatientRecordResponse
+                    {
+                        Id = r.Id,
+                        Type = r.Type,
+                        JsonData = r.JsonData, // ✅ JSON already has IDs injected at save time
+                        UniqueRecordId = r.UniqueRecordId,
+                        EpochTime = r.EpochTime,
+                        PaymentVerify = r.payment_verify,
                         SendToPatient = r.SendToPatient,
                         ReferenceId = r.Reference_Id
                     };
-				}).ToList();
+
+                    // Fetch referenced record info
+                    if (r.Reference_Id > 0 && recordsById.ContainsKey((int)r.Reference_Id))
+                    {
+                        var referencedRecord = recordsById[(int)r.Reference_Id];
+                        recordResponse.ReferencedUniqueRecordId = referencedRecord.UniqueRecordId;
+                        recordResponse.ReferencedRecordType = referencedRecord.Type.ToString();
+                    }
+
+                    // For Invoices, find all related Receipts
+                    if (r.Type == RecordType.Invoice)
+                    {
+                        var relatedReceipts = recordsList
+                            .Where(rec => rec.Type == RecordType.Receipt && rec.Reference_Id == r.Id)
+                            .Select(rec => new RelatedRecordInfo
+                            {
+                                Id = rec.Id,
+                                UniqueRecordId = rec.UniqueRecordId,
+                                Type = rec.Type.ToString(),
+                                EpochTime = rec.EpochTime
+                            })
+                            .ToList();
+
+                        recordResponse.RelatedReceipts = relatedReceipts;
+                    }
+
+                    return recordResponse;
+                }).ToList();
+
+                _logger.LogInformation(
+                    "Fetched {Count} records for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}",
+                    response.Count, clinicId, patientId, clinicVisitId);
+
+                return Ok(ApiResponseFactory.Success(response, "Records fetched successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching records for Clinic ID {ClinicId}, Visit ID {VisitId}",
+                    clinicId, clinicVisitId);
+                return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching records."));
+            }
+        }
+        // Fetch JSON Data
+        //[HttpGet("clinic/{clinicId}/patient/{patientId}/visit/{clinicVisitId}/records")]
+        //[Authorize]
+        //public async Task<IActionResult> GetPatientRecordsByVisit(
+        //	[FromRoute] int clinicId,
+        //	[FromRoute] int patientId,
+        //	[FromRoute] int clinicVisitId)
+        //{
+
+        //	HttpContext.Items["Log-Category"] = "Patient Record Fetch";
+
+        //	if (clinicId <= 0 || patientId <= 0 || clinicVisitId <= 0)
+        //	{
+        //		_logger.LogWarning("Invalid IDs. ClinicId: {ClinicId}, PatientId: {PatientId}, VisitId: {VisitId}",
+        //			clinicId, patientId, clinicVisitId);
+        //		return BadRequest(ApiResponseFactory.Fail("Clinic ID, Patient ID, and Visit ID must be positive integers."));
+        //	}
+
+        //	bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+        //	if (!isAuthorized)
+        //	{
+        //		_logger.LogWarning("Unauthorized record fetch attempt for Clinic ID {ClinicId}", clinicId);
+        //		return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view records for this clinic."));
+        //	}
+
+        //	try
+        //	{
+
+        //		var records = await _clinicPatientRecordRepository.GetByClinicPatientVisitAsync(
+        //			clinicId, patientId, clinicVisitId);
+
+        //		var recordsList = records.ToList(); // Must materialize first
 
 
 
-				_logger.LogInformation(
-					"Fetched {Count} records for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}",
-					response.Count, clinicId, patientId, clinicVisitId);
-
-				return Ok(ApiResponseFactory.Success(response, "Records fetched successfully."));
-			}
-			catch (Exception ex)
-			{
-				_logger.LogError(ex, "Error fetching records for Clinic ID {ClinicId}, Visit ID {VisitId}",
-					clinicId, clinicVisitId);
-				return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching records."));
-			}
-		}
+        //		var response = recordsList.Select(r =>
+        //		{	
 
 
+        //			return new ClinicPatientRecordResponse
+        //			{
+        //				Id = r.Id,
+        //				Type = r.Type,
+        //				JsonData = r.JsonData,
+        //				UniqueRecordId = r.UniqueRecordId,
+        //				EpochTime = r.EpochTime,
+        //				PaymentVerify = r.payment_verify,
+
+        //                      SendToPatient = r.SendToPatient,
+        //                      ReferenceId = r.Reference_Id
+        //                  };
+        //		}).ToList();
 
 
-		// Upload Patient Images
-		[HttpPost("clinic/patient/records/upload")]
+
+        //		_logger.LogInformation(
+        //			"Fetched {Count} records for Clinic ID {ClinicId}, Patient ID {PatientId}, Visit ID {VisitId}",
+        //			response.Count, clinicId, patientId, clinicVisitId);
+
+        //		return Ok(ApiResponseFactory.Success(response, "Records fetched successfully."));
+        //	}
+        //	catch (Exception ex)
+        //	{
+        //		_logger.LogError(ex, "Error fetching records for Clinic ID {ClinicId}, Visit ID {VisitId}",
+        //			clinicId, clinicVisitId);
+        //		return StatusCode(500, ApiResponseFactory.Fail("An error occurred while fetching records."));
+        //	}
+        //}
+
+
+
+
+        // Upload Patient Images
+        [HttpPost("clinic/patient/records/upload")]
 		[Authorize]
 		public async Task<IActionResult> UploadPatientRecordFiles(
 		[FromForm] ClinicPatientRecordFileUploadRequest request)

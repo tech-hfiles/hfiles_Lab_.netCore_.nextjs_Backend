@@ -358,10 +358,12 @@ namespace HFiles_Backend.API.Controllers.Clinics
 						}
 
 						// FollowUpDate entry - Show on FollowUpDate only (and not same as AppointmentDate)
-						if (e.FollowUpDate.HasValue &&
-							e.FollowUpDate.Value.Date >= filterStartDate &&
-							e.FollowUpDate.Value.Date <= filterEndDate &&
-							(!e.AppointmentDate.HasValue || e.FollowUpDate.Value.Date != e.AppointmentDate.Value.Date))
+											if (e.FollowUpDate.HasValue &&
+						e.FollowUpDate.Value.Date >= filterStartDate &&
+						e.FollowUpDate.Value.Date <= filterEndDate &&
+						(!e.AppointmentDate.HasValue ||
+						 e.FollowUpDate.Value.Date != e.AppointmentDate.Value.Date ||
+						 e.AppointmentTime != e.AppointmentTime)) // Also check if times differ // Compare full DateTime
 						{
 							enquiryList.Add(new AppointmentMergedDto
 							{

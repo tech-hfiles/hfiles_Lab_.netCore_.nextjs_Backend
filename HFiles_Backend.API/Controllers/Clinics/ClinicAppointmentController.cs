@@ -494,14 +494,14 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-        [HttpGet("clinic/{clinicId:int}/{month:int}/{year:int}")]
+		[HttpGet("clinic/{clinicId:int}/{month:int}/{year:int}")]
 		[Authorize]
 		public async Task<IActionResult> GetAppointmentsByClinicId(
-	[FromRoute] int clinicId,
-	[FromRoute] int month,
-	[FromRoute] int year,
-	[FromQuery] string? startDate,
-	[FromQuery] string? endDate)
+			[FromRoute] int clinicId,
+			[FromRoute] int month,
+			[FromRoute] int year,
+			[FromQuery] string? startDate,
+			[FromQuery] string? endDate)
 		{
 			HttpContext.Items["Log-Category"] = "Clinic Appointment";
 
@@ -591,10 +591,10 @@ namespace HFiles_Backend.API.Controllers.Clinics
 				appointmentKeys.Select(k => k.Date).Distinct().ToList()
 			);
 
-			var visitLookup = visits.ToDictionary(
-				v => new { v.ClinicId, Date = v.AppointmentDate.Date, v.AppointmentTime },
-				v => v
-			);
+			// ✅ FIXED: Use GroupBy + ToDictionary to handle duplicate keys
+			var visitLookup = visits
+				.GroupBy(v => new { v.ClinicId, Date = v.AppointmentDate.Date, v.AppointmentTime })
+				.ToDictionary(g => g.Key, g => g.First());
 
 			// ✅ Extract unique HFIDs and batch fetch users
 			var uniqueHfids = visits

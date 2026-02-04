@@ -1,6 +1,11 @@
 ﻿namespace HFiles_Backend.Application.DTOs.Clinics.Statistics
 {
-    public class ClinicStatisticsResponse
+	public class EnquiryStats
+	{
+		public int TotalCount { get; set; }
+		public List<MonthlyCount> MonthlyBreakdown { get; set; } = new();
+	}
+	public class ClinicStatisticsResponse
     {
         public TotalRegistrationsStats TotalRegistrations { get; set; } = new();
         public IncomeStats TotalIncomeGenerated { get; set; } = new();

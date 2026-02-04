@@ -14,7 +14,95 @@ namespace HFiles_Backend.Infrastructure.Repositories
         private readonly AppDbContext _context = context;
         private readonly ILogger<ClinicStatisticsRepository> _logger = logger;
 
-        public async Task<ClinicStatisticsResponse> GetClinicStatisticsAsync(
+
+		// Add this new method to ClinicStatisticsRepository
+		public async Task<object> GetHigh5StatisticsAsync(
+	int clinicId,
+	DateTime? startDate = null,
+	DateTime? endDate = null)
+		{
+			try
+			{
+				var registrations = await GetRegistrationStatsAsync(clinicId, startDate, endDate);
+				var enquiries = await GetEnquiryStatsAsync(clinicId, startDate, endDate);
+
+				return new
+				{
+					TotalRegistrations = registrations,
+					TotalEnquiries = enquiries
+				};
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error fetching High5 statistics for Clinic ID {ClinicId}", clinicId);
+				throw;
+			}
+		}
+
+
+
+		public async Task<EnquiryStats> GetEnquiryStatsAsync(
+	int clinicId,
+	DateTime? startDate,
+	DateTime? endDate)
+		{
+			try
+			{
+				// Get all enquiries with their epoch times
+				var enquiriesWithDates = await _context.clinicEnquiry
+					.Where(e => e.ClinicId == clinicId)
+					.Select(e => new { e.Id, e.EpochTime })
+					.ToListAsync();
+
+				// Convert epoch to dates and filter
+				var filteredEnquiries = enquiriesWithDates
+					.Select(e => new
+					{
+						e.Id,
+						Date = DateTimeOffset.FromUnixTimeSeconds(e.EpochTime).DateTime
+					})
+					.Where(e =>
+					{
+						return (!startDate.HasValue || e.Date.Date >= startDate.Value.Date) &&
+							   (!endDate.HasValue || e.Date.Date <= endDate.Value.Date);
+					})
+					.ToList();
+
+				// Group by month
+				var monthlyData = filteredEnquiries
+					.GroupBy(e => new { e.Date.Year, e.Date.Month })
+					.Select(g => new MonthlyCount
+					{
+						Year = g.Key.Year,
+						Month = g.Key.Month,
+						MonthName = CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(g.Key.Month),
+						Count = g.Count()
+					})
+					.OrderBy(m => m.Year)
+					.ThenBy(m => m.Month)
+					.ToList();
+
+				return new EnquiryStats
+				{
+					TotalCount = filteredEnquiries.Count,
+					MonthlyBreakdown = monthlyData
+				};
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error fetching enquiry statistics for Clinic ID {ClinicId}", clinicId);
+				throw;
+			}
+		}
+
+
+
+
+
+
+
+
+		public async Task<ClinicStatisticsResponse> GetClinicStatisticsAsync(
           int clinicId,
           DateTime? startDate = null,
           DateTime? endDate = null)

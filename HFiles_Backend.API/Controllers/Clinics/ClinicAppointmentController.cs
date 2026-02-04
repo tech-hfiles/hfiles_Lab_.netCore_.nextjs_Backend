@@ -3838,338 +3838,340 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
-        /* ***************************************************************************************** */
-        ////ARTHROSE APPOINTMENTS API
 
 
-        ///// <summary>
-        ///// Imports appointments from Excel file and creates appointment entries.
-        ///// Excel structure: A=patientName, B=patientId, C=date, D=status, E=explanation
-        ///// Maps patients to existing users or creates appointments with patient names
-        ///// </summary>
-        ///// <param name="request">The Excel file containing appointment data</param>
-        ///// <returns>Summary of import results including added and skipped appointments</returns>
-        //[HttpPost("import-excel")]
-        //public async Task<IActionResult> ImportAppointmentsFromExcel([FromForm] AppointmentImportRequest request)
-        //{
-        //    HttpContext.Items["Log-Category"] = "Appointment Import";
-
-        //    _logger.LogInformation("Starting appointment import from Excel file");
-
-        //    // Validate file upload
-        //    if (request.ExcelFile == null || request.ExcelFile.Length == 0)
-        //        return BadRequest(ApiResponseFactory.Fail("Excel file is required."));
-
-        //    if (!Path.GetExtension(request.ExcelFile.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
-        //        return BadRequest(ApiResponseFactory.Fail("Only .xlsx files are supported."));
-
-        //    var response = new AppointmentImportResponse();
-        //    var appointmentsToAdd = new List<ClinicAppointment>();
-        //    var skippedReasons = new List<string>();
-
-        //    try
-        //    {
-        //        using var stream = new MemoryStream();
-        //        await request.ExcelFile.CopyToAsync(stream);
-
-        //        ExcelPackage.License.SetNonCommercialPersonal("Ayush");
-        //        using var package = new ExcelPackage(stream);
-        //        var worksheet = package.Workbook.Worksheets[0];
-
-        //        if (worksheet.Dimension == null)
-        //            return BadRequest(ApiResponseFactory.Fail("Excel file is empty."));
-
-        //        var rowCount = worksheet.Dimension.End.Row;
-        //        _logger.LogInformation("Processing {RowCount} rows from Excel", rowCount - 1);
-
-        //        // Process each row (skip header row)
-        //        for (int row = 2; row <= rowCount; row++)
-        //        {
-        //            try
-        //            {
-        //                // Extract data from Excel row
-        //                var appointmentData = ExtractAppointmentDataFromRow(worksheet, row);
-        //                response.TotalProcessed++;
-
-        //                // Validate required fields
-        //                var validationResult = ValidateAppointmentData(appointmentData, row);
-        //                if (!validationResult.IsValid)
-        //                {
-        //                    skippedReasons.Add($"Row {row}: {validationResult.ErrorMessage}");
-        //                    response.Skipped++;
-        //                    continue;
-        //                }
-
-        //                // Parse date and time from the complex date string
-        //                var dateTimeResult = ParseDateTimeString(appointmentData.DateString);
-        //                if (!dateTimeResult.IsValid)
-        //                {
-        //                    skippedReasons.Add($"Row {row}: {dateTimeResult.ErrorMessage}");
-        //                    response.Skipped++;
-        //                    continue;
-        //                }
-
-        //                // Create appointment entity
-        //                var appointment = await CreateAppointmentFromData(appointmentData, dateTimeResult);
-        //                appointmentsToAdd.Add(appointment);
-
-        //                // Track statistics
-        //                if (appointment.VisitorPhoneNumber != "N/A")
-        //                    response.PatientsFound++;
-        //                else
-        //                    response.PatientsNotFound++;
-
-        //            }
-        //            catch (Exception ex)
-        //            {
-        //                _logger.LogError(ex, "Error processing row {Row}", row);
-        //                skippedReasons.Add($"Row {row}: Processing error - {ex.Message}");
-        //                response.Skipped++;
-        //            }
-        //        }
-
-        //        // Bulk insert valid appointments
-        //        if (appointmentsToAdd.Any())
-        //        {
-        //            await _appointmentRepository.AddRangeAsync(appointmentsToAdd);
-        //            await _appointmentRepository.SaveChangesAsync();
-
-        //            response.SuccessfullyAdded = appointmentsToAdd.Count;
-        //            response.AddedAppointments = appointmentsToAdd.Select(a => new AppointmentSummary
-        //            {
-        //                PatientName = a.VisitorUsername,
-        //                PatientId = GetPatientIdFromAppointment(a),
-        //                VisitorPhoneNumber = a.VisitorPhoneNumber,
-        //                AppointmentDate = a.AppointmentDate.ToString("dd-MM-yyyy"),
-        //                AppointmentTime = a.AppointmentTime.ToString(@"hh\:mm"),
-        //                Status = a.Status,
-        //                Treatment = a.Treatment ?? "",
-        //                PatientFoundInUsers = a.VisitorPhoneNumber != "N/A"
-        //            }).ToList();
-        //        }
-
-        //        response.SkippedReasons = skippedReasons;
-        //        response.Message = $"Import completed: {response.SuccessfullyAdded} added, {response.Skipped} skipped out of {response.TotalProcessed} total appointments. " +
-        //                          $"Found {response.PatientsFound} existing patients, {response.PatientsNotFound} new patients.";
-
-        //        _logger.LogInformation("Appointment import completed: {Added} added, {Skipped} skipped",
-        //            response.SuccessfullyAdded, response.Skipped);
-
-        //        return Ok(ApiResponseFactory.Success(response, response.Message));
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        _logger.LogError(ex, "Failed to import appointments from Excel");
-        //        return StatusCode(500, ApiResponseFactory.Fail("Failed to process Excel file: " + ex.Message));
-        //    }
-        //}
-
-        //private ExcelAppointmentRow ExtractAppointmentDataFromRow(ExcelWorksheet worksheet, int row)
-        //{
-        //    return new ExcelAppointmentRow
-        //    {
-        //        PatientName = worksheet.Cells[row, 1].Text.Trim(),
-        //        PatientId = worksheet.Cells[row, 2].Text.Trim(),
-        //        DateString = worksheet.Cells[row, 3].Text.Trim(),
-        //        Status = worksheet.Cells[row, 4].Text.Trim(),
-        //        Explanation = worksheet.Cells[row, 5].Text.Trim()
-        //    };
-        //}
-
-        //private (bool IsValid, string ErrorMessage) ValidateAppointmentData(ExcelAppointmentRow data, int row)
-        //{
-        //    if (string.IsNullOrWhiteSpace(data.PatientName))
-        //        return (false, "Patient name is required");
-
-        //    if (string.IsNullOrWhiteSpace(data.PatientId))
-        //        return (false, "Patient ID is required");
-
-        //    if (string.IsNullOrWhiteSpace(data.DateString))
-        //        return (false, "Date string is required");
-
-        //    if (string.IsNullOrWhiteSpace(data.Status))
-        //        return (false, "Status is required");
-
-        //    if (!data.Status.Equals("CONFIRM", StringComparison.OrdinalIgnoreCase) &&
-        //        !data.Status.Equals("CANCEL", StringComparison.OrdinalIgnoreCase))
-        //        return (false, $"Invalid status '{data.Status}'. Expected CONFIRM or CANCEL");
-
-        //    return (true, "");
-        //}
-
-        //private (bool IsValid, DateTime Date, TimeSpan Time, string ErrorMessage) ParseDateTimeString(string dateString)
-        //{
-        //    try
-        //    {
-        //        // Pattern: "Tue Apr 01 19:54:27 IST 2025"
-        //        // Format: {weekday} {month} {dd} {hh:mm:ss} IST {yyyy}
-        //        var regex = new Regex(@"^\w{3}\s+(\w{3})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+IST\s+(\d{4})$");
-        //        var match = regex.Match(dateString);
-
-        //        if (!match.Success)
-        //            return (false, default, default, $"Invalid date format: {dateString}");
-
-        //        var monthStr = match.Groups[1].Value;
-        //        var day = int.Parse(match.Groups[2].Value);
-        //        var hour = int.Parse(match.Groups[3].Value);
-        //        var minute = int.Parse(match.Groups[4].Value);
-        //        var second = int.Parse(match.Groups[5].Value);
-        //        var year = int.Parse(match.Groups[6].Value);
-
-        //        // Convert month name to number
-        //        var month = monthStr switch
-        //        {
-        //            "Jan" => 1,
-        //            "Feb" => 2,
-        //            "Mar" => 3,
-        //            "Apr" => 4,
-        //            "May" => 5,
-        //            "Jun" => 6,
-        //            "Jul" => 7,
-        //            "Aug" => 8,
-        //            "Sep" => 9,
-        //            "Oct" => 10,
-        //            "Nov" => 11,
-        //            "Dec" => 12,
-        //            _ => throw new ArgumentException($"Invalid month: {monthStr}")
-        //        };
-
-        //        var date = new DateTime(year, month, day);
-        //        var time = new TimeSpan(hour, minute, second);
-
-        //        return (true, date, time, "");
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        return (false, default, default, $"Error parsing date '{dateString}': {ex.Message}");
-        //    }
-        //}
-
-        //private async Task<ClinicAppointment> CreateAppointmentFromData(
-        //    ExcelAppointmentRow data,
-        //    (bool IsValid, DateTime Date, TimeSpan Time, string ErrorMessage) dateTimeResult)
-        //{
-        //    // Try to find user by PatientId
-        //    var user = await _userRepository.GetUserByPatientIdAsync(data.PatientId);
-
-        //    string visitorUsername;
-        //    string visitorPhoneNumber;
-
-        //    if (user != null)
-        //    {
-        //        // Patient found in users table - use their data
-        //        visitorUsername = $"{user.FirstName} {user.LastName}".Trim();
-        //        visitorPhoneNumber = user.PhoneNumber;
-        //    }
-        //    else
-        //    {
-        //        // Patient not found - use Excel data
-        //        visitorUsername = data.PatientName;
-        //        visitorPhoneNumber = "N/A";
-        //    }
-
-        //    // Convert status: CONFIRM -> Completed, CANCEL -> Canceled
-        //    string status = data.Status.Equals("CONFIRM", StringComparison.OrdinalIgnoreCase)
-        //        ? "Completed"
-        //        : "Canceled";
-
-        //    var appointment = new ClinicAppointment
-        //    {
-        //        VisitorUsername = visitorUsername,
-        //        VisitorPhoneNumber = visitorPhoneNumber,
-        //        AppointmentDate = dateTimeResult.Date,
-        //        AppointmentTime = dateTimeResult.Time,
-        //        Treatment = data.Explanation,
-        //        ClinicId = 8, // Fixed clinic ID as requested
-        //        Status = status
-        //    };
-
-        //    return appointment;
-        //}
-
-        //private string GetPatientIdFromAppointment(ClinicAppointment appointment)
-        //{
-        //    // This is a helper method to extract patient ID for the response
-        //    // You might want to store this temporarily or get it differently
-        //    // For now, we'll return a placeholder since we don't store it in the appointment
-        //    return "N/A"; // You could modify this logic based on your needs
-        //}
-
-        //// 7. Optional: Add a method to get import statistics
-        ///// <summary>
-        ///// Gets statistics about appointment imports for a specific clinic
-        ///// </summary>
-        ///// <param name="clinicId">The clinic ID to get statistics for</param>
-        ///// <returns>Import statistics</returns>
-        //[HttpGet("clinic/{clinicId:int}/import-stats")]
-        //[Authorize]
-        //public async Task<IActionResult> GetImportStats([FromRoute] int clinicId)
-        //{
-        //    HttpContext.Items["Log-Category"] = "Appointment Import Stats";
-
-        //    if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))
-        //    {
-        //        _logger.LogWarning("Unauthorized access attempt for Clinic ID {ClinicId}", clinicId);
-        //        return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view statistics for this clinic."));
-        //    }
-
-        //    try
-        //    {
-        //        var appointments = await _appointmentRepository.GetAppointmentsByClinicIdAsync(clinicId);
-
-        //        var stats = new
-        //        {
-        //            TotalAppointments = appointments.Count,
-        //            CompletedAppointments = appointments.Count(a => a.Status == "Completed"),
-        //            CanceledAppointments = appointments.Count(a => a.Status == "Canceled"),
-        //            ScheduledAppointments = appointments.Count(a => a.Status == "Scheduled"),
-        //            AppointmentsWithTreatment = appointments.Count(a => !string.IsNullOrWhiteSpace(a.Treatment)),
-        //            AppointmentsWithPhoneNumber = appointments.Count(a => a.VisitorPhoneNumber != "N/A"),
-        //            RecentImports = appointments
-        //                .Where(a => a.AppointmentDate >= DateTime.Today.AddDays(-30))
-        //                .Count()
-        //        };
-
-        //        _logger.LogInformation("Retrieved import statistics for Clinic ID {ClinicId}", clinicId);
-        //        return Ok(ApiResponseFactory.Success(stats, "Import statistics retrieved successfully."));
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        _logger.LogError(ex, "Error retrieving import statistics for Clinic ID {ClinicId}", clinicId);
-        //        return StatusCode(500, ApiResponseFactory.Fail("Failed to retrieve import statistics."));
-        //    }
-        //}
+		/* ***************************************************************************************** */
+		////ARTHROSE APPOINTMENTS API
 
 
+		///// <summary>
+		///// Imports appointments from Excel file and creates appointment entries.
+		///// Excel structure: A=patientName, B=patientId, C=date, D=status, E=explanation
+		///// Maps patients to existing users or creates appointments with patient names
+		///// </summary>
+		///// <param name="request">The Excel file containing appointment data</param>
+		///// <returns>Summary of import results including added and skipped appointments</returns>
+		//[HttpPost("import-excel")]
+		//public async Task<IActionResult> ImportAppointmentsFromExcel([FromForm] AppointmentImportRequest request)
+		//{
+		//    HttpContext.Items["Log-Category"] = "Appointment Import";
 
+		//    _logger.LogInformation("Starting appointment import from Excel file");
 
-        // *******************************************************************************************************************************
+		//    // Validate file upload
+		//    if (request.ExcelFile == null || request.ExcelFile.Length == 0)
+		//        return BadRequest(ApiResponseFactory.Fail("Excel file is required."));
+
+		//    if (!Path.GetExtension(request.ExcelFile.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+		//        return BadRequest(ApiResponseFactory.Fail("Only .xlsx files are supported."));
+
+		//    var response = new AppointmentImportResponse();
+		//    var appointmentsToAdd = new List<ClinicAppointment>();
+		//    var skippedReasons = new List<string>();
+
+		//    try
+		//    {
+		//        using var stream = new MemoryStream();
+		//        await request.ExcelFile.CopyToAsync(stream);
+
+		//        ExcelPackage.License.SetNonCommercialPersonal("Ayush");
+		//        using var package = new ExcelPackage(stream);
+		//        var worksheet = package.Workbook.Worksheets[0];
+
+		//        if (worksheet.Dimension == null)
+		//            return BadRequest(ApiResponseFactory.Fail("Excel file is empty."));
+
+		//        var rowCount = worksheet.Dimension.End.Row;
+		//        _logger.LogInformation("Processing {RowCount} rows from Excel", rowCount - 1);
+
+		//        // Process each row (skip header row)
+		//        for (int row = 2; row <= rowCount; row++)
+		//        {
+		//            try
+		//            {
+		//                // Extract data from Excel row
+		//                var appointmentData = ExtractAppointmentDataFromRow(worksheet, row);
+		//                response.TotalProcessed++;
+
+		//                // Validate required fields
+		//                var validationResult = ValidateAppointmentData(appointmentData, row);
+		//                if (!validationResult.IsValid)
+		//                {
+		//                    skippedReasons.Add($"Row {row}: {validationResult.ErrorMessage}");
+		//                    response.Skipped++;
+		//                    continue;
+		//                }
+
+		//                // Parse date and time from the complex date string
+		//                var dateTimeResult = ParseDateTimeString(appointmentData.DateString);
+		//                if (!dateTimeResult.IsValid)
+		//                {
+		//                    skippedReasons.Add($"Row {row}: {dateTimeResult.ErrorMessage}");
+		//                    response.Skipped++;
+		//                    continue;
+		//                }
+
+		//                // Create appointment entity
+		//                var appointment = await CreateAppointmentFromData(appointmentData, dateTimeResult);
+		//                appointmentsToAdd.Add(appointment);
+
+		//                // Track statistics
+		//                if (appointment.VisitorPhoneNumber != "N/A")
+		//                    response.PatientsFound++;
+		//                else
+		//                    response.PatientsNotFound++;
+
+		//            }
+		//            catch (Exception ex)
+		//            {
+		//                _logger.LogError(ex, "Error processing row {Row}", row);
+		//                skippedReasons.Add($"Row {row}: Processing error - {ex.Message}");
+		//                response.Skipped++;
+		//            }
+		//        }
+
+		//        // Bulk insert valid appointments
+		//        if (appointmentsToAdd.Any())
+		//        {
+		//            await _appointmentRepository.AddRangeAsync(appointmentsToAdd);
+		//            await _appointmentRepository.SaveChangesAsync();
+
+		//            response.SuccessfullyAdded = appointmentsToAdd.Count;
+		//            response.AddedAppointments = appointmentsToAdd.Select(a => new AppointmentSummary
+		//            {
+		//                PatientName = a.VisitorUsername,
+		//                PatientId = GetPatientIdFromAppointment(a),
+		//                VisitorPhoneNumber = a.VisitorPhoneNumber,
+		//                AppointmentDate = a.AppointmentDate.ToString("dd-MM-yyyy"),
+		//                AppointmentTime = a.AppointmentTime.ToString(@"hh\:mm"),
+		//                Status = a.Status,
+		//                Treatment = a.Treatment ?? "",
+		//                PatientFoundInUsers = a.VisitorPhoneNumber != "N/A"
+		//            }).ToList();
+		//        }
+
+		//        response.SkippedReasons = skippedReasons;
+		//        response.Message = $"Import completed: {response.SuccessfullyAdded} added, {response.Skipped} skipped out of {response.TotalProcessed} total appointments. " +
+		//                          $"Found {response.PatientsFound} existing patients, {response.PatientsNotFound} new patients.";
+
+		//        _logger.LogInformation("Appointment import completed: {Added} added, {Skipped} skipped",
+		//            response.SuccessfullyAdded, response.Skipped);
+
+		//        return Ok(ApiResponseFactory.Success(response, response.Message));
+		//    }
+		//    catch (Exception ex)
+		//    {
+		//        _logger.LogError(ex, "Failed to import appointments from Excel");
+		//        return StatusCode(500, ApiResponseFactory.Fail("Failed to process Excel file: " + ex.Message));
+		//    }
+		//}
+
+		//private ExcelAppointmentRow ExtractAppointmentDataFromRow(ExcelWorksheet worksheet, int row)
+		//{
+		//    return new ExcelAppointmentRow
+		//    {
+		//        PatientName = worksheet.Cells[row, 1].Text.Trim(),
+		//        PatientId = worksheet.Cells[row, 2].Text.Trim(),
+		//        DateString = worksheet.Cells[row, 3].Text.Trim(),
+		//        Status = worksheet.Cells[row, 4].Text.Trim(),
+		//        Explanation = worksheet.Cells[row, 5].Text.Trim()
+		//    };
+		//}
+
+		//private (bool IsValid, string ErrorMessage) ValidateAppointmentData(ExcelAppointmentRow data, int row)
+		//{
+		//    if (string.IsNullOrWhiteSpace(data.PatientName))
+		//        return (false, "Patient name is required");
+
+		//    if (string.IsNullOrWhiteSpace(data.PatientId))
+		//        return (false, "Patient ID is required");
+
+		//    if (string.IsNullOrWhiteSpace(data.DateString))
+		//        return (false, "Date string is required");
+
+		//    if (string.IsNullOrWhiteSpace(data.Status))
+		//        return (false, "Status is required");
+
+		//    if (!data.Status.Equals("CONFIRM", StringComparison.OrdinalIgnoreCase) &&
+		//        !data.Status.Equals("CANCEL", StringComparison.OrdinalIgnoreCase))
+		//        return (false, $"Invalid status '{data.Status}'. Expected CONFIRM or CANCEL");
+
+		//    return (true, "");
+		//}
+
+		//private (bool IsValid, DateTime Date, TimeSpan Time, string ErrorMessage) ParseDateTimeString(string dateString)
+		//{
+		//    try
+		//    {
+		//        // Pattern: "Tue Apr 01 19:54:27 IST 2025"
+		//        // Format: {weekday} {month} {dd} {hh:mm:ss} IST {yyyy}
+		//        var regex = new Regex(@"^\w{3}\s+(\w{3})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+IST\s+(\d{4})$");
+		//        var match = regex.Match(dateString);
+
+		//        if (!match.Success)
+		//            return (false, default, default, $"Invalid date format: {dateString}");
+
+		//        var monthStr = match.Groups[1].Value;
+		//        var day = int.Parse(match.Groups[2].Value);
+		//        var hour = int.Parse(match.Groups[3].Value);
+		//        var minute = int.Parse(match.Groups[4].Value);
+		//        var second = int.Parse(match.Groups[5].Value);
+		//        var year = int.Parse(match.Groups[6].Value);
+
+		//        // Convert month name to number
+		//        var month = monthStr switch
+		//        {
+		//            "Jan" => 1,
+		//            "Feb" => 2,
+		//            "Mar" => 3,
+		//            "Apr" => 4,
+		//            "May" => 5,
+		//            "Jun" => 6,
+		//            "Jul" => 7,
+		//            "Aug" => 8,
+		//            "Sep" => 9,
+		//            "Oct" => 10,
+		//            "Nov" => 11,
+		//            "Dec" => 12,
+		//            _ => throw new ArgumentException($"Invalid month: {monthStr}")
+		//        };
+
+		//        var date = new DateTime(year, month, day);
+		//        var time = new TimeSpan(hour, minute, second);
+
+		//        return (true, date, time, "");
+		//    }
+		//    catch (Exception ex)
+		//    {
+		//        return (false, default, default, $"Error parsing date '{dateString}': {ex.Message}");
+		//    }
+		//}
+
+		//private async Task<ClinicAppointment> CreateAppointmentFromData(
+		//    ExcelAppointmentRow data,
+		//    (bool IsValid, DateTime Date, TimeSpan Time, string ErrorMessage) dateTimeResult)
+		//{
+		//    // Try to find user by PatientId
+		//    var user = await _userRepository.GetUserByPatientIdAsync(data.PatientId);
+
+		//    string visitorUsername;
+		//    string visitorPhoneNumber;
+
+		//    if (user != null)
+		//    {
+		//        // Patient found in users table - use their data
+		//        visitorUsername = $"{user.FirstName} {user.LastName}".Trim();
+		//        visitorPhoneNumber = user.PhoneNumber;
+		//    }
+		//    else
+		//    {
+		//        // Patient not found - use Excel data
+		//        visitorUsername = data.PatientName;
+		//        visitorPhoneNumber = "N/A";
+		//    }
+
+		//    // Convert status: CONFIRM -> Completed, CANCEL -> Canceled
+		//    string status = data.Status.Equals("CONFIRM", StringComparison.OrdinalIgnoreCase)
+		//        ? "Completed"
+		//        : "Canceled";
+
+		//    var appointment = new ClinicAppointment
+		//    {
+		//        VisitorUsername = visitorUsername,
+		//        VisitorPhoneNumber = visitorPhoneNumber,
+		//        AppointmentDate = dateTimeResult.Date,
+		//        AppointmentTime = dateTimeResult.Time,
+		//        Treatment = data.Explanation,
+		//        ClinicId = 8, // Fixed clinic ID as requested
+		//        Status = status
+		//    };
+
+		//    return appointment;
+		//}
+
+		//private string GetPatientIdFromAppointment(ClinicAppointment appointment)
+		//{
+		//    // This is a helper method to extract patient ID for the response
+		//    // You might want to store this temporarily or get it differently
+		//    // For now, we'll return a placeholder since we don't store it in the appointment
+		//    return "N/A"; // You could modify this logic based on your needs
+		//}
+
+		//// 7. Optional: Add a method to get import statistics
+		///// <summary>
+		///// Gets statistics about appointment imports for a specific clinic
+		///// </summary>
+		///// <param name="clinicId">The clinic ID to get statistics for</param>
+		///// <returns>Import statistics</returns>
+		//[HttpGet("clinic/{clinicId:int}/import-stats")]
+		//[Authorize]
+		//public async Task<IActionResult> GetImportStats([FromRoute] int clinicId)
+		//{
+		//    HttpContext.Items["Log-Category"] = "Appointment Import Stats";
+
+		//    if (!await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User))
+		//    {
+		//        _logger.LogWarning("Unauthorized access attempt for Clinic ID {ClinicId}", clinicId);
+		//        return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view statistics for this clinic."));
+		//    }
+
+		//    try
+		//    {
+		//        var appointments = await _appointmentRepository.GetAppointmentsByClinicIdAsync(clinicId);
+
+		//        var stats = new
+		//        {
+		//            TotalAppointments = appointments.Count,
+		//            CompletedAppointments = appointments.Count(a => a.Status == "Completed"),
+		//            CanceledAppointments = appointments.Count(a => a.Status == "Canceled"),
+		//            ScheduledAppointments = appointments.Count(a => a.Status == "Scheduled"),
+		//            AppointmentsWithTreatment = appointments.Count(a => !string.IsNullOrWhiteSpace(a.Treatment)),
+		//            AppointmentsWithPhoneNumber = appointments.Count(a => a.VisitorPhoneNumber != "N/A"),
+		//            RecentImports = appointments
+		//                .Where(a => a.AppointmentDate >= DateTime.Today.AddDays(-30))
+		//                .Count()
+		//        };
+
+		//        _logger.LogInformation("Retrieved import statistics for Clinic ID {ClinicId}", clinicId);
+		//        return Ok(ApiResponseFactory.Success(stats, "Import statistics retrieved successfully."));
+		//    }
+		//    catch (Exception ex)
+		//    {
+		//        _logger.LogError(ex, "Error retrieving import statistics for Clinic ID {ClinicId}", clinicId);
+		//        return StatusCode(500, ApiResponseFactory.Fail("Failed to retrieve import statistics."));
+		//    }
+		//}
 
 
 
 
-        /// <summary>
-        /// Imports 2019 patient appointments from CSV file and creates appointment entries with clinic visits.
-        /// CSV structure: date, patientId, localPatientName, mobileNumber, emailAddress, secMobile, gender...
-        /// Only processes patients with 2019 dates. Creates appointments and clinic visits for existing users.
-        /// </summary>
-        /// <param name="request">The CSV file and clinic ID</param>
-        /// <returns>Summary of import results including added, not found, and skipped appointments</returns>
-        /// <summary>
-        /// Imports 2019 patient appointments from CSV file and creates appointment entries with clinic visits.
-        /// CSV structure: date, patientId, localPatientName, mobileNumber, emailAddress, secMobile, gender...
-        /// Date format: "Tue Apr 01 19:54:27 IST 2019"
-        /// Only processes patients with 2019 dates. Creates appointments and clinic visits for existing users.
-        /// </summary>
-        /// <param name="request">The CSV file and clinic ID</param>
-        /// <returns>Summary of import results including added, not found, and skipped appointments</returns>
-        /// <summary>
-        /// Imports 2019 patient appointments from CSV file and creates appointment entries with clinic visits.
-        /// CSV structure: doctorName, patientName, patientId, date, startTime, endTime, status, explanation
-        /// Date format: "Fri Aug 16 14:00:00 IST 2019"
-        /// Only processes patients with 2019 dates. Creates appointments and clinic visits for existing users.
-        /// </summary>
-        [HttpPost("import-2019-appointments-csv")]
+		// *******************************************************************************************************************************
+
+
+
+
+		/// <summary>
+		/// Imports 2019 patient appointments from CSV file and creates appointment entries with clinic visits.
+		/// CSV structure: date, patientId, localPatientName, mobileNumber, emailAddress, secMobile, gender...
+		/// Only processes patients with 2019 dates. Creates appointments and clinic visits for existing users.
+		/// </summary>
+		/// <param name="request">The CSV file and clinic ID</param>
+		/// <returns>Summary of import results including added, not found, and skipped appointments</returns>
+		/// <summary>
+		/// Imports 2019 patient appointments from CSV file and creates appointment entries with clinic visits.
+		/// CSV structure: date, patientId, localPatientName, mobileNumber, emailAddress, secMobile, gender...
+		/// Date format: "Tue Apr 01 19:54:27 IST 2019"
+		/// Only processes patients with 2019 dates. Creates appointments and clinic visits for existing users.
+		/// </summary>
+		/// <param name="request">The CSV file and clinic ID</param>
+		/// <returns>Summary of import results including added, not found, and skipped appointments</returns>
+		/// <summary>
+		/// Imports 2019 patient appointments from CSV file and creates appointment entries with clinic visits.
+		/// CSV structure: doctorName, patientName, patientId, date, startTime, endTime, status, explanation
+		/// Date format: "Fri Aug 16 14:00:00 IST 2019"
+		/// Only processes patients with 2019 dates. Creates appointments and clinic visits for existing users.
+		/// </summary>
+		[HttpPost("import-2019-appointments-csv")]
         //[Authorize]
         public async Task<IActionResult> Import2019AppointmentsFromCsv([FromForm] Appointment2019ImportRequest request)
         {

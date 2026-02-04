@@ -112,9 +112,82 @@ namespace HFiles_Backend.API.Controllers.Clinics
 
 
 
+		[HttpGet("{clinicId:int}/high5-statistics")]
+		[Authorize]
+		public async Task<IActionResult> GetHigh5Statistics(
+	 [FromRoute] int clinicId,
+	 [FromQuery] string? startDate,
+	 [FromQuery] string? endDate)
+		{
+			HttpContext.Items["Log-Category"] = "Clinic High5 Statistics";
+
+			if (clinicId <= 0)
+			{
+				_logger.LogWarning("Invalid clinic ID provided: {ClinicId}", clinicId);
+				return BadRequest(ApiResponseFactory.Fail("Clinic ID must be a positive integer."));
+			}
+
+			bool isAuthorized = await _clinicAuthorizationService.IsClinicAuthorized(clinicId, User);
+			if (!isAuthorized)
+			{
+				_logger.LogWarning("Unauthorized High5 statistics access attempt for Clinic ID {ClinicId}", clinicId);
+				return Unauthorized(ApiResponseFactory.Fail("You are not authorized to view statistics for this clinic."));
+			}
+
+			DateTime? start = null;
+			DateTime? end = null;
+
+			if (!string.IsNullOrEmpty(startDate))
+			{
+				if (!DateTime.TryParseExact(startDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedStart))
+				{
+					_logger.LogWarning("Invalid startDate format: {StartDate}", startDate);
+					return BadRequest(ApiResponseFactory.Fail("Invalid startDate format. Expected dd-MM-yyyy."));
+				}
+				start = parsedStart;
+			}
+
+			if (!string.IsNullOrEmpty(endDate))
+			{
+				if (!DateTime.TryParseExact(endDate, "dd-MM-yyyy", null, DateTimeStyles.None, out var parsedEnd))
+				{
+					_logger.LogWarning("Invalid endDate format: {EndDate}", endDate);
+					return BadRequest(ApiResponseFactory.Fail("Invalid endDate format. Expected dd-MM-yyyy."));
+				}
+				end = parsedEnd;
+			}
+
+			try
+			{
+				// Use separate cache key for High5 statistics
+				var cacheKey = $"clinic_high5_stats_{clinicId}_{startDate}_{endDate}";
+
+				if (!_cache.TryGetValue(cacheKey, out var statistics))
+				{
+					statistics = await _statisticsRepository.GetHigh5StatisticsAsync(clinicId, start, end);
+
+					var cacheOptions = new MemoryCacheEntryOptions()
+						.SetSlidingExpiration(TimeSpan.FromMinutes(5))
+						.SetAbsoluteExpiration(TimeSpan.FromMinutes(15));
+
+					_cache.Set(cacheKey, statistics, cacheOptions);
+					_cacheService.TrackCacheKey(cacheKey);
+				}
+
+				_logger.LogInformation("Successfully fetched High5 statistics for Clinic ID {ClinicId}", clinicId);
+				return Ok(ApiResponseFactory.Success(statistics, "High5 statistics fetched successfully."));
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Error fetching High5 statistics for Clinic ID {ClinicId}", clinicId);
+				return StatusCode(500, ApiResponseFactory.Fail("An unexpected error occurred while retrieving High5 statistics."));
+			}
+		}
 
 
-        [HttpPost("{clinicId:int}/statistics/clear-cache")]
+
+
+		[HttpPost("{clinicId:int}/statistics/clear-cache")]
         [Authorize]
         public async Task<IActionResult> ClearStatisticsCache([FromRoute] int clinicId)
         {
